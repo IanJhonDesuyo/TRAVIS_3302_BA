@@ -1,0 +1,153 @@
+# TRAVIS System Workflow
+
+## A. Traffic Monitoring and Computer Vision Workflow
+
+1. The IoT-enabled camera captures live traffic video from the monitored intersection.
+
+2. The captured video stream is transmitted to the local server or laptop through a wireless network connection.
+
+3. The Computer Vision module processes the live video stream using Python, OpenCV, and YOLO object detection.
+
+4. The system detects vehicles and persons from the live video stream.
+
+5. The system applies the predefined Vehicle Monitoring Zone to focus only on the road area being monitored.
+
+6. The system applies the designated counting lines for inbound and outbound vehicle movement.
+
+7. The system tracks detected vehicles and counts the vehicles that cross the inbound and outbound counting lines.
+
+8. The system records the total vehicle count, inbound count, outbound count, and vehicle classifications such as car, motorcycle, bus, and truck.
+
+9. The system analyzes the vehicle count and traffic density within the monitored area.
+
+10. The system classifies the traffic condition as Light, Moderate, or Heavy Congestion based on predefined congestion thresholds.
+
+11. The system applies the predefined Officer Zone to check the area where a traffic officer is expected to be stationed.
+
+12. The system detects whether a person is present inside the Officer Zone.
+
+13. The system checks the current duty schedule of the assigned traffic officer.
+
+14. The system determines whether the current time is within active duty hours, break time, lunch break, or off-duty hours.
+
+15. If congestion is detected during active duty hours and no person is detected inside the Officer Zone, the system automatically generates an alert notification.
+
+16. The alert notification is saved in the centralized database and displayed on the administrator dashboard.
+
+17. The system stores traffic monitoring data, vehicle counts, congestion logs, officer presence logs, and alert records in the centralized database.
+
+18. The administrator dashboard displays the live monitoring results, vehicle counts, congestion status, officer presence status, and generated alerts.
+
+19. End of Traffic Monitoring and Computer Vision Workflow.
+
+---
+
+## B. Violation and Payment Recording Workflow
+
+1. The traffic enforcer issues a paper ticket to the traffic violator.
+
+2. The traffic violator proceeds to the TMO or Treasury Office to settle or record the violation.
+
+3. The treasury personnel opens the TRAVIS mobile application or web application.
+
+4. The treasury personnel logs in using an authorized account.
+
+5. The treasury personnel selects whether to use Manual Input or Scan Input.
+
+6. If Manual Input is selected, the treasury personnel manually encodes the ticket details.
+
+7. If Scan Input is selected, the treasury personnel scans the paper ticket using OCR.
+
+8. The OCR module extracts ticket details such as ticket number, driver name, license number, plate number, vehicle type, violation type, violation location, violation date, violation time, and penalty amount.
+
+9. The treasury personnel reviews and verifies the extracted or manually encoded ticket details.
+
+10. The treasury personnel records the payment information and payment status.
+
+11. The violation and payment details are saved in the centralized database.
+
+12. The system updates the violation records, payment records, and dashboard reports.
+
+13. The administrator or authorized personnel can view violation records, payment status, and payment reports through the web dashboard.
+
+14. End of Violation and Payment Recording Workflow.
+
+---
+
+## C. Machine Learning and Analytics Workflow
+
+1. Historical violation records from the Traffic Management Office are collected and encoded into Excel or CSV format.
+
+2. The dataset is cleaned by checking missing values, duplicate entries, inconsistent records, and incorrect formats.
+
+3. The prepared dataset is imported into the TRAVIS database.
+
+4. The Machine Learning module processes the historical violation dataset.
+
+5. The Random Forest algorithm analyzes the dataset to identify and predict high-risk violation periods based on date, time, month, location, and violation type.
+
+6. The K-Means Clustering algorithm analyzes the dataset to identify common violation hotspot locations.
+
+7. The system stores the prediction results and hotspot analysis results in the centralized database.
+
+8. The Analytics Dashboard generates visual reports such as charts, tables, trends, and summaries.
+
+9. The Decision Support Module generates recommendations for traffic monitoring, officer deployment, and enforcement planning based on the analytics results.
+
+10. Authorized users can view traffic trends, violation trends, hotspot locations, prediction results, and recommendations through the administrator dashboard.
+
+11. The system generates automated reports for administrators and authorized personnel.
+
+12. End of Machine Learning and Analytics Workflow.
+
+---
+
+## D. Public Website Workflow
+
+1. The administrator logs in to the TRAVIS web dashboard.
+
+2. The administrator creates or updates public announcements, traffic advisories, road notices, and TMO-related activities.
+
+3. The system saves the announcement or advisory in the centralized database.
+
+4. Selected traffic-related information is published on the public website.
+
+5. Residents and motorists access the public website to view traffic advisories, announcements, and public notices.
+
+6. End of Public Website Workflow.
+
+---
+
+## E. Overall System Workflow
+
+1. The IoT-enabled camera captures live traffic video from the monitored intersection.
+
+2. The live video stream is processed by the Computer Vision module using Python, OpenCV, and YOLO.
+
+3. The system detects vehicles, counts inbound and outbound vehicles, analyzes traffic density, and determines congestion level.
+
+4. The system checks the Officer Zone and validates the current duty schedule.
+
+5. If congestion is detected during active duty hours and no person is present in the Officer Zone, the system generates an alert.
+
+6. Traffic monitoring data, vehicle counts, congestion logs, officer presence logs, and alerts are stored in the centralized database.
+
+7. Traffic enforcers issue paper tickets to violators.
+
+8. Violators proceed to the TMO or Treasury Office.
+
+9. Treasury personnel use the mobile application or web application to encode ticket and payment details manually or through OCR scanning.
+
+10. Violation and payment records are stored in the centralized database.
+
+11. Historical violation records are processed by the Machine Learning module.
+
+12. Random Forest generates high-risk violation period predictions.
+
+13. K-Means Clustering identifies violation hotspot locations.
+
+14. The Analytics Dashboard displays traffic data, violation records, payment status, predictions, hotspots, alerts, reports, and recommendations.
+
+15. Selected public announcements and advisories are displayed on the public website.
+
+16. End of Process.
