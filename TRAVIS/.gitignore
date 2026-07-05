@@ -1,0 +1,44 @@
+# =========================
+# Python
+# =========================
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# =========================
+# Computer Vision
+# =========================
+computer_vision/__pycache__/
+computer_vision/results/
+computer_vision/snapshots/
+computer_vision/uploads/
+computer_vision/venv/
+computer_vision/.venv/
+
+# AI Model
+computer_vision/*.pt
+computer_vision/models/*.pt
+
+# =========================
+# Uploads
+# =========================
+uploads/videos/
+uploads/snapshots/
+
+# =========================
+# IDE
+# =========================
+.vscode/
+.idea/
+
+# =========================
+# Environment
+# =========================
+.env
+
+# =========================
+# OS Files
+# =========================
+Thumbs.db
+.DS_Store

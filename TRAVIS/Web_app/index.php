@@ -21,7 +21,7 @@ page_start('Dashboard', 'dashboard', 'Search violations, plates, officers...');
 ?>
 <div class="d-flex justify-content-between flex-wrap mb-4 gap-2">
   <div><h3 class="page-title">Operations Dashboard</h3><p class="page-sub">Database-driven overview of traffic monitoring, violation analytics, and enforcement</p></div>
-  <div class="d-flex gap-2"><a class="btn btn-light" href="reports.php"><i class="bi bi-download me-1"></i>Reports</a><a class="btn btn-primary" href="monitoring.php"><i class="bi bi-camera-video me-1"></i>Open Monitoring</a></div>
+  <div class="d-flex gap-2"><a class="btn btn-light" href="<?= esc(app_url('reports.php')) ?>"><i class="bi bi-download me-1"></i>Reports</a><a class="btn btn-primary" href="<?= esc(app_url('monitoring.php')) ?>"><i class="bi bi-camera-video me-1"></i>Open Monitoring</a></div>
 </div>
 
 <div class="row g-3 mb-4">
@@ -51,13 +51,13 @@ page_start('Dashboard', 'dashboard', 'Search violations, plates, officers...');
 </div>
 
 <div class="row g-3">
-  <div class="col-lg-6"><div class="section-card h-100"><div class="section-head"><h6>Prediction Status</h6><a href="analytics.php" class="small fw-semibold text-decoration-none">View analytics</a></div>
+  <div class="col-lg-6"><div class="section-card h-100"><div class="section-head"><h6>Prediction Status</h6><a href="<?= esc(app_url('analytics.php')) ?>" class="small fw-semibold text-decoration-none">View analytics</a></div>
     <?php if ($latestPrediction): ?>
       <div class="d-flex justify-content-between align-items-center"><div><h5><?= esc($latestPrediction['predicted_result']) ?></h5><small class="text-muted">Generated <?= esc($latestPrediction['prediction_date']) ?></small></div><span class="tag <?= tag_class($latestPrediction['risk_level']) ?>"><?= esc($latestPrediction['risk_level']) ?></span></div>
       <p class="mb-0 mt-2 text-muted small">Confidence: <?= number_format((float)$latestPrediction['confidence_score'] * 100, 2) ?>%</p>
     <?php else: empty_state('Prediction not generated yet. The Random Forest result will appear here after training and saving to ml_predictions.'); endif; ?>
   </div></div>
-  <div class="col-lg-6"><div class="section-card h-100"><div class="section-head"><h6>Location Hotspot Status</h6><a href="analytics.php" class="small fw-semibold text-decoration-none">View hotspots</a></div>
+  <div class="col-lg-6"><div class="section-card h-100"><div class="section-head"><h6>Location Hotspot Status</h6><a href="<?= esc(app_url('analytics.php')) ?>" class="small fw-semibold text-decoration-none">View hotspots</a></div>
     <?php if ($latestHotspot): ?>
       <div class="d-flex justify-content-between align-items-center"><div><h5><?= esc($latestHotspot['location']) ?></h5><small class="text-muted">Frequency: <?= num($latestHotspot['frequency_count']) ?></small></div><span class="tag <?= tag_class($latestHotspot['risk_level']) ?>"><?= esc($latestHotspot['risk_level']) ?></span></div>
     <?php else: empty_state('No hotspot analysis available. K-Means results will appear here after saving to violation_hotspots.'); endif; ?>

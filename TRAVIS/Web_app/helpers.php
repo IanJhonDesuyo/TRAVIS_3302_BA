@@ -3,6 +3,34 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/db_connect.php';
 
+function web_app_base_url(): string {
+    $documentRoot = str_replace('\\', '/', rtrim($_SERVER['DOCUMENT_ROOT'] ?? '', '/'));
+    $dir = str_replace('\\', '/', __DIR__);
+    $relative = trim(str_replace($documentRoot, '', $dir), '/');
+    if ($relative === '') {
+        return '/';
+    }
+    return '/' . $relative . '/';
+}
+
+function project_base_url(): string {
+    $documentRoot = str_replace('\\', '/', rtrim($_SERVER['DOCUMENT_ROOT'] ?? '', '/'));
+    $dir = str_replace('\\', '/', dirname(__DIR__));
+    $relative = trim(str_replace($documentRoot, '', $dir), '/');
+    if ($relative === '') {
+        return '/';
+    }
+    return '/' . $relative . '/';
+}
+
+function app_url(string $path): string {
+    return web_app_base_url() . ltrim($path, '/');
+}
+
+function asset_url(string $path): string {
+    return project_base_url() . ltrim($path, '/');
+}
+
 function esc(mixed $value): string {
     return htmlspecialchars((string)($value ?? ''), ENT_QUOTES, 'UTF-8');
 }
