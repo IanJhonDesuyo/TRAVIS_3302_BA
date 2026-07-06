@@ -1,8 +1,14 @@
 <?php
+ini_set('upload_max_filesize', '500M');
+ini_set('post_max_size', '520M');
+ini_set('max_execution_time', '300');
+ini_set('max_input_time', '300');
+
 require_once __DIR__ . '/layout.php';
 
 $uploadMessage = '';
 $uploadedVideo = null;
+$maxUploadBytes = 500 * 1024 * 1024;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['cctv_video'])) {
     $allowed = ['mp4','avi','mov','mkv'];
@@ -10,18 +16,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['cctv_video'])) {
 
     if (!in_array($ext, $allowed, true)) {
         $uploadMessage = 'Invalid file type. Please upload MP4, AVI, MOV, or MKV.';
-    } elseif (($_FILES['cctv_video']['size'] ?? 0) > 300 * 1024 * 1024) {
-        $uploadMessage = 'File too large. Maximum allowed size is 300MB.';
+    } elseif (($_FILES['cctv_video']['size'] ?? 0) > $maxUploadBytes) {
+        $uploadMessage = 'File too large. Maximum allowed size is 500MB.';
     } else {
-        $dir = __DIR__ . '/uploads/videos';
+        $dir = dirname(__DIR__) . '/computer_vision/uploads/videos';
         if (!is_dir($dir)) mkdir($dir, 0775, true);
 
-        $safeName = 'cctv_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
-        $target = $dir . '/' . $safeName;
+        $target = $dir . '/test.mp4';
 
         if (move_uploaded_file($_FILES['cctv_video']['tmp_name'], $target)) {
-            $uploadedVideo = 'uploads/videos/' . $safeName;
-            $uploadMessage = 'CCTV video uploaded successfully.';
+            $uploadedVideo = 'computer_vision/uploads/videos/test.mp4';
+            $uploadMessage = 'CCTV video uploaded successfully. Ready to analyze.';
         } else {
             $uploadMessage = 'Upload failed. Please check folder permissions.';
         }
@@ -135,14 +140,21 @@ page_start('Live Monitoring', 'monitoring', 'Search monitoring logs...');
 
       <form method="post" enctype="multipart/form-data">
         <label class="form-label small fw-semibold">LGU CCTV Video Copy</label>
+        <input type="hidden" name="MAX_FILE_SIZE" value="<?= $maxUploadBytes ?>">
         <input class="form-control mb-2" type="file" name="cctv_video" accept="video/mp4,video/avi,video/quicktime,video/x-matroska" required>
         <button class="btn btn-primary w-100">
           <i class="bi bi-upload me-1"></i>Upload Video
         </button>
       </form>
 
+      <button class="btn btn-accent w-100 mt-2" type="button" id="analyzeVideoBtn">
+        <i class="bi bi-play-circle me-1"></i>Analyze Video
+      </button>
+
+      <div class="small mt-2" id="analysisMessage"></div>
+
       <small class="text-muted d-block mt-2">
-        Supported: MP4, AVI, MOV, MKV. Saved in <code>uploads/videos</code>.
+        Supported: MP4, AVI, MOV, MKV up to 500MB. Saved as <code>computer_vision/uploads/videos/test.mp4</code>.
       </small>
     </div>
 
@@ -159,9 +171,17 @@ page_start('Live Monitoring', 'monitoring', 'Search monitoring logs...');
 <div class="row g-3 mb-4">
   <div class="col-sm-6 col-xl-3">
     <div class="stat-card">
+      <div class="stat-icon tone-success"><i class="bi bi-cpu"></i></div>
+      <div class="stat-label">AI Status</div>
+      <div class="stat-value"><span class="tag tag-muted" id="aiStatus">Offline</span></div>
+    </div>
+  </div>
+
+  <div class="col-sm-6 col-xl-3">
+    <div class="stat-card">
       <div class="stat-icon tone-primary"><i class="bi bi-car-front"></i></div>
-      <div class="stat-label">Visible Vehicles</div>
-      <div class="stat-value" id="visibleVehicles"><?= num($latest['vehicle_count'] ?? 0) ?></div>
+      <div class="stat-label">Vehicle Count</div>
+      <div class="stat-value" id="vehicleCount"><?= num($latest['vehicle_count'] ?? 0) ?></div>
     </div>
   </div>
 
@@ -180,14 +200,38 @@ page_start('Live Monitoring', 'monitoring', 'Search monitoring logs...');
       <div class="stat-value" id="outboundCount"><?= num($latest['outbound_count'] ?? 0) ?></div>
     </div>
   </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-sm-6 col-xl-3">
+    <div class="stat-card">
+      <div class="stat-icon tone-warning"><i class="bi bi-speedometer2"></i></div>
+      <div class="stat-label">Congestion Level</div>
+      <div class="stat-value"><span class="tag <?= tag_class($latest['congestion_level'] ?? 'none') ?>" id="congestionLevel"><?= esc($latest['congestion_level'] ?? 'none') ?></span></div>
+    </div>
+  </div>
 
   <div class="col-sm-6 col-xl-3">
     <div class="stat-card">
-      <div class="stat-icon tone-danger"><i class="bi bi-clock-history"></i></div>
-      <div class="stat-label">Last Updated</div>
-      <div class="stat-value" style="font-size:1.1rem;" id="lastUpdated">
-        <?= esc($latest['recorded_at'] ?? 'No data') ?>
-      </div>
+      <div class="stat-icon tone-danger"><i class="bi bi-bell"></i></div>
+      <div class="stat-label">Alert Status</div>
+      <div class="stat-value"><span class="tag <?= !empty($latest['alert_generated']) ? 'tag-danger' : 'tag-success' ?>" id="alertStatus"><?= !empty($latest['alert_generated']) ? 'ALERT' : 'NORMAL' ?></span></div>
+    </div>
+  </div>
+
+  <div class="col-sm-6 col-xl-3">
+    <div class="stat-card">
+      <div class="stat-icon tone-success"><i class="bi bi-person-badge"></i></div>
+      <div class="stat-label">Officer Presence</div>
+      <div class="stat-value"><span class="tag tag-muted" id="officerPresence"><?= esc($latest['officer_presence'] ?? 'unknown') ?></span></div>
+    </div>
+  </div>
+
+  <div class="col-sm-6 col-xl-3">
+    <div class="stat-card">
+      <div class="stat-icon tone-danger"><i class="bi bi-exclamation-triangle"></i></div>
+      <div class="stat-label">Potential Collision</div>
+      <div class="stat-value"><span class="tag tag-muted" id="potentialCollision"><?= esc($latest['potential_collision'] ?? 'none') ?></span></div>
     </div>
   </div>
 </div>
@@ -195,33 +239,11 @@ page_start('Live Monitoring', 'monitoring', 'Search monitoring logs...');
 <div class="row g-3 mb-4">
   <div class="col-sm-6 col-xl-3">
     <div class="stat-card">
-      <div class="stat-icon tone-warning"><i class="bi bi-speedometer2"></i></div>
-      <div class="stat-label">Traffic Status</div>
-      <div class="stat-value" id="trafficStatus"><?= esc($latest['congestion_level'] ?? 'none') ?></div>
-    </div>
-  </div>
-
-  <div class="col-sm-6 col-xl-3">
-    <div class="stat-card">
-      <div class="stat-icon tone-success"><i class="bi bi-person-badge"></i></div>
-      <div class="stat-label">Officer Status</div>
-      <div class="stat-value" id="officerStatus"><?= esc($latest['officer_presence'] ?? 'unknown') ?></div>
-    </div>
-  </div>
-
-  <div class="col-sm-6 col-xl-3">
-    <div class="stat-card">
-      <div class="stat-icon tone-danger"><i class="bi bi-exclamation-triangle"></i></div>
-      <div class="stat-label">Collision Alert</div>
-      <div class="stat-value" id="collisionStatus"><?= esc($latest['potential_collision'] ?? 'none') ?></div>
-    </div>
-  </div>
-
-  <div class="col-sm-6 col-xl-3">
-    <div class="stat-card">
-      <div class="stat-icon tone-primary"><i class="bi bi-cpu"></i></div>
-      <div class="stat-label">AI Status</div>
-      <div class="stat-value" id="aiStatus">Ready</div>
+      <div class="stat-icon tone-primary"><i class="bi bi-clock-history"></i></div>
+      <div class="stat-label">Last Updated Time</div>
+      <div class="stat-value" style="font-size:1.1rem;" id="lastUpdated">
+        <?= esc($latest['recorded_at'] ?? 'No data') ?>
+      </div>
     </div>
   </div>
 </div>
@@ -229,42 +251,40 @@ page_start('Live Monitoring', 'monitoring', 'Search monitoring logs...');
 <div class="row g-3">
   <div class="col-lg-7">
     <div class="section-card">
-      <div class="section-head"><h6>Detection Logs</h6></div>
+      <div class="section-head"><h6>Recent Monitoring Logs</h6></div>
 
-      <?php if (!$logs): ?>
-        <?php empty_state('No monitoring logs yet. Logs will appear after Python/OpenCV saves records to camera_monitoring_logs.'); ?>
-      <?php else: ?>
-        <div class="table-responsive">
-          <table class="table align-middle">
-            <thead>
+      <div class="table-responsive">
+        <table class="table align-middle">
+          <thead>
+            <tr>
+              <th>Recorded At</th>
+              <th>Vehicle Count</th>
+              <th>Inbound</th>
+              <th>Outbound</th>
+              <th>Congestion</th>
+              <th>Alert</th>
+            </tr>
+          </thead>
+          <tbody id="monitoringLogsBody">
+            <?php if (!$logs): ?>
               <tr>
-                <th>Time</th>
-                <th>Camera</th>
-                <th>Vehicles</th>
-                <th>Inbound</th>
-                <th>Outbound</th>
-                <th>Traffic</th>
-                <th>Officer</th>
-                <th>Collision</th>
+                <td colspan="6" class="text-center text-muted py-4">No monitoring logs yet.</td>
               </tr>
-            </thead>
-            <tbody>
+            <?php else: ?>
               <?php foreach ($logs as $l): ?>
                 <tr>
                   <td><?= esc($l['recorded_at']) ?></td>
-                  <td><?= esc($l['camera_name']) ?><br><small class="text-muted"><?= esc($l['location']) ?></small></td>
                   <td><?= num($l['vehicle_count']) ?></td>
                   <td><?= num($l['inbound_count']) ?></td>
                   <td><?= num($l['outbound_count']) ?></td>
                   <td><span class="tag <?= tag_class($l['congestion_level']) ?>"><?= esc($l['congestion_level']) ?></span></td>
-                  <td><?= esc($l['officer_presence']) ?></td>
-                  <td><?= esc($l['potential_collision']) ?></td>
+                  <td><span class="tag <?= !empty($l['alert_generated']) ? 'tag-danger' : 'tag-success' ?>"><?= !empty($l['alert_generated']) ? 'ALERT' : 'NORMAL' ?></span></td>
                 </tr>
               <?php endforeach; ?>
-            </tbody>
-          </table>
-        </div>
-      <?php endif; ?>
+            <?php endif; ?>
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 
@@ -289,128 +309,6 @@ page_start('Live Monitoring', 'monitoring', 'Search monitoring logs...');
   </div>
 </div>
 
-<script>
-const startCameraBtn = document.getElementById('startCameraBtn');
-const stopCameraBtn = document.getElementById('stopCameraBtn');
-const captureSnapshotBtn = document.getElementById('captureSnapshotBtn');
-const sourceStatus = document.getElementById('sourceStatus');
-const aiLiveStream = document.getElementById('aiLiveStream');
-const streamFallback = document.getElementById('streamFallback');
-
-function updateText(id, value) {
-  const el = document.getElementById(id);
-  if (el) {
-    el.textContent = value;
-  }
-}
-
-function updateStatusColor(id, value) {
-  const el = document.getElementById(id);
-  if (!el) return;
-
-  const displayValue = value ?? 'unknown';
-  el.textContent = displayValue;
-
-  const normalized = String(displayValue).toLowerCase();
-
-  if (
-    normalized.includes('running') ||
-    normalized.includes('online') ||
-    normalized.includes('detected') ||
-    normalized.includes('present') ||
-    normalized.includes('low') ||
-    normalized.includes('none')
-  ) {
-    el.style.color = '#16a34a';
-  } else if (
-    normalized.includes('moderate') ||
-    normalized.includes('monitoring') ||
-    normalized.includes('warning') ||
-    normalized.includes('unknown')
-  ) {
-    el.style.color = '#ca8a04';
-  } else if (
-    normalized.includes('heavy') ||
-    normalized.includes('severe') ||
-    normalized.includes('high') ||
-    normalized.includes('absent') ||
-    normalized.includes('collision') ||
-    normalized.includes('disconnected')
-  ) {
-    el.style.color = '#dc2626';
-  } else {
-    el.style.color = '';
-  }
-}
-
-async function refreshMonitoringStatus() {
-  try {
-    const response = await fetch('api/get_status.php', {
-      cache: 'no-store'
-    });
-
-    if (!response.ok) {
-      throw new Error('Could not fetch monitoring status.');
-    }
-
-    const data = await response.json();
-
-    updateText('visibleVehicles', data.vehicle_count ?? 0);
-    updateText('inboundCount', data.inbound_count ?? 0);
-    updateText('outboundCount', data.outbound_count ?? 0);
-    updateText('lastUpdated', data.recorded_at ?? 'No data');
-
-    updateStatusColor('trafficStatus', data.congestion_level ?? 'none');
-    updateStatusColor('officerStatus', data.officer_presence ?? 'unknown');
-    updateStatusColor('collisionStatus', data.potential_collision ?? 'none');
-    updateStatusColor('aiStatus', data.ai_status ?? 'Running');
-
-    sourceStatus.textContent = 'Live Data Active';
-    sourceStatus.className = 'tag tag-success';
-
-  } catch (error) {
-    updateStatusColor('aiStatus', 'Disconnected');
-    sourceStatus.textContent = 'Waiting for AI Data';
-    sourceStatus.className = 'tag tag-warning';
-  }
-}
-
-function reconnectStream() {
-  if (!aiLiveStream) return;
-
-  aiLiveStream.style.display = 'block';
-  if (streamFallback) {
-    streamFallback.style.display = 'none';
-  }
-
-  aiLiveStream.src = 'http://localhost:5000/video_feed?t=' + new Date().getTime();
-
-  sourceStatus.textContent = 'Connecting AI Stream';
-  sourceStatus.className = 'tag tag-info';
-}
-
-function hideStream() {
-  if (aiLiveStream) {
-    aiLiveStream.style.display = 'none';
-  }
-
-  if (streamFallback) {
-    streamFallback.style.display = 'flex';
-  }
-
-  sourceStatus.textContent = 'Stream Hidden';
-  sourceStatus.className = 'tag tag-warning';
-}
-
-startCameraBtn.addEventListener('click', reconnectStream);
-stopCameraBtn.addEventListener('click', hideStream);
-
-captureSnapshotBtn.addEventListener('click', () => {
-  window.open('http://localhost:5000/video_feed', '_blank');
-});
-
-refreshMonitoringStatus();
-setInterval(refreshMonitoringStatus, 2000);
-</script>
+<script src="<?= esc(asset_url('js/monitoring.js')) ?>"></script>
 
 <?php page_end(); ?>

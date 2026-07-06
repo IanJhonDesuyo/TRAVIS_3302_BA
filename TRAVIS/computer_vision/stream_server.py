@@ -1,67 +1,82 @@
 """
 TRAVIS Live Stream Server
-Streams the latest AI frame saved by detect_video.py
+Shared-memory MJPEG stream
 """
 
 from flask import Flask, Response
 import cv2
-import os
-import time
+import threading
+import numpy as np
 
 app = Flask(__name__)
 
-SNAPSHOT_PATH = "snapshots/current.jpg"
+# ==========================================
+# Shared Frame Buffer
+# ==========================================
 
+latest_frame = None
+frame_lock = threading.Lock()
+
+
+def update_frame(frame):
+    """
+    Receives the latest AI frame from detect_video.py
+    """
+
+    global latest_frame
+
+    with frame_lock:
+        latest_frame = frame.copy()
+
+
+# ==========================================
+# MJPEG Generator
+# ==========================================
 
 def generate_frames():
 
+    global latest_frame
+
     while True:
 
-        if os.path.exists(SNAPSHOT_PATH):
+        with frame_lock:
 
-            frame = cv2.imread(SNAPSHOT_PATH)
+            if latest_frame is None:
 
-            if frame is not None:
+                frame = np.ones((480, 640, 3), dtype=np.uint8) * 255
 
-                ret, buffer = cv2.imencode(".jpg", frame)
-
-                if ret:
-
-                    yield (
-                        b'--frame\r\n'
-                        b'Content-Type: image/jpeg\r\n\r\n' +
-                        buffer.tobytes() +
-                        b'\r\n'
-                    )
-
-        else:
-
-            blank = 255 * __import__("numpy").ones((480, 640, 3), dtype="uint8")
-
-            cv2.putText(
-                blank,
-                "Waiting for AI frames...",
-                (120, 240),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.8,
-                (0, 0, 0),
-                2
-            )
-
-            ret, buffer = cv2.imencode(".jpg", blank)
-
-            if ret:
-
-                yield (
-                    b'--frame\r\n'
-                    b'Content-Type: image/jpeg\r\n\r\n' +
-                    buffer.tobytes() +
-                    b'\r\n'
+                cv2.putText(
+                    frame,
+                    "Waiting for AI...",
+                    (170, 240),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    1,
+                    (0, 0, 0),
+                    2
                 )
 
-        # ~30 FPS
-        time.sleep(0.10)
+            else:
 
+                frame = latest_frame.copy()
+
+        success, buffer = cv2.imencode(".jpg", frame)
+
+        if not success:
+            continue
+
+        frame_bytes = buffer.tobytes()
+
+        yield (
+            b'--frame\r\n'
+            b'Content-Type: image/jpeg\r\n\r\n'
+            + frame_bytes +
+            b'\r\n'
+        )
+
+
+# ==========================================
+# Flask Route
+# ==========================================
 
 @app.route("/video_feed")
 def video_feed():
@@ -72,16 +87,38 @@ def video_feed():
     )
 
 
+# ==========================================
+# Start Server
+# ==========================================
+
+def start_stream():
+
+    threading.Thread(
+        target=lambda: app.run(
+            host="0.0.0.0",
+            port=5000,
+            threaded=True,
+            debug=False,
+            use_reloader=False
+        ),
+        daemon=True
+    ).start()
+
+
+# ==========================================
+# Standalone Run
+# ==========================================
+
 if __name__ == "__main__":
 
-    print("------------------------------------")
+    print("--------------------------------")
     print("TRAVIS Live Stream Server")
     print("http://localhost:5000/video_feed")
-    print("------------------------------------")
+    print("--------------------------------")
 
     app.run(
         host="0.0.0.0",
         port=5000,
-        debug=False,
-        threaded=True
+        threaded=True,
+        debug=False
     )

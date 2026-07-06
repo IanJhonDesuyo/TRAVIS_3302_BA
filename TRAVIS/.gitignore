@@ -40,5 +40,15 @@ uploads/snapshots/
 # =========================
 # OS Files
 # =========================
+
+# Runtime status files
+Web_app/api/analysis_status.json
+Web_app/api/latest_status.json
+
+# Web uploads
+Web_app/uploads/
+
+# Keep the uploads folder in Git
+!Web_app/uploads/.gitkeep
 Thumbs.db
 .DS_Store

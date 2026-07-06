@@ -35,7 +35,9 @@ OUTPUT_VIDEO = "processed_video.mp4"
 # ==========================================
 # Monitoring API
 # ==========================================
+CAMERA_ID = 1
 STATUS_API_URL = "http://localhost/TRAVIS/Web_app/api/update_status.php"
+MONITORING_LOG_API_URL = "http://localhost/TRAVIS/Web_app/api/save_monitoring_log.php"
 
 # ==========================================
 # Detection Classes
@@ -52,14 +54,24 @@ VEHICLE_CLASSES = [
 ALLOWED_CLASSES = [PERSON_CLASS] + VEHICLE_CLASSES
 
 # ==========================================
-# Direction Lines
+# Direction Counting Lines
+# Extended versions of your original lines
 # ==========================================
+
+# INBOUND
+# Original:
+# (390,300) -> (495,290)
+
 INBOUND_LINE = (
-    (390, 300),
-    (495, 290)
+    (330, 305),
+    (560, 285)
 )
 
+# OUTBOUND
+# Original:
+# (500,700) -> (660,650)
+
 OUTBOUND_LINE = (
-    (500, 700),
-    (660, 650)
-)
+    (420, 735),
+    (760, 630)
+) 

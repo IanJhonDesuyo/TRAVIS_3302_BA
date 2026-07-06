@@ -1,11 +1,14 @@
 from ultralytics import YOLO
 import cv2
 import os
-import requests
 import time
 import config
+from api_client import send_monitoring_log, send_status_update
 from utils import crossed_line
 from camera_source import CameraSource
+from stream_server import start_stream, update_frame
+from congestion import get_congestion_level
+from alert_engine import AlertEngine
 
 
 # ============================
@@ -29,6 +32,9 @@ OUTPUT_VIDEO = os.path.join(
 # Live Monitoring API
 
 last_api_update = 0
+last_log_save = 0
+last_logged_congestion_level = None
+last_logged_alert_status = None
 
 
 # ============================
@@ -47,7 +53,11 @@ if config.VIDEO_SOURCE == "video":
 
 
 
+start_stream()
+
 camera = CameraSource()
+
+alert_engine = AlertEngine()
 
 cap = camera.open()
 
@@ -235,13 +245,17 @@ while True:
                 -1
             )
 
+    congestion_level = get_congestion_level(visible_vehicle_count)
+
+    alert_status = alert_engine.update(congestion_level)
+
     # ============================
     # Dashboard Overlay
     # ============================
     cv2.rectangle(
         annotated_frame,
         (10, 10),
-        (410, 220),
+        (410, 280),
         (0, 0, 0),
         -1
     )
@@ -298,8 +312,28 @@ while True:
 
     cv2.putText(
         annotated_frame,
-        "Tracking : ByteTrack",
+        f"Congestion : {congestion_level}",
         (20, 205),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.6,
+        (255, 255, 255),
+        2
+    )
+
+    cv2.putText(
+        annotated_frame,
+        f"Alert Status : {alert_status}",
+        (20, 235),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.6,
+        (0, 165, 255),
+        2
+    )
+
+    cv2.putText(
+        annotated_frame,
+        "Tracking : ByteTrack",
+        (20, 265),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.6,
         (255, 255, 255),
@@ -313,26 +347,42 @@ while True:
             "inbound_count": inbound_count,
             "outbound_count": outbound_count,
             "officer_presence": "Unknown",
-            "congestion_level": "Monitoring",
+            "congestion_level": congestion_level,
+            "alert_status": alert_status,
             "potential_collision": "None",
             "ai_status": "Running"
         }
-        try:
-           requests.post(
-    config.STATUS_API_URL, json=payload, timeout=1)
-        except Exception:
-            pass
+
+        send_status_update(config.STATUS_API_URL, payload)
         last_api_update = time.time()
 
-    TEMP_FRAME = "snapshots/current_tmp.jpg"
-    LIVE_FRAME = "snapshots/current.jpg"
+    current_time = time.time()
+    log_due = current_time - last_log_save >= 30
+    congestion_changed = congestion_level != last_logged_congestion_level
+    alert_changed = alert_status != last_logged_alert_status
 
-    cv2.imwrite(TEMP_FRAME, annotated_frame)
+    if log_due or congestion_changed or alert_changed:
+        log_payload = {
+            "camera_id": config.CAMERA_ID,
+            "vehicle_count": visible_vehicle_count,
+            "inbound_count": inbound_count,
+            "outbound_count": outbound_count,
+            "congestion_level": congestion_level,
+            "officer_presence": "Unknown",
+            "potential_collision": "None",
+            "alert_generated": 1 if alert_status == "ALERT" else 0,
+            "incident_notes": None
+        }
 
-    os.replace(TEMP_FRAME, LIVE_FRAME)
+        send_monitoring_log(config.MONITORING_LOG_API_URL, log_payload)
+
+        last_log_save = current_time
+        last_logged_congestion_level = congestion_level
+        last_logged_alert_status = alert_status
+
+    update_frame(annotated_frame)
 
     out.write(annotated_frame)
-    
 
     cv2.imshow("TRAVIS AI Direction-Based Counting", annotated_frame)
 
