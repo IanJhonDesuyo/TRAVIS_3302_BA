@@ -54,24 +54,17 @@ VEHICLE_CLASSES = [
 ALLOWED_CLASSES = [PERSON_CLASS] + VEHICLE_CLASSES
 
 # ==========================================
-# Direction Counting Lines
-# Extended versions of your original lines
+# Direction Lines - Normalized Coordinates
+# Works with any video resolution
+# Values are based on 1280x720 reference
 # ==========================================
 
-# INBOUND
-# Original:
-# (390,300) -> (495,290)
-
-INBOUND_LINE = (
-    (330, 305),
-    (560, 285)
+INBOUND_LINE_NORMALIZED = (
+    (330 / 1280, 305 / 720),
+    (560 / 1280, 285 / 720)
 )
 
-# OUTBOUND
-# Original:
-# (500,700) -> (660,650)
-
-OUTBOUND_LINE = (
-    (420, 735),
-    (760, 630)
-) 
+OUTBOUND_LINE_NORMALIZED = (
+    (420 / 1280, 735 / 720),
+    (760 / 1280, 630 / 720)
+)

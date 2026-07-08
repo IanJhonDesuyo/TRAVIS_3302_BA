@@ -26,7 +26,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['cctv_video'])) {
 
         if (move_uploaded_file($_FILES['cctv_video']['tmp_name'], $target)) {
             $uploadedVideo = 'computer_vision/uploads/videos/test.mp4';
-            $uploadMessage = 'CCTV video uploaded successfully. Ready to analyze.';
+            $statusFile = __DIR__ . '/api/analysis_status.json';
+            file_put_contents($statusFile, json_encode([
+                'analysis_status' => 'Idle',
+                'ai_status' => 'Idle',
+                'message' => '',
+                'updated_at' => date('Y-m-d H:i:s'),
+                'updated_at_epoch' => time()
+            ], JSON_PRETTY_PRINT));
+
+            $uploadMessage = 'CCTV video uploaded successfully.';
         } else {
             $uploadMessage = 'Upload failed. Please check folder permissions.';
         }
@@ -57,7 +66,7 @@ page_start('Live Monitoring', 'monitoring', 'Search monitoring logs...');
 <div class="d-flex justify-content-between flex-wrap mb-4 gap-2">
   <div>
     <h3 class="page-title">TRAVIS AI Monitoring</h3>
-    <p class="page-sub">AI-powered traffic monitoring for uploaded CCTV footage, laptop camera, and Tapo camera integration</p>
+    <p class="page-sub">AI-powered traffic monitoring for uploaded CCTV footage</p>
   </div>
 
   <div class="d-flex gap-2">
@@ -80,7 +89,7 @@ page_start('Live Monitoring', 'monitoring', 'Search monitoring logs...');
       <div class="section-head">
         <div>
           <h6>Main Camera Monitor</h6>
-          <small class="text-muted">Laptop camera preview or uploaded CCTV test video</small>
+          <small class="text-muted">Uploaded CCTV test video analysis stream</small>
         </div>
         <span class="tag tag-info" id="sourceStatus">Ready</span>
       </div>
@@ -103,7 +112,7 @@ page_start('Live Monitoring', 'monitoring', 'Search monitoring logs...');
           <i class="bi bi-broadcast fs-1 d-block mb-3"></i>
           <h5>Waiting for AI live stream</h5>
           <p class="mb-0 opacity-75">
-            Run <code>python detect_video.py</code> and start the Flask stream server.
+            Start analysis from the dashboard to activate the AI stream.
           </p>
         </div>
 
@@ -138,24 +147,29 @@ page_start('Live Monitoring', 'monitoring', 'Search monitoring logs...');
     <div class="section-card mb-3">
       <div class="section-head"><h6>Upload CCTV Video</h6></div>
 
-      <form method="post" enctype="multipart/form-data">
+      <form method="post" enctype="multipart/form-data" id="uploadVideoForm">
         <label class="form-label small fw-semibold">LGU CCTV Video Copy</label>
         <input type="hidden" name="MAX_FILE_SIZE" value="<?= $maxUploadBytes ?>">
-        <input class="form-control mb-2" type="file" name="cctv_video" accept="video/mp4,video/avi,video/quicktime,video/x-matroska" required>
-        <button class="btn btn-primary w-100">
+        <input class="form-control mb-2" type="file" name="cctv_video" id="cctvVideoInput" accept="video/mp4,video/avi,video/quicktime,video/x-matroska" required>
+        <button class="btn btn-primary w-100" type="submit" id="uploadVideoBtn">
           <i class="bi bi-upload me-1"></i>Upload Video
         </button>
+        <small class="text-muted d-block mt-2">
+          Supported: MP4, AVI, MOV, MKV up to 500MB. Saved as <code>computer_vision/uploads/videos/test.mp4</code>.
+        </small>
       </form>
 
-      <button class="btn btn-accent w-100 mt-2" type="button" id="analyzeVideoBtn">
-        <i class="bi bi-play-circle me-1"></i>Analyze Video
-      </button>
+      <div class="d-flex gap-2 mt-3">
+        <button class="btn btn-accent flex-fill" type="button" id="startAnalysisBtn">
+          <i class="bi bi-play-circle me-1"></i>Start Analysis
+        </button>
+
+        <button class="btn btn-light flex-fill" type="button" id="stopAnalysisBtn">
+          <i class="bi bi-stop-circle me-1"></i>Stop Analysis
+        </button>
+      </div>
 
       <div class="small mt-2" id="analysisMessage"></div>
-
-      <small class="text-muted d-block mt-2">
-        Supported: MP4, AVI, MOV, MKV up to 500MB. Saved as <code>computer_vision/uploads/videos/test.mp4</code>.
-      </small>
     </div>
 
     <div class="section-card">
@@ -173,7 +187,15 @@ page_start('Live Monitoring', 'monitoring', 'Search monitoring logs...');
     <div class="stat-card">
       <div class="stat-icon tone-success"><i class="bi bi-cpu"></i></div>
       <div class="stat-label">AI Status</div>
-      <div class="stat-value"><span class="tag tag-muted" id="aiStatus">Offline</span></div>
+      <div class="stat-value"><span class="tag tag-muted" id="aiStatus">Idle</span></div>
+    </div>
+  </div>
+
+  <div class="col-sm-6 col-xl-3">
+    <div class="stat-card">
+      <div class="stat-icon tone-primary"><i class="bi bi-camera-video"></i></div>
+      <div class="stat-label">Source</div>
+      <div class="stat-value" style="font-size:1.05rem;" id="analysisSource">Not selected</div>
     </div>
   </div>
 
@@ -203,6 +225,17 @@ page_start('Live Monitoring', 'monitoring', 'Search monitoring logs...');
 </div>
 
 <div class="row g-3 mb-4">
+  <div class="col-sm-6 col-xl-3">
+    <div class="stat-card">
+      <div class="stat-icon tone-primary"><i class="bi bi-activity"></i></div>
+      <div class="stat-label">Progress</div>
+      <div class="stat-value" style="font-size:1rem;" id="analysisProgressText">Idle</div>
+      <div class="progress mt-2" style="height:8px;">
+        <div class="progress-bar" id="analysisProgressBar" style="width:0%"></div>
+      </div>
+    </div>
+  </div>
+
   <div class="col-sm-6 col-xl-3">
     <div class="stat-card">
       <div class="stat-icon tone-warning"><i class="bi bi-speedometer2"></i></div>
@@ -309,6 +342,6 @@ page_start('Live Monitoring', 'monitoring', 'Search monitoring logs...');
   </div>
 </div>
 
-<script src="<?= esc(asset_url('js/monitoring.js')) ?>"></script>
+<script src="<?= esc(asset_url('js/monitoring.js') . '?v=' . filemtime(dirname(__DIR__) . '/js/monitoring.js')) ?>"></script>
 
 <?php page_end(); ?>

@@ -54,3 +54,15 @@ def crossed_line(previous_point, current_point, line):
         line[0],
         line[1]
     )
+
+def scale_line(normalized_line, width, height):
+    return (
+        (
+            int(normalized_line[0][0] * width),
+            int(normalized_line[0][1] * height)
+        ),
+        (
+            int(normalized_line[1][0] * width),
+            int(normalized_line[1][1] * height)
+        )
+    )

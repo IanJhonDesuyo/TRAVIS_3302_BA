@@ -5,8 +5,22 @@ const sourceStatus = document.getElementById('sourceStatus');
 const aiLiveStream = document.getElementById('aiLiveStream');
 const streamFallback = document.getElementById('streamFallback');
 const monitoringLogsBody = document.getElementById('monitoringLogsBody');
-const analyzeVideoBtn = document.getElementById('analyzeVideoBtn');
+const startAnalysisBtn = document.getElementById('startAnalysisBtn');
+const stopAnalysisBtn = document.getElementById('stopAnalysisBtn');
 const analysisMessage = document.getElementById('analysisMessage');
+const uploadVideoBtn = document.getElementById('uploadVideoBtn');
+const cctvVideoInput = document.getElementById('cctvVideoInput');
+
+// =============================
+// API Configuration
+// =============================
+const API_BASE = "/TRAVIS/Web_app/api/";
+
+function apiUrl(file) {
+    return API_BASE + file;
+}
+
+const STREAM_URL = "http://localhost:5000/video_feed";
 
 function setText(id, value) {
   const el = document.getElementById(id);
@@ -34,10 +48,9 @@ function badgeClass(type, value) {
   }
 
   if (type === 'ai') {
-    if (normalized === 'running') return 'tag tag-success';
-    if (normalized === 'completed') return 'tag tag-success';
+    if (normalized === 'running' || normalized === 'completed') return 'tag tag-success';
     if (normalized === 'starting') return 'tag tag-warning';
-    if (normalized === 'idle' || normalized === 'offline') return 'tag tag-muted';
+    if (normalized === 'idle' || normalized === 'offline' || normalized === 'stopped') return 'tag tag-muted';
     if (normalized === 'error') return 'tag tag-danger';
   }
 
@@ -63,11 +76,23 @@ function setAnalysisControls(status, message) {
   const normalized = String(status ?? 'Idle').toLowerCase();
   const isBusy = normalized === 'starting' || normalized === 'running';
 
-  if (analyzeVideoBtn) {
-    analyzeVideoBtn.disabled = isBusy;
-    analyzeVideoBtn.innerHTML = isBusy
-      ? '<i class="bi bi-hourglass-split me-1"></i>Analysis Running'
-      : '<i class="bi bi-play-circle me-1"></i>Analyze Video';
+  if (startAnalysisBtn) {
+    startAnalysisBtn.disabled = isBusy;
+    startAnalysisBtn.innerHTML = normalized === 'starting'
+      ? '<i class="bi bi-hourglass-split me-1"></i>Starting...'
+      : '<i class="bi bi-play-circle me-1"></i>Start Analysis';
+  }
+
+  if (stopAnalysisBtn) {
+    stopAnalysisBtn.disabled = !isBusy;
+  }
+
+  if (uploadVideoBtn) {
+    uploadVideoBtn.disabled = isBusy;
+  }
+
+  if (cctvVideoInput) {
+    cctvVideoInput.disabled = isBusy;
   }
 
   if (analysisMessage) {
@@ -75,6 +100,44 @@ function setAnalysisControls(status, message) {
     analysisMessage.className = normalized === 'error'
       ? 'small mt-2 text-danger'
       : 'small mt-2 text-muted';
+  }
+}
+
+function setAnalysisSource(data) {
+  const label = data.source_label ?? 'Uploaded Video';
+  const name = data.source_name ? ` ${data.source_name}` : '';
+  setText('analysisSource', `${label}${name}`);
+}
+
+function setProgress(data) {
+  const analysisStatus = String(data.analysis_status ?? data.ai_status ?? 'Idle').toLowerCase();
+  const progressText = document.getElementById('analysisProgressText');
+  const progressBar = document.getElementById('analysisProgressBar');
+
+  if (analysisStatus === 'idle' || analysisStatus === 'stopped' || analysisStatus === 'completed') {
+    if (progressText) {
+      progressText.textContent = analysisStatus.charAt(0).toUpperCase() + analysisStatus.slice(1);
+    }
+    if (progressBar) {
+      progressBar.classList.remove('progress-bar-striped', 'progress-bar-animated');
+      progressBar.style.width = analysisStatus === 'completed' ? '100%' : '0%';
+    }
+    return;
+  }
+
+  const currentFrame = Number(data.current_frame ?? 0);
+  const totalFrames = Number(data.total_frames ?? 0);
+  const percent = Number(data.progress_percent ?? 0);
+
+  if (progressText) {
+    progressText.textContent = totalFrames > 0
+      ? `${currentFrame} / ${totalFrames} frames (${percent.toFixed(1)}%)`
+      : 'Waiting for frames';
+  }
+
+  if (progressBar) {
+    progressBar.classList.remove('progress-bar-striped', 'progress-bar-animated');
+    progressBar.style.width = `${Math.max(0, Math.min(100, percent))}%`;
   }
 }
 
@@ -119,15 +182,80 @@ async function fetchJson(url, options = {}) {
     cache: 'no-store',
     ...options
   });
-  if (!response.ok) {
-    throw new Error('Request failed.');
+
+  const raw = await response.text();
+
+  // DEBUG OUTPUT
+  console.group("API DEBUG");
+  console.log("URL:", url);
+  console.log("HTTP Status:", response.status);
+  console.log("Raw Response:");
+  console.log(raw);
+  console.groupEnd();
+
+  let data;
+
+  try {
+    data = JSON.parse(raw);
+  } catch (e) {
+
+    alert(
+      "BACKEND RESPONSE:\n\n" +
+      raw
+    );
+
+    throw new Error(
+      "Backend did not return valid JSON.\n\nCheck browser console."
+    );
   }
-  return response.json();
+
+  if (!response.ok) {
+    throw new Error(data.message ?? `HTTP ${response.status}`);
+  }
+
+  return data;
+}
+
+function parseJsonResponse(raw) {
+  const text = String(raw ?? '').trim();
+
+  if (text === '') {
+    return {};
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    console.error('Invalid JSON response from API:', text);
+
+    const objectStart = text.indexOf('{');
+    const objectEnd = text.lastIndexOf('}');
+    const arrayStart = text.indexOf('[');
+    const arrayEnd = text.lastIndexOf(']');
+
+    const objectJson = objectStart !== -1 && objectEnd > objectStart
+      ? text.slice(objectStart, objectEnd + 1)
+      : '';
+    const arrayJson = arrayStart !== -1 && arrayEnd > arrayStart
+      ? text.slice(arrayStart, arrayEnd + 1)
+      : '';
+
+    const candidate = objectJson || arrayJson;
+    if (candidate) {
+      try {
+        return JSON.parse(candidate);
+      } catch (candidateError) {
+        throw new Error('Invalid JSON response.');
+      }
+    }
+
+    throw new Error('Invalid JSON response.');
+  }
 }
 
 async function refreshMonitoringStatus() {
   try {
-    const data = await fetchJson('api/get_status.php');
+    const data = await fetchJson(apiUrl('get_status.php'));
     const analysisStatus = data.analysis_status ?? data.ai_status ?? 'Idle';
 
     setBadge('aiStatus', analysisStatus, 'ai');
@@ -140,10 +268,18 @@ async function refreshMonitoringStatus() {
     setBadge('potentialCollision', data.potential_collision ?? 'None', 'default');
     setText('lastUpdated', data.recorded_at ?? 'No data');
     setAnalysisControls(analysisStatus, data.message ?? '');
+    setAnalysisSource(data);
+    setProgress(data);
 
-    if (sourceStatus) {
+    if (sourceStatus && String(analysisStatus).toLowerCase() === 'running') {
       sourceStatus.textContent = 'Live Data Active';
       sourceStatus.className = 'tag tag-success';
+    } else if (sourceStatus && String(analysisStatus).toLowerCase() === 'starting') {
+      sourceStatus.textContent = 'Starting AI Stream';
+      sourceStatus.className = 'tag tag-info';
+    } else if (sourceStatus) {
+      sourceStatus.textContent = analysisStatus;
+      sourceStatus.className = badgeClass('ai', analysisStatus);
     }
   } catch (error) {
     setBadge('aiStatus', 'Offline', 'ai');
@@ -157,7 +293,7 @@ async function refreshMonitoringStatus() {
 
 async function refreshMonitoringLogs() {
   try {
-    const data = await fetchJson('api/get_monitoring_logs.php');
+    const data = await fetchJson(apiUrl('get_monitoring_logs.php'))
     renderLogs(data.logs ?? []);
   } catch (error) {
     if (monitoringLogsBody) {
@@ -170,11 +306,15 @@ function reconnectStream() {
   if (!aiLiveStream) return;
 
   aiLiveStream.style.display = 'block';
+
+  if (streamFallback) {
+    streamFallback.style.display = "none";
+}
   if (streamFallback) {
     streamFallback.style.display = 'none';
   }
 
-  aiLiveStream.src = 'http://localhost:5000/video_feed?t=' + new Date().getTime();
+  aiLiveStream.src = `${STREAM_URL}?t=${new Date().getTime()}`;
 
   if (sourceStatus) {
     sourceStatus.textContent = 'Connecting AI Stream';
@@ -198,31 +338,123 @@ function hideStream() {
 }
 
 async function startAnalysis() {
-  if (analyzeVideoBtn) {
-    analyzeVideoBtn.disabled = true;
+  if (startAnalysisBtn) {
+    startAnalysisBtn.disabled = true;
   }
+
   setAnalysisControls('Starting', 'Starting AI analysis...');
 
   try {
-    const response = await fetchJson('api/start_analysis.php', {
+    const response = await fetchJson(apiUrl('start_analysis.php'), {
       method: 'POST'
     });
-    setAnalysisControls(response.analysis_status ?? 'Starting', response.message ?? '');
+
+    if (response.success !== true) {
+      throw new Error(response.message ?? 'Unable to start AI analysis.');
+    }
+
+    setAnalysisControls(
+      response.analysis_status ?? 'Starting',
+      response.message ?? 'Starting AI analysis...'
+    );
+
     reconnectStream();
     refreshDashboard();
+
   } catch (error) {
-    setAnalysisControls('Error', 'Unable to start analysis. Check upload and server permissions.');
+    const message =
+      error.message && error.message !== 'Request failed.'
+        ? error.message
+        : 'Unable to start analysis. Check upload and server permissions.';
+
+    setAnalysisControls('Error', message);
+
+  } finally {
+
+    if (startAnalysisBtn) {
+      startAnalysisBtn.disabled = false;
+    }
+
   }
+
+}
+
+async function stopAnalysis() {
+
+  if (stopAnalysisBtn) {
+    stopAnalysisBtn.disabled = true;
+  }
+
+  try {
+
+    const response = await fetchJson(apiUrl('stop_analysis.php'), {
+      method: 'POST'
+    });
+
+    // Update dashboard status
+    setAnalysisControls(
+      response.analysis_status ?? 'Stopped',
+      response.message ?? 'Analysis stopped.'
+    );
+
+    // ==========================
+    // STOP THE VIDEO STREAM
+    // ==========================
+
+    if (aiLiveStream) {
+
+      // Disconnect the Flask stream
+      aiLiveStream.src = "";
+
+      // Hide the <img>
+      aiLiveStream.style.display = "none";
+
+    }
+
+    if (streamFallback) {
+
+      // Show the "Waiting for AI live stream" placeholder again
+      streamFallback.style.display = "flex";
+
+    }
+
+    if (sourceStatus) {
+
+      sourceStatus.textContent = "Waiting for AI Data";
+      sourceStatus.className = "tag tag-warning";
+
+    }
+
+    refreshDashboard();
+
+  } catch (error) {
+
+    const message =
+      error.message && error.message !== 'Request failed'
+        ? error.message
+        : 'Unable to stop analysis.';
+
+    setAnalysisControls('Error', message);
+
+  } finally {
+
+    if (stopAnalysisBtn) {
+      stopAnalysisBtn.disabled = false;
+    }
+
+  }
+
 }
 
 if (startCameraBtn) startCameraBtn.addEventListener('click', reconnectStream);
 if (stopCameraBtn) stopCameraBtn.addEventListener('click', hideStream);
 if (captureSnapshotBtn) {
   captureSnapshotBtn.addEventListener('click', () => {
-    window.open('http://localhost:5000/video_feed', '_blank');
+    window.open(STREAM_URL, '_blank');
   });
 }
-if (analyzeVideoBtn) analyzeVideoBtn.addEventListener('click', startAnalysis);
+if (startAnalysisBtn) startAnalysisBtn.addEventListener('click', startAnalysis);
+if (stopAnalysisBtn) stopAnalysisBtn.addEventListener('click', stopAnalysis);
 
 function refreshDashboard() {
   refreshMonitoringStatus();

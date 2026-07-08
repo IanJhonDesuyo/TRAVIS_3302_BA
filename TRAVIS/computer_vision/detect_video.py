@@ -1,15 +1,36 @@
 from ultralytics import YOLO
+import argparse
 import cv2
 import os
 import time
 import config
 from api_client import send_monitoring_log, send_status_update
-from utils import crossed_line
+from utils import crossed_line, scale_line
 from camera_source import CameraSource
 from stream_server import start_stream, update_frame
 from congestion import get_congestion_level
 from alert_engine import AlertEngine
 
+
+def apply_selected_source():
+    parser = argparse.ArgumentParser(description="TRAVIS AI video detection engine")
+    parser.add_argument("--source-type", choices=["uploaded_video", "tapo_camera"], default=None)
+    parser.add_argument("--source", default=None)
+    args = parser.parse_args()
+
+    if args.source_type == "uploaded_video":
+        config.VIDEO_SOURCE = "video"
+        if args.source:
+            config.VIDEO_PATH = args.source
+    elif args.source_type == "tapo_camera":
+        config.VIDEO_SOURCE = "tapo"
+        if args.source:
+            config.TAPO_RTSP = args.source
+
+    return args
+
+
+selected_source = apply_selected_source()
 
 # ============================
 # Load YOLO Model
@@ -45,6 +66,8 @@ print("Video Source:", config.VIDEO_SOURCE)
 if config.VIDEO_SOURCE == "video":
     print("Video path:", os.path.abspath(config.VIDEO_PATH))
     print("Video exists:", os.path.exists(config.VIDEO_PATH))
+elif config.VIDEO_SOURCE == "tapo":
+    print("RTSP source configured:", bool(config.TAPO_RTSP))
 
 # ============================
 # Open Video
@@ -67,7 +90,37 @@ if not cap.isOpened():
 
 width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
 height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+print(f"Capture Resolution: {width} x {height}")
 fps = cap.get(cv2.CAP_PROP_FPS)
+total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) if config.VIDEO_SOURCE == "video" else 0
+current_frame = 0
+source_started_at = time.time()
+
+INBOUND_LINE = scale_line(
+    config.INBOUND_LINE_NORMALIZED,
+    width,
+    height
+)
+
+OUTBOUND_LINE = scale_line(
+    config.OUTBOUND_LINE_NORMALIZED,
+    width,
+    height
+)
+
+FONT_SCALE = max(0.45, width / 1800)
+TITLE_SCALE = max(0.55, width / 1600)
+LINE_THICKNESS = max(2, width // 500)
+BOX_THICKNESS = max(2, width // 600)
+POINT_RADIUS = max(3, width // 350)
+
+DASHBOARD_X = int(width * 0.01)
+DASHBOARD_Y = int(height * 0.02)
+DASHBOARD_W = int(width * 0.34)
+DASHBOARD_H = int(height * 0.34)
+
+print("Inbound Line:", INBOUND_LINE)
+print("Outbound Line:", OUTBOUND_LINE)
 
 if fps == 0:
     fps = 30
@@ -108,6 +161,9 @@ while True:
     if not ret:
         break
 
+    current_frame += 1
+   
+
     visible_vehicle_count = 0
     visible_person_count = 0
 
@@ -116,8 +172,8 @@ while True:
     # Draw inbound line
     cv2.line(
         annotated_frame,
-        config.INBOUND_LINE[0],
-        config.INBOUND_LINE[1],
+        INBOUND_LINE[0],
+        INBOUND_LINE[1],
         (0, 255, 0),
         3
     )
@@ -125,7 +181,7 @@ while True:
     cv2.putText(
         annotated_frame,
         "INBOUND",
-        (config.INBOUND_LINE[0][0], config.INBOUND_LINE[0][1] - 10),
+        (INBOUND_LINE[0][0], INBOUND_LINE[0][1] - 10),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.7,
         (0, 255, 0),
@@ -135,8 +191,8 @@ while True:
     # Draw outbound line
     cv2.line(
         annotated_frame,
-        config.OUTBOUND_LINE[0],
-        config.OUTBOUND_LINE[1],
+        OUTBOUND_LINE[0],
+        OUTBOUND_LINE[1],
         (0, 0, 255),
         3
     )
@@ -144,7 +200,7 @@ while True:
     cv2.putText(
         annotated_frame,
         "OUTBOUND",
-        (config.OUTBOUND_LINE[0][0], config.OUTBOUND_LINE[0][1] - 10),
+        (OUTBOUND_LINE[0][0], OUTBOUND_LINE[0][1] - 10),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.7,
         (0, 0, 255),
@@ -205,13 +261,13 @@ while True:
                         previous_point = track_history[track_id][-2]
 
                         # Inbound count
-                        if crossed_line(previous_point, current_point, config.INBOUND_LINE):
+                        if crossed_line(previous_point, current_point, INBOUND_LINE):
                             if track_id not in counted_inbound:
                                 counted_inbound.add(track_id)
                                 inbound_count += 1
 
                         # Outbound count
-                        if crossed_line(previous_point, current_point, config.OUTBOUND_LINE):
+                        if crossed_line(previous_point, current_point, OUTBOUND_LINE):
                             if track_id not in counted_outbound:
                                 counted_outbound.add(track_id)
                                 outbound_count += 1
@@ -253,12 +309,12 @@ while True:
     # Dashboard Overlay
     # ============================
     cv2.rectangle(
-        annotated_frame,
-        (10, 10),
-        (410, 280),
-        (0, 0, 0),
-        -1
-    )
+    annotated_frame,
+    (DASHBOARD_X, DASHBOARD_Y),
+    (DASHBOARD_X + DASHBOARD_W, DASHBOARD_Y + DASHBOARD_H),
+    (0, 0, 0),
+    -1
+)
 
     cv2.putText(
         annotated_frame,
@@ -342,6 +398,10 @@ while True:
 
     # Send status to PHP every second
     if time.time() - last_api_update >= 1:
+        progress_percent = 0
+        if total_frames > 0:
+            progress_percent = min(100, round((current_frame / total_frames) * 100, 2))
+
         payload = {
             "vehicle_count": visible_vehicle_count,
             "inbound_count": inbound_count,
@@ -350,7 +410,12 @@ while True:
             "congestion_level": congestion_level,
             "alert_status": alert_status,
             "potential_collision": "None",
-            "ai_status": "Running"
+            "ai_status": "Running",
+            "source_type": selected_source.source_type or ("uploaded_video" if config.VIDEO_SOURCE == "video" else config.VIDEO_SOURCE),
+            "current_frame": current_frame,
+            "total_frames": total_frames,
+            "progress_percent": progress_percent,
+            "running_time_seconds": int(time.time() - source_started_at)
         }
 
         send_status_update(config.STATUS_API_URL, payload)

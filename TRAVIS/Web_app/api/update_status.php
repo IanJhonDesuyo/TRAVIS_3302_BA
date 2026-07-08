@@ -24,6 +24,11 @@ $officer_presence = $data["officer_presence"] ?? "Unknown";
 $potential_collision = $data["potential_collision"] ?? "None";
 $alert_status = $data["alert_status"] ?? "NORMAL";
 $ai_status = $data["ai_status"] ?? "Running";
+$source_type = $data["source_type"] ?? null;
+$current_frame = intval($data["current_frame"] ?? 0);
+$total_frames = intval($data["total_frames"] ?? 0);
+$progress_percent = floatval($data["progress_percent"] ?? 0);
+$running_time_seconds = intval($data["running_time_seconds"] ?? 0);
 
 $latest_status = [
     "vehicle_count" => $vehicle_count,
@@ -34,6 +39,11 @@ $latest_status = [
     "officer_presence" => $officer_presence,
     "potential_collision" => $potential_collision,
     "ai_status" => $ai_status,
+    "source_type" => $source_type,
+    "current_frame" => $current_frame,
+    "total_frames" => $total_frames,
+    "progress_percent" => $progress_percent,
+    "running_time_seconds" => $running_time_seconds,
     "recorded_at" => date("Y-m-d H:i:s"),
     "updated_at_epoch" => time()
 ];
