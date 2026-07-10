@@ -596,3 +596,189 @@ body {
     transition: none !important;
   }
 }
+
+/* Admin dashboard glass surfaces */
+.admin-dashboard {
+  --dashboard-glass: rgba(255, 255, 255, .58);
+  --dashboard-glass-strong: rgba(255, 255, 255, .72);
+  --dashboard-glass-border: rgba(255, 255, 255, .68);
+  background:
+    radial-gradient(circle at 88% 8%, rgba(79, 195, 247, .28), transparent 30%),
+    radial-gradient(circle at 12% 92%, rgba(0, 168, 150, .20), transparent 32%),
+    linear-gradient(135deg, #dfeeff 0%, #edf8f6 50%, #fff4dc 100%);
+  background-attachment: fixed;
+}
+
+.admin-dashboard .sidebar {
+  background:
+    radial-gradient(circle at 20% 8%, rgba(245, 158, 11, .20), transparent 28%),
+    linear-gradient(180deg, rgba(7, 24, 45, .96), rgba(10, 49, 83, .94));
+  border-right: 3px solid rgba(245, 158, 11, .78);
+}
+
+.admin-dashboard .sidebar::after {
+  content: "";
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--sidebar-w) - 3px);
+  width: 3px;
+  background: linear-gradient(180deg, #f59e0b, #4fc3f7, #00a896);
+  pointer-events: none;
+}
+
+.admin-dashboard .topbar,
+.admin-dashboard .stat-card,
+.admin-dashboard .section-card,
+.admin-dashboard .mini-metric,
+.admin-dashboard .empty-state,
+.admin-dashboard .modal-content,
+.admin-dashboard .dropdown-menu,
+.admin-dashboard .card {
+  background: var(--dashboard-glass) !important;
+  border-color: var(--dashboard-glass-border) !important;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  box-shadow: 0 14px 34px rgba(15, 39, 66, .10);
+}
+
+.admin-dashboard .topbar,
+.admin-dashboard .modal-content,
+.admin-dashboard .dropdown-menu {
+  background: var(--dashboard-glass-strong) !important;
+}
+
+.admin-dashboard .table-scroll,
+.admin-dashboard .user-table-scroll,
+.admin-dashboard .report-table-scroll,
+.admin-dashboard .table-responsive {
+  background: rgba(255, 255, 255, .36);
+  border-color: var(--dashboard-glass-border);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.admin-dashboard .table {
+  --bs-table-bg: transparent;
+  --bs-table-accent-bg: transparent;
+  --bs-table-hover-bg: rgba(79, 195, 247, .13);
+}
+
+.admin-dashboard .table thead th,
+.admin-dashboard .table-scroll thead th {
+  background: rgba(235, 246, 255, .78) !important;
+}
+
+.admin-dashboard .form-control,
+.admin-dashboard .form-select,
+.admin-dashboard .btn-light {
+  background-color: rgba(255, 255, 255, .62);
+  border-color: rgba(148, 178, 205, .45);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+@media (max-width: 991.98px) {
+  .admin-dashboard .sidebar::after {
+    left: min(calc(86vw - 3px), 277px);
+  }
+}
+
+/* Glass sign-out confirmation */
+.admin-dashboard .signout-modal .modal-dialog {
+  max-width: 440px;
+}
+
+.admin-dashboard .login-success-modal .modal-dialog {
+  max-width: 440px;
+}
+
+.admin-dashboard .signout-modal .modal-content {
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(79, 195, 247, .32), transparent 45%),
+    rgba(240, 248, 255, .82) !important;
+  border: 1px solid rgba(255, 255, 255, .85) !important;
+  border-radius: 24px;
+  box-shadow: 0 30px 80px rgba(7, 38, 75, .28);
+}
+
+.admin-dashboard .login-success-modal .modal-content {
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(79, 195, 247, .38), transparent 46%),
+    rgba(240, 248, 255, .84) !important;
+  border: 1px solid rgba(255, 255, 255, .88) !important;
+  border-radius: 24px;
+  box-shadow: 0 30px 80px rgba(7, 38, 75, .28);
+}
+
+.admin-dashboard .signout-modal .modal-body {
+  padding: 2.25rem;
+}
+
+.admin-dashboard .login-success-modal .modal-body {
+  padding: 2.25rem;
+}
+
+.admin-dashboard .signout-icon {
+  width: 76px;
+  height: 76px;
+  margin: 0 auto 1.25rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 2rem;
+  background: linear-gradient(135deg, #0b3d78, #2196f3, #4fc3f7);
+  border: 5px solid rgba(255, 255, 255, .72);
+  box-shadow: 0 14px 32px rgba(25, 118, 210, .32);
+}
+
+.admin-dashboard .login-success-icon {
+  width: 76px;
+  height: 76px;
+  margin: 0 auto 1.25rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 2.2rem;
+  background: linear-gradient(135deg, #0b3d78, #1976d2, #4fc3f7);
+  border: 5px solid rgba(255, 255, 255, .76);
+  box-shadow: 0 14px 32px rgba(25, 118, 210, .34);
+}
+
+.admin-dashboard .btn-login-success {
+  color: #fff;
+  background: linear-gradient(135deg, #0b3d78, #1976d2, #4fc3f7);
+  border: 1px solid transparent;
+  box-shadow: 0 9px 22px rgba(25, 118, 210, .27);
+}
+
+.admin-dashboard .btn-login-success:hover,
+.admin-dashboard .btn-login-success:focus {
+  color: #fff;
+  background: linear-gradient(135deg, #082f5e, #125fae, #2196f3);
+  box-shadow: 0 12px 26px rgba(25, 118, 210, .36);
+}
+
+.admin-dashboard .btn-signout {
+  color: #fff;
+  background: linear-gradient(135deg, #0b3d78, #1976d2);
+  border: 1px solid transparent;
+  box-shadow: 0 9px 22px rgba(25, 118, 210, .25);
+}
+
+.admin-dashboard .btn-signout:hover,
+.admin-dashboard .btn-signout:focus {
+  color: #fff;
+  background: linear-gradient(135deg, #082f5e, #125fae);
+  box-shadow: 0 12px 26px rgba(25, 118, 210, .34);
+}
+
+.admin-dashboard .modal-backdrop.show {
+  opacity: .48;
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+}

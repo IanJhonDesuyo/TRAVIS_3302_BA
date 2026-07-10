@@ -45,12 +45,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $time = violation_post('violation_time');
         $amount = (float)violation_post('penalty_amount', '0');
 
+        $allowedViolations = traffic_violation_types();
+        $allowedFees = array_map('floatval', traffic_penalty_fees());
+
         if (
             $driver === '' || $license === '' || $plate === '' ||
             $vehicle === '' || $type === '' || $location === '' ||
             $date === '' || $time === '' || $amount <= 0
         ) {
             $message = 'Please complete all required fields and enter a valid penalty amount.';
+            $messageType = 'danger';
+        } elseif (!in_array($type, $allowedViolations, true)) {
+            $message = 'Please select a valid violation from the traffic ticket list.';
+            $messageType = 'danger';
+        } elseif (!in_array($amount, $allowedFees, true)) {
+            $message = 'Please select a valid penalty fee from the available amounts.';
             $messageType = 'danger';
         } else {
             $ticket = generateTicketNumber($conn);
@@ -289,11 +298,29 @@ page_start('Violations', 'violations', 'Search plate or ticket...');
             <div class="col-md-6"><label class="form-label">License Number</label><input type="text" name="license_number" class="form-control" required></div>
             <div class="col-md-6"><label class="form-label">Plate Number</label><input type="text" name="plate_number" class="form-control text-uppercase" required></div>
             <div class="col-md-6"><label class="form-label">Vehicle Type</label><select name="vehicle_type" class="form-select" required><option value="">Select vehicle type</option><option>Motorcycle</option><option>Car</option><option>SUV</option><option>Jeepney</option><option>Tricycle</option><option>Van</option><option>Truck</option><option>Bus</option><option>Other</option></select></div>
-            <div class="col-md-6"><label class="form-label">Violation Type</label><input type="text" name="violation_type" class="form-control" required></div>
+            <div class="col-md-6">
+              <label class="form-label" for="violationTypeInput">Violation Type</label>
+              <input type="text" id="violationTypeInput" name="violation_type" class="form-control" list="violationTypeOptions" placeholder="Type to search ticket violations..." autocomplete="off" required>
+              <datalist id="violationTypeOptions">
+                <?php foreach (traffic_violation_types() as $violationType): ?>
+                  <option value="<?= esc($violationType) ?>"></option>
+                <?php endforeach; ?>
+              </datalist>
+              <small class="text-muted">Start typing to filter the available violations.</small>
+            </div>
             <div class="col-md-6"><label class="form-label">Violation Location</label><input type="text" name="violation_location" class="form-control" placeholder="Nasugbu, Batangas location" required></div>
             <div class="col-md-3"><label class="form-label">Date</label><input type="date" name="violation_date" class="form-control" value="<?= date('Y-m-d') ?>" required></div>
             <div class="col-md-3"><label class="form-label">Time</label><input type="time" name="violation_time" class="form-control" value="<?= date('H:i') ?>" required></div>
-            <div class="col-md-6"><label class="form-label">Penalty Amount</label><input type="number" min="0.01" step="0.01" name="penalty_amount" class="form-control" required></div>
+            <div class="col-md-6">
+              <label class="form-label" for="penaltyFeeInput">Penalty Fee</label>
+              <input type="number" id="penaltyFeeInput" name="penalty_amount" class="form-control" list="penaltyFeeOptions" min="100" step="100" placeholder="Type or select a fee..." autocomplete="off" required>
+              <datalist id="penaltyFeeOptions">
+                <?php foreach (traffic_penalty_fees() as $penaltyFee): ?>
+                  <option value="<?= esc($penaltyFee) ?>" label="<?= peso($penaltyFee) ?>"></option>
+                <?php endforeach; ?>
+              </datalist>
+              <small class="text-muted">Type to filter, then choose the fee indicated by the issuing office.</small>
+            </div>
           </div>
           <small class="text-muted d-block mt-3">OCR scanning will be handled by the mobile application. Mobile records saved to the same database will also appear here.</small>
         </div>

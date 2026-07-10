@@ -24,8 +24,8 @@
   // Chart.js global defaults
   if (window.Chart) {
     Chart.defaults.font.family = "'Inter', system-ui, sans-serif";
-    Chart.defaults.color = '#6b7280';
-    Chart.defaults.borderColor = '#e5e7eb';
+    Chart.defaults.color = '#49657f';
+    Chart.defaults.borderColor = 'rgba(25, 118, 210, .12)';
   }
 
   // Live clock

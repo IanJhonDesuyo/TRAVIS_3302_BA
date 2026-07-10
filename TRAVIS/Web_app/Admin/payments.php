@@ -225,9 +225,11 @@ page_start('Payments', 'payments', 'Search payments...');
             <input type="hidden" name="violation_id" value="<?= (int)$selectedViolation['violation_id'] ?>">
 
             <div class="mb-3">
-              <label class="form-label">Amount Paid</label>
-              <input type="number" min="0.01" step="0.01" name="amount_paid" class="form-control" value="<?= esc($selectedViolation['penalty_amount']) ?>" required>
-              <small class="text-muted">The amount must match the recorded penalty.</small>
+              <label class="form-label">Violation Fee / Amount Paid</label>
+              <select name="amount_paid" class="form-select" required>
+                <option value="<?= esc($selectedViolation['penalty_amount']) ?>"><?= peso($selectedViolation['penalty_amount']) ?> &mdash; <?= esc($selectedViolation['violation_type']) ?></option>
+              </select>
+              <small class="text-muted">The fee is taken from the selected violation and cannot be changed during payment.</small>
             </div>
 
             <div class="mb-3">

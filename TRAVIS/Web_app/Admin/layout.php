@@ -46,7 +46,7 @@ function page_start(string $title, string $active = '', string $search = 'Search
     echo '<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />';
     echo '<link href="' . esc(asset_url('css/style.css')) . '" rel="stylesheet" />';
     echo '<style>.empty-state{border:1px dashed #d1d5db;border-radius:14px;padding:24px;text-align:center;color:#6b7280;background:#f9fafb}.camera-stage{min-height:420px;background:linear-gradient(135deg,#0f172a,#1e3a8a);border-radius:18px;display:flex;align-items:center;justify-content:center;color:#fff;position:relative;overflow:hidden}.camera-stage video{width:100%;height:100%;max-height:480px;object-fit:contain;background:#000}.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}.mini-metric{background:#fff;border:1px solid #edf2f7;border-radius:14px;padding:14px}.mini-metric small{color:#64748b}.mini-metric strong{display:block;font-size:1.3rem}.nav-link.active{background:rgba(255,255,255,.12);color:#fff}</style>';
-    echo '</head><body>';
+    echo '</head><body class="admin-dashboard">';
     sidebar($active);
     echo '<div class="main-wrapper"><header class="topbar"><button class="btn btn-light d-lg-none" id="sidebarToggle"><i class="bi bi-list"></i></button>';
     echo '<div class="search"><i class="bi bi-search"></i><input class="form-control" placeholder="' . esc($search) . '" /></div>';
@@ -55,13 +55,26 @@ function page_start(string $title, string $active = '', string $search = 'Search
     echo '<a href="' . esc(app_url('alerts.php')) . '" class="btn btn-light position-relative bell"><i class="bi bi-bell"></i>';
     if ((int)$alertCount > 0) echo '<span class="badge bg-danger">' . num($alertCount) . '</span>';
     echo '</a><div class="dropdown"><button class="btn btn-light d-flex align-items-center gap-2" data-bs-toggle="dropdown"><span class="avatar">' . esc($init) . '</span><span class="d-none d-md-inline small fw-semibold">' . esc($name) . '</span></button>';
-    echo '<ul class="dropdown-menu dropdown-menu-end"><li><a class="dropdown-item" href="#"><i class="bi bi-person me-2"></i>Profile</a></li><li><a class="dropdown-item" href="' . esc(app_url('settings.php')) . '"><i class="bi bi-gear me-2"></i>Settings</a></li><li><hr class="dropdown-divider"></li><li><a class="dropdown-item text-danger" href="#"><i class="bi bi-box-arrow-right me-2"></i>Sign Out</a></li></ul></div></div></header><main class="content">';
+    echo '<ul class="dropdown-menu dropdown-menu-end"><li><a class="dropdown-item" href="#"><i class="bi bi-person me-2"></i>Profile</a></li><li><a class="dropdown-item" href="' . esc(app_url('settings.php')) . '"><i class="bi bi-gear me-2"></i>Settings</a></li><li><hr class="dropdown-divider"></li><li><button class="dropdown-item text-danger" type="button" data-bs-toggle="modal" data-bs-target="#signOutModal"><i class="bi bi-box-arrow-right me-2"></i>Sign Out</button></li></ul></div></div></header><main class="content">';
 }
 
 function page_end(bool $chart = false): void {
-    echo '</main></div><script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>';
+    $showLoginSuccess = !empty($_SESSION['login_success']);
+    $loginName = (string)($_SESSION['user']['name'] ?? 'User');
+    unset($_SESSION['login_success']);
+
+    echo '</main></div>';
+    echo '<div class="modal fade signout-modal" id="signOutModal" tabindex="-1" aria-labelledby="signOutModalLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-body text-center"><div class="signout-icon"><i class="bi bi-box-arrow-right"></i></div><h4 class="fw-bold mb-2" id="signOutModalLabel">Sign out of TRAVIS?</h4><p class="text-muted mb-4">Are you sure you want to end your current session? You will need to sign in again to access the dashboard.</p><div class="d-flex gap-3 justify-content-center"><button type="button" class="btn btn-light px-4" data-bs-dismiss="modal"><i class="bi bi-x-circle me-2"></i>Cancel</button><form method="post" action="' . esc(app_url('logout.php')) . '"><input type="hidden" name="csrf_token" value="' . esc(csrf_token()) . '"><button class="btn btn-signout px-4" type="submit"><i class="bi bi-box-arrow-right me-2"></i>Sign Out</button></form></div></div></div></div></div>';
+    if ($showLoginSuccess) {
+        echo '<div class="modal fade login-success-modal" id="loginSuccessModal" tabindex="-1" aria-labelledby="loginSuccessModalLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-body text-center"><div class="login-success-icon"><i class="bi bi-check-lg"></i></div><h4 class="fw-bold mb-2" id="loginSuccessModalLabel">Login Successful!</h4><p class="text-muted mb-4">Welcome back, <strong>' . esc($loginName) . '</strong>. You have successfully signed in to the TRAVIS dashboard.</p><button type="button" class="btn btn-login-success px-5" data-bs-dismiss="modal"><i class="bi bi-speedometer2 me-2"></i>Continue to Dashboard</button></div></div></div></div>';
+    }
+    echo '<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>';
     if ($chart) echo '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>';
-    echo '<script src="' . esc(asset_url('js/app.js')) . '"></script></body></html>';
+    echo '<script src="' . esc(asset_url('js/app.js')) . '"></script>';
+    if ($showLoginSuccess) {
+        echo '<script>document.addEventListener("DOMContentLoaded",function(){var element=document.getElementById("loginSuccessModal");if(element){bootstrap.Modal.getOrCreateInstance(element).show();}});</script>';
+    }
+    echo '</body></html>';
 }
 
 function empty_state(string $message): void {

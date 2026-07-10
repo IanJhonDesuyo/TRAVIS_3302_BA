@@ -3,6 +3,10 @@ declare(strict_types=1);
 
 session_start();
 
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+header('Expires: 0');
+
 function respond_json(array $payload, int $statusCode = 200): void
 {
     http_response_code($statusCode);
@@ -76,6 +80,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'email' => (string)$user['email'],
         'role' => (string)$user['role'],
     ];
+    $_SESSION['login_success'] = true;
 
     if ($remember) {
         $params = session_get_cookie_params();
@@ -112,6 +117,11 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     respond_json(['success' => false, 'message' => 'Method not allowed.'], 405);
 }
 
+if (!empty($_SESSION['user']['id'])) {
+    header('Location: ../Admin/dashboard.php');
+    exit;
+}
+
 
 ?>
 <!DOCTYPE html>
@@ -129,8 +139,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 html,body{height:100%;margin:0;font-family:Inter,sans-serif}
 body{
 background:
-linear-gradient(rgba(7,24,45,.72),rgba(7,24,45,.82)),
-url('assets/images/login-bg.jpg') center/cover no-repeat fixed;
+linear-gradient(rgba(7,24,45,.38),rgba(7,24,45,.52)),
+url('../uploads/image/image.png') center/cover no-repeat fixed;
 overflow:hidden;
 }
 .bg-glow{
@@ -143,10 +153,25 @@ animation:floatGlow 8s ease-in-out infinite alternate;
 @keyframes floatGlow{from{transform:translateY(-10px)}to{transform:translateY(10px)}}
 .login-wrapper{min-height:100vh;display:flex;align-items:center}
 .info-side{color:#fff;padding:4rem}
+.info-panel{
+max-width:720px;
+padding:38px;
+background:rgba(7,24,45,.38);
+backdrop-filter:blur(18px);
+-webkit-backdrop-filter:blur(18px);
+border:1px solid rgba(255,255,255,.22);
+border-radius:24px;
+box-shadow:0 25px 60px rgba(0,0,0,.3);
+}
 .info-side h1{font-size:3rem;font-weight:800}
 .info-side p{max-width:620px;color:#d9e6f4}
 .kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:15px;margin-top:30px}
-.kpi .glass{padding:18px;text-align:center}
+.kpi .glass{
+padding:18px;text-align:center;
+background:rgba(255,255,255,.1);
+border:1px solid rgba(255,255,255,.16);
+border-radius:16px;
+}
 .login-card{
 background:rgba(255,255,255,.14);
 backdrop-filter:blur(22px);
@@ -184,6 +209,7 @@ body{overflow:auto}
 <div class="row w-100 align-items-center">
 
 <div class="col-lg-7 info-side">
+<div class="info-panel">
 <span class="badge bg-info text-dark mb-3">AI Smart Traffic Command Center</span>
 <h1>TRAVIS</h1>
 <h4 class="mb-4">Traffic Violation Recognition and AI Surveillance</h4>
@@ -213,8 +239,10 @@ Computer Vision and Machine Learning.
 
 <div class="mt-5 text-light opacity-75">
 <i class="bi bi-shield-check me-2"></i>
-Municipality of Nasugbu • Batangas State University • TRAVIS v1.0
+Municipality of Nasugbu &bull; Batangas State University &bull; TRAVIS v1.0
 </div>
+</div>
+
 </div>
 
 <div class="col-lg-5">

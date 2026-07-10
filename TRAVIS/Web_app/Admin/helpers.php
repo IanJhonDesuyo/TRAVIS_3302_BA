@@ -3,6 +3,19 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/db_connect.php';
 
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    session_start();
+}
+
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+header('Expires: 0');
+
+if (empty($_SESSION['user']['id'])) {
+    header('Location: ../auth/index.php');
+    exit;
+}
+
 function web_app_base_url(): string {
     $documentRoot = str_replace('\\', '/', rtrim($_SERVER['DOCUMENT_ROOT'] ?? '', '/'));
     $dir = str_replace('\\', '/', __DIR__);
@@ -97,8 +110,51 @@ function tag_class(string $value): string {
 }
 
 function current_admin(): array {
-    $row = fetch_one("SELECT full_name, role FROM users WHERE role = 'Administrator' AND status = 'active' ORDER BY user_id ASC LIMIT 1");
-    return $row ?: ['full_name' => 'System Admin', 'role' => 'Administrator'];
+    return [
+        'full_name' => (string)($_SESSION['user']['name'] ?? 'System Admin'),
+        'role' => (string)($_SESSION['user']['role'] ?? 'Administrator'),
+    ];
+}
+
+function csrf_token(): string {
+    if (empty($_SESSION['csrf_token'])) {
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+    }
+    return (string)$_SESSION['csrf_token'];
+}
+
+function traffic_violation_types(): array {
+    return [
+        "No Driver's License",
+        "Failure to Carry Driver's License",
+        "Invalid / Delinquent Driver's License",
+        'Unregistered Motor Vehicle',
+        'Nuisance Muffler',
+        'Disregarding Traffic Sign / Officer',
+        'Reckless Driving',
+        'Colorum',
+        'Illegal Parking',
+        'Illegal Terminal',
+        'Obstruction',
+        'OR / CR Not Carried',
+        'No Canvas Cover',
+        'Operating Out of Line',
+        'Overloading',
+        'Overcharging',
+        'Loading / Unloading in Prohibited Zone',
+        'Refusal to Convey Passenger',
+        'Driving with Sleeveless Shirt / Shorts',
+        'Not Wearing Shoes',
+        'No Side Mirror',
+        'Arrogant Driver',
+        'Driving Under the Influence of Liquor',
+        'Coding Violation',
+        'Other Traffic Violation',
+    ];
+}
+
+function traffic_penalty_fees(): array {
+    return [100, 200, 300, 500, 1000, 1500, 2000, 2500, 3000, 5000];
 }
 
 function initials(string $name): string {

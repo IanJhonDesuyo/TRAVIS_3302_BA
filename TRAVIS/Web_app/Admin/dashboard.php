@@ -442,6 +442,9 @@ const volumeLabels = <?= json_encode($trafficVol['labels']) ?>;
 const volumeData = <?= json_encode($trafficVol['data']) ?>;
 const topViolationLabels = <?= json_encode($topViolationLabels) ?>;
 const topViolationData = <?= json_encode($topViolationData) ?>;
+const chartBlues = ['#0b3d78', '#1565c0', '#1976d2', '#2196f3', '#4fc3f7', '#7dd3fc', '#93c5fd'];
+const blueGrid = 'rgba(25, 118, 210, .12)';
+const blueTicks = '#49657f';
 
 function showEmpty(id, message) {
   const target = document.getElementById(id);
@@ -451,32 +454,32 @@ function showEmpty(id, message) {
 if (trendData.reduce((sum, value) => sum + Number(value || 0), 0) > 0) {
   new Chart(document.getElementById('trendChart'), {
     type: 'line',
-    data: {labels: months, datasets: [{label: 'Violations', data: trendData, borderColor: '#1e3a8a', backgroundColor: 'rgba(30,58,138,.15)', fill: true, tension: .4, borderWidth: 2, pointRadius: 2}]},
-    options: {responsive: true, plugins: {legend: {display: false}}, scales: {y: {beginAtZero: true, ticks: {precision: 0}}}}
+    data: {labels: months, datasets: [{label: 'Violations', data: trendData, borderColor: '#1976d2', backgroundColor: 'rgba(79,195,247,.22)', pointBackgroundColor: '#0b3d78', pointBorderColor: '#fff', fill: true, tension: .4, borderWidth: 3, pointRadius: 3, pointHoverRadius: 5}]},
+    options: {responsive: true, plugins: {legend: {display: false}}, scales: {x: {grid: {display: false}, ticks: {color: blueTicks}}, y: {beginAtZero: true, grid: {color: blueGrid}, ticks: {precision: 0, color: blueTicks}}}}
   });
 } else showEmpty('trendEmpty', 'No violation trend data yet.');
 
 if (vehicleData.length > 0 && vehicleData.reduce((sum, value) => sum + Number(value || 0), 0) > 0) {
   new Chart(document.getElementById('vehicleChart'), {
     type: 'doughnut',
-    data: {labels: vehicleLabels, datasets: [{data: vehicleData, borderWidth: 0}]},
-    options: {responsive: true, cutout: '68%', plugins: {legend: {position: 'bottom'}}}
+    data: {labels: vehicleLabels, datasets: [{data: vehicleData, backgroundColor: vehicleLabels.map((_, index) => chartBlues[index % chartBlues.length]), borderColor: 'rgba(255,255,255,.78)', borderWidth: 2, hoverOffset: 6}]},
+    options: {responsive: true, cutout: '68%', plugins: {legend: {position: 'bottom', labels: {color: blueTicks, usePointStyle: true, pointStyle: 'circle'}}}}
   });
 } else showEmpty('vehicleEmpty', 'No vehicle distribution data yet.');
 
 if (volumeData.length > 0 && volumeData.reduce((sum, value) => sum + Number(value || 0), 0) > 0) {
   new Chart(document.getElementById('volumeChart'), {
     type: 'bar',
-    data: {labels: volumeLabels, datasets: [{label: 'Vehicles', data: volumeData, backgroundColor: '#16a34a', borderRadius: 6}]},
-    options: {responsive: true, plugins: {legend: {display: false}}, scales: {y: {beginAtZero: true, ticks: {precision: 0}}}}
+    data: {labels: volumeLabels, datasets: [{label: 'Vehicles', data: volumeData, backgroundColor: 'rgba(33,150,243,.72)', borderColor: '#1565c0', borderWidth: 1, hoverBackgroundColor: '#1976d2', borderRadius: 7}]},
+    options: {responsive: true, plugins: {legend: {display: false}}, scales: {x: {grid: {display: false}, ticks: {color: blueTicks}}, y: {beginAtZero: true, grid: {color: blueGrid}, ticks: {precision: 0, color: blueTicks}}}}
   });
 } else showEmpty('volumeEmpty', 'No traffic volume data for today.');
 
 if (topViolationData.length > 0 && topViolationData.reduce((sum, value) => sum + Number(value || 0), 0) > 0) {
   new Chart(document.getElementById('topViolationChart'), {
     type: 'bar',
-    data: {labels: topViolationLabels, datasets: [{label: 'Recorded Violations', data: topViolationData, backgroundColor: '#f59e0b', borderRadius: 6}]},
-    options: {responsive: true, indexAxis: 'y', plugins: {legend: {display: false}}, scales: {x: {beginAtZero: true, ticks: {precision: 0}}}}
+    data: {labels: topViolationLabels, datasets: [{label: 'Recorded Violations', data: topViolationData, backgroundColor: topViolationLabels.map((_, index) => chartBlues[(index + 1) % chartBlues.length]), borderRadius: 7}]},
+    options: {responsive: true, indexAxis: 'y', plugins: {legend: {display: false}}, scales: {x: {beginAtZero: true, grid: {color: blueGrid}, ticks: {precision: 0, color: blueTicks}}, y: {grid: {display: false}, ticks: {color: blueTicks}}}}
   });
 } else showEmpty('topViolationEmpty', 'No violation type data available.');
 </script>
