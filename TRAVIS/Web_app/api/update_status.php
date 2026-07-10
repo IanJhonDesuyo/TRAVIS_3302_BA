@@ -1,7 +1,7 @@
 <?php
 header("Content-Type: application/json");
 
-require_once "../db_connect.php";
+require_once __DIR__ . "/../Admin/db_connect.php";
 
 $data = json_decode(file_get_contents("php://input"), true);
 

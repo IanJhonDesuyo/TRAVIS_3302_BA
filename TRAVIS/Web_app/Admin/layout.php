@@ -5,9 +5,8 @@ require_once __DIR__ . '/helpers.php';
 function sidebar(string $active = ''): void {
     $items = [
         'Overview' => [
-            ['index.php','Dashboard','bi-speedometer2','dashboard'],
+            ['dashboard.php','Dashboard','bi-speedometer2','dashboard'],
             ['monitoring.php','Live Monitoring','bi-camera-video','monitoring'],
-            ['analytics.php','Analytics','bi-graph-up','analytics'],
         ],
         'Enforcement' => [
             ['violations.php','Violations','bi-cone-striped','violations'],
@@ -22,7 +21,7 @@ function sidebar(string $active = ''): void {
         ],
     ];
     echo '<aside class="sidebar" id="sidebar">';
-    echo '<div class="sidebar-brand"><div class="logo">TRAVIS</div><div><h5>TRAVIS</h5><small>Traffic Violation Analytics</small></div></div>';
+    echo '<div class="sidebar-brand"><img class="brand-logo" src="' . esc(asset_url('assets/images/travis-logo.jpg')) . '" alt="TRAVIS logo"><div><h5>TRAVIS</h5><small>Traffic Violation Analytics</small></div></div>';
     foreach ($items as $section => $links) {
         echo '<div class="nav-section">' . esc($section) . '</div><ul class="nav flex-column">';
         foreach ($links as [$href,$label,$icon,$key]) {

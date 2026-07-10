@@ -16,7 +16,7 @@ These files replace the old hardcoded dashboard pages.
 2. Copy all files from this folder into your project root.
 3. Keep your existing `css/`, `js/`, and `assets/` folders.
 4. Import `traffiq_db.sql` into phpMyAdmin if you have not imported it yet.
-5. Open `index.php` through XAMPP/localhost.
+5. Open `dashboard.php` through XAMPP/localhost.
 
 ## Important
 If your database is empty, the system will correctly show `0`, `No records found`, or `Prediction not generated yet`.

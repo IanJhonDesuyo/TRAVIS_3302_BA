@@ -19,14 +19,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['cctv_video'])) {
     } elseif (($_FILES['cctv_video']['size'] ?? 0) > $maxUploadBytes) {
         $uploadMessage = 'File too large. Maximum allowed size is 500MB.';
     } else {
-        $dir = dirname(__DIR__) . '/computer_vision/uploads/videos';
+        $projectRoot = dirname(__DIR__, 2);
+        $dir = $projectRoot . '/computer_vision/uploads/videos';
         if (!is_dir($dir)) mkdir($dir, 0775, true);
 
         $target = $dir . '/test.mp4';
 
         if (move_uploaded_file($_FILES['cctv_video']['tmp_name'], $target)) {
             $uploadedVideo = 'computer_vision/uploads/videos/test.mp4';
-            $statusFile = __DIR__ . '/api/analysis_status.json';
+            $statusFile = dirname(__DIR__) . '/api/analysis_status.json';
             file_put_contents($statusFile, json_encode([
                 'analysis_status' => 'Idle',
                 'ai_status' => 'Idle',
@@ -342,6 +343,6 @@ page_start('Live Monitoring', 'monitoring', 'Search monitoring logs...');
   </div>
 </div>
 
-<script src="<?= esc(asset_url('js/monitoring.js') . '?v=' . filemtime(dirname(__DIR__) . '/js/monitoring.js')) ?>"></script>
+<script src="<?= esc(asset_url('js/monitoring.js') . '?v=' . filemtime(dirname(__DIR__, 2) . '/js/monitoring.js')) ?>"></script>
 
 <?php page_end(); ?>

@@ -2,7 +2,7 @@
 
 header("Content-Type: application/json");
 
-require_once "../db_connect.php";
+require_once __DIR__ . "/../Admin/db_connect.php";
 
 $latest_status = [];
 $status_file = __DIR__ . "/latest_status.json";

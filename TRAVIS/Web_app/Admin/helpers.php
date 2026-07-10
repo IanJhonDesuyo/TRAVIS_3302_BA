@@ -15,7 +15,7 @@ function web_app_base_url(): string {
 
 function project_base_url(): string {
     $documentRoot = str_replace('\\', '/', rtrim($_SERVER['DOCUMENT_ROOT'] ?? '', '/'));
-    $dir = str_replace('\\', '/', dirname(__DIR__));
+    $dir = str_replace('\\', '/', dirname(__DIR__, 2));
     $relative = trim(str_replace($documentRoot, '', $dir), '/');
     if ($relative === '') {
         return '/';

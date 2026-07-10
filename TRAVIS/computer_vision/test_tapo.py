@@ -11,7 +11,7 @@ print("Connecting to:", rtsp_url)
 cap = cv2.VideoCapture(rtsp_url)
 
 if not cap.isOpened():
-    print("❌ Cannot connect to camera.")
+    print("Cannot connect to camera.")
     exit()
 
 print("✅ Connected successfully!")
