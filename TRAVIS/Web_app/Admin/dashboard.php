@@ -1,3 +1,96 @@
+<style id="travis-ai-v6-overrides">
+/* V6 Compact Hotspot Cards */
+.hotspot-risk-card{
+    height:290px !important;
+    display:flex !important;
+    flex-direction:column !important;
+}
+
+.hotspot-card-head{
+    flex:0 0 auto;
+    margin-bottom:10px !important;
+    padding-bottom:10px;
+    border-bottom:1px solid #edf2f7;
+}
+
+.hotspot-card-list{
+    flex:1 1 auto !important;
+    overflow-y:auto !important;
+    overflow-x:hidden;
+    padding-right:6px;
+    margin-top:4px;
+}
+
+.hotspot-card-list li{
+    padding:8px 10px !important;
+    margin-bottom:0;
+}
+
+.hotspot-card-list::-webkit-scrollbar{
+    width:7px;
+}
+
+.hotspot-card-list::-webkit-scrollbar-track{
+    background:#eef3f8;
+    border-radius:20px;
+}
+
+.hotspot-card-list::-webkit-scrollbar-thumb{
+    background:#9bb5d3;
+    border-radius:20px;
+}
+
+.hotspot-card-list::-webkit-scrollbar-thumb:hover{
+    background:#6e95be;
+}
+
+.hotspot-list-copy strong{
+    font-size:.90rem;
+}
+
+.hotspot-list-copy small{
+    font-size:.74rem;
+}
+
+.hotspot-card-head strong{
+    font-size:1.5rem !important;
+}
+
+.hotspot-card-head .hotspot-card-label{
+    font-size:.75rem;
+}
+
+@media (max-width:991px){
+    .hotspot-risk-card{
+        height:260px !important;
+    }
+}
+</style>
+
+
+<style id="travis-ai-internal-css">
+/* ==== TRAVIS AI V5 ==== */
+.ai-decision-card{background:#fff;border:1px solid #dbe4ee;border-radius:22px;padding:24px;box-shadow:0 10px 28px rgba(0,0,0,.06)}
+.ai-kpi-card,.hotspot-risk-card{background:#fff;border:1px solid #dbe4ee;border-radius:18px;padding:20px;box-shadow:0 8px 20px rgba(0,0,0,.05);height:100%}
+.ai-card-header,.hotspot-card-head{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+.ai-card-icon,.hotspot-card-icon{width:48px;height:48px;border-radius:14px;display:flex;align-items:center;justify-content:center;background:#eef5ff;color:#2563eb;font-size:20px}
+.hotspot-card-high{border-top:6px solid #dc2626}
+.hotspot-card-medium{border-top:6px solid #f59e0b}
+.hotspot-card-low{border-top:6px solid #16a34a}
+.hotspot-card-highlighted{border-color:#2563eb!important;box-shadow:0 0 0 3px rgba(37,99,235,.12),0 14px 28px rgba(37,99,235,.18)}
+.deployment-kpi{display:flex;justify-content:space-between;align-items:center;background:#f8fafc;border:1px solid #e5e7eb;border-radius:12px;padding:12px 15px;margin-bottom:10px}
+.hotspot-card-list{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:10px}
+.hotspot-card-list li{display:flex;gap:10px;background:#f8fafc;border:1px solid #edf2f7;border-radius:12px;padding:10px}
+.hotspot-list-rank{width:26px;height:26px;border-radius:8px;background:#2563eb;color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold}
+.hotspot-list-copy{display:flex;flex-direction:column}
+.hotspot-list-copy strong{font-size:.86rem}
+.hotspot-list-copy small{color:#64748b}
+.ai-action-grid{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.ai-action-grid li{display:flex;gap:10px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:12px;padding:14px}
+.ai-monthly-body{display:grid;grid-template-columns:1fr;gap:16px}
+@media(min-width:992px){.ai-monthly-body{grid-template-columns:1fr 1fr}}
+</style>
+
 <?php
 require_once __DIR__ . '/layout.php';
 
@@ -141,8 +234,14 @@ page_start('Dashboard', 'dashboard', 'Search violations, plates, locations...');
 
 <div class="d-flex justify-content-between flex-wrap mb-4 gap-2">
   <div>
-    <h3 class="page-title">Operations Dashboard</h3>
-    <p class="page-sub">Live traffic operations and AI-powered decision support for the TMO.</p>
+    <div class="dashboard-title-row">
+      <div>
+        <span class="dashboard-eyebrow">TRAVIS COMMAND CENTER</span>
+        <h3 class="page-title">Operations Dashboard</h3>
+        <p class="page-sub">Real-time traffic monitoring, predictive insights, and hotspot intelligence.</p>
+      </div>
+      <span class="system-online-badge"><span class="system-online-dot"></span>AI Services Online</span>
+    </div>
   </div>
 
   <div class="d-flex gap-2">
@@ -159,7 +258,7 @@ page_start('Dashboard', 'dashboard', 'Search violations, plates, locations...');
 <!-- Main statistics -->
 <div class="row g-3 mb-4">
   <div class="col-sm-6 col-xl-3">
-    <div class="stat-card h-100">
+    <div class="stat-card dashboard-stat-card h-100">
       <div class="stat-icon tone-primary"><i class="bi bi-car-front"></i></div>
       <div class="stat-label">Vehicle Observations Today</div>
       <div class="stat-value"><?= num($vehiclesToday) ?></div>
@@ -170,7 +269,7 @@ page_start('Dashboard', 'dashboard', 'Search violations, plates, locations...');
   </div>
 
   <div class="col-sm-6 col-xl-3">
-    <div class="stat-card h-100">
+    <div class="stat-card dashboard-stat-card h-100">
       <div class="stat-icon tone-warning"><i class="bi bi-cone-striped"></i></div>
       <div class="stat-label">Violations Today</div>
       <div class="stat-value"><?= num($violationsToday) ?></div>
@@ -181,7 +280,7 @@ page_start('Dashboard', 'dashboard', 'Search violations, plates, locations...');
   </div>
 
   <div class="col-sm-6 col-xl-3">
-    <div class="stat-card h-100">
+    <div class="stat-card dashboard-stat-card h-100">
       <div class="stat-icon tone-success"><i class="bi bi-cash-stack"></i></div>
       <div class="stat-label">Collected Today</div>
       <div class="stat-value"><?= short_money($paymentsToday) ?></div>
@@ -190,7 +289,7 @@ page_start('Dashboard', 'dashboard', 'Search violations, plates, locations...');
   </div>
 
   <div class="col-sm-6 col-xl-3">
-    <div class="stat-card h-100">
+    <div class="stat-card dashboard-stat-card h-100">
       <div class="stat-icon tone-danger"><i class="bi bi-exclamation-triangle"></i></div>
       <div class="stat-label">Active Alerts</div>
       <div class="stat-value"><?= num($activeAlerts) ?></div>
@@ -203,9 +302,9 @@ page_start('Dashboard', 'dashboard', 'Search violations, plates, locations...');
 <div class="section-card ai-decision-card mb-4" id="aiDecisionCard">
   <div class="section-head ai-section-head">
     <div>
-      <span class="ai-kicker"><i class="bi bi-cpu me-1"></i>TRAVIS AI</span>
-      <h5 class="mb-1">Monthly Decision Support</h5>
-      <small class="text-muted">Random Forest prediction with operational recommendations</small>
+      <span class="ai-kicker"><i class="bi bi-cpu me-1"></i>TRAVIS AI ENGINE</span>
+      <h5 class="mb-1">AI Decision Support Center</h5>
+      <small class="text-muted">Random Forest monthly risk prediction combined with K-Means hotspot intelligence</small>
     </div>
 
     <button class="btn btn-sm btn-light" type="button" id="refreshPredictionBtn">
@@ -221,67 +320,155 @@ page_start('Dashboard', 'dashboard', 'Search violations, plates, locations...');
   <div id="aiPredictionError" class="alert alert-danger d-none mb-0" role="alert"></div>
 
   <div id="aiPredictionContent" class="d-none">
-    <div class="row g-3">
-      <div class="col-lg-4">
-        <div class="ai-risk-panel">
-          <div class="ai-label">Expected Risk</div>
-          <div class="ai-risk-badge" id="aiRiskBadge">—</div>
-          <div class="ai-period" id="aiPredictionPeriod">—</div>
-
-          <div class="ai-confidence-wrap">
-            <div class="d-flex justify-content-between small">
-              <span>Model confidence</span>
-              <strong id="aiConfidenceText">—</strong>
-            </div>
-            <div class="progress ai-confidence-progress">
-              <div
-                class="progress-bar"
-                id="aiConfidenceBar"
-                role="progressbar"
-                style="width:0%"
-                aria-valuemin="0"
-                aria-valuemax="100"
-              ></div>
+    <div class="row g-4 ai-top-row">
+      <div class="col-lg-7">
+        <div class="ai-kpi-card ai-monthly-card h-100">
+          <div class="ai-card-header">
+            <span class="ai-card-icon ai-icon-blue">
+              <i class="bi bi-graph-up-arrow"></i>
+            </span>
+            <div>
+              <h6>Monthly Risk Prediction</h6>
+              <small>Random Forest risk forecast</small>
             </div>
           </div>
 
-          <small class="text-muted d-block mt-3">
-            Prediction is based on historical TMO records and should be reviewed with current conditions.
-          </small>
+          <div class="ai-monthly-body">
+            <div>
+              <div class="ai-label">Expected monthly risk</div>
+              <div class="ai-risk-badge" id="aiRiskBadge">—</div>
+              <div class="ai-period" id="aiPredictionPeriod">—</div>
+            </div>
+
+            <div class="ai-confidence-card">
+              <div class="d-flex justify-content-between align-items-center gap-3">
+                <span>Prediction confidence</span>
+                <strong id="aiConfidenceText">—</strong>
+              </div>
+              <div class="progress ai-confidence-progress">
+                <div
+                  class="progress-bar"
+                  id="aiConfidenceBar"
+                  role="progressbar"
+                  style="width:0%"
+                  aria-valuemin="0"
+                  aria-valuemax="100"
+                ></div>
+              </div>
+            </div>
+          </div>
+
+          <p class="ai-model-note mb-0">
+            This prediction is based on historical TMO records and should be reviewed together with current traffic conditions.
+          </p>
         </div>
       </div>
 
-      <div class="col-md-6 col-lg-4">
-        <div class="ai-support-panel h-100">
-          <div class="ai-panel-title">
-            <i class="bi bi-people me-2"></i>Deployment Guidance
+      <div class="col-lg-5">
+        <div class="ai-kpi-card ai-deployment-card h-100">
+          <div class="ai-card-header">
+            <span class="ai-card-icon ai-icon-teal">
+              <i class="bi bi-people"></i>
+            </span>
+            <div>
+              <h6>Deployment Guidance</h6>
+              <small>Recommended operational resources</small>
+            </div>
           </div>
 
-          <div class="ai-guidance-row">
-            <span>Deployment priority</span>
-            <strong id="aiDeploymentPriority">—</strong>
-          </div>
-
-          <div class="ai-guidance-row">
-            <span>Suggested personnel</span>
-            <strong id="aiSuggestedPersonnel">—</strong>
-          </div>
-
-          <div class="ai-guidance-row">
-            <span>Monitoring intensity</span>
-            <strong id="aiMonitoringIntensity">—</strong>
+          <div class="deployment-kpi-grid">
+            <div class="deployment-kpi">
+              <small>Priority</small>
+              <strong id="aiDeploymentPriority">—</strong>
+            </div>
+            <div class="deployment-kpi">
+              <small>Personnel</small>
+              <strong id="aiSuggestedPersonnel">—</strong>
+            </div>
+            <div class="deployment-kpi">
+              <small>Monitoring</small>
+              <strong id="aiMonitoringIntensity">—</strong>
+            </div>
           </div>
         </div>
       </div>
+    </div>
 
-      <div class="col-md-6 col-lg-4">
-        <div class="ai-support-panel h-100">
-          <div class="ai-panel-title">
-            <i class="bi bi-lightbulb me-2"></i>Recommended Actions
+    <div class="ai-subsection-heading">
+      <div>
+        <h6>Historical Hotspot Classification</h6>
+        <small>K-Means clustering groups all monitored locations by historical risk level.</small>
+      </div>
+      <span class="ai-highlight-note">
+        Monthly forecast: <strong id="hotspotMonthlyHighlight">—</strong>
+      </span>
+    </div>
+
+    <div id="hotspotLoading" class="hotspot-loading-card">
+      <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+      Loading hotspot classifications...
+    </div>
+
+    <div id="hotspotError" class="alert alert-danger d-none mb-3"></div>
+
+    <div id="hotspotContent" class="d-none">
+      <div class="row g-3 hotspot-kpi-grid">
+        <div class="col-lg-4">
+          <div class="hotspot-risk-card hotspot-card-high" id="hotspotCardHigh">
+            <div class="hotspot-card-head">
+              <span class="hotspot-card-icon"><i class="bi bi-exclamation-triangle"></i></span>
+              <div>
+                <span class="hotspot-card-label">High Risk</span>
+                <strong id="highRiskCount">0</strong>
+                <small>locations</small>
+              </div>
+            </div>
+            <ul class="hotspot-card-list" id="highRiskLocations"></ul>
           </div>
-          <ul class="ai-action-list" id="aiRecommendations"></ul>
+        </div>
+
+        <div class="col-lg-4">
+          <div class="hotspot-risk-card hotspot-card-medium" id="hotspotCardMedium">
+            <div class="hotspot-card-head">
+              <span class="hotspot-card-icon"><i class="bi bi-exclamation-circle"></i></span>
+              <div>
+                <span class="hotspot-card-label">Medium Risk</span>
+                <strong id="mediumRiskCount">0</strong>
+                <small>locations</small>
+              </div>
+            </div>
+            <ul class="hotspot-card-list" id="mediumRiskLocations"></ul>
+          </div>
+        </div>
+
+        <div class="col-lg-4">
+          <div class="hotspot-risk-card hotspot-card-low" id="hotspotCardLow">
+            <div class="hotspot-card-head">
+              <span class="hotspot-card-icon"><i class="bi bi-check-circle"></i></span>
+              <div>
+                <span class="hotspot-card-label">Low Risk</span>
+                <strong id="lowRiskCount">0</strong>
+                <small>locations</small>
+              </div>
+            </div>
+            <ul class="hotspot-card-list" id="lowRiskLocations"></ul>
+          </div>
         </div>
       </div>
+    </div>
+
+    <div class="ai-kpi-card ai-actions-card mt-4">
+      <div class="ai-card-header">
+        <span class="ai-card-icon ai-icon-amber">
+          <i class="bi bi-lightbulb"></i>
+        </span>
+        <div>
+          <h6>Recommended Actions</h6>
+          <small>Suggested operational response based on the monthly forecast</small>
+        </div>
+      </div>
+
+      <ul class="ai-action-grid" id="aiRecommendations"></ul>
     </div>
   </div>
 </div>
@@ -469,6 +656,7 @@ page_start('Dashboard', 'dashboard', 'Search violations, plates, locations...');
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>
 const MONTHLY_PREDICTION_ENDPOINT = '../api/predict_monthly.php';
+const HOTSPOT_ENDPOINT = '../api/predict_hotspot.php';
 
 const months = <?= json_encode(month_labels()) ?>;
 const trendData = <?= json_encode($trendData) ?>;
@@ -553,6 +741,158 @@ function applyRiskStyle(element, riskLevel) {
   }
 }
 
+
+function riskEndpointValue(riskLevel) {
+  const risk = normalizeRisk(riskLevel);
+  if (risk === 'high') return 'high';
+  if (risk === 'medium') return 'medium';
+  return 'low';
+}
+
+function getHotspotLocations(payload) {
+  if (Array.isArray(payload?.data?.locations)) return payload.data.locations;
+  if (Array.isArray(payload?.locations)) return payload.locations;
+
+  return [
+    ...(payload?.high_risk || []),
+    ...(payload?.medium_risk || []),
+    ...(payload?.low_risk || [])
+  ];
+}
+
+function classifyHotspots(records) {
+  return records.reduce(
+    (groups, record) => {
+      const risk = normalizeRisk(record['Risk Level'] || record.risk_level);
+
+      if (risk === 'high') groups.high.push(record);
+      else if (risk === 'medium') groups.medium.push(record);
+      else groups.low.push(record);
+
+      return groups;
+    },
+    { high: [], medium: [], low: [] }
+  );
+}
+
+function sortHotspots(records) {
+  return [...records].sort(
+    (a, b) =>
+      Number(b['Total Violations'] ?? b.Total_Violations ?? b.total ?? 0) -
+      Number(a['Total Violations'] ?? a.Total_Violations ?? a.total ?? 0)
+  );
+}
+
+function renderHotspotGroup(risk, records) {
+  const normalized = risk.charAt(0).toUpperCase() + risk.slice(1);
+  const countElement = document.getElementById(`${risk}RiskCount`);
+  const listElement = document.getElementById(`${risk}RiskLocations`);
+
+  countElement.textContent = records.length;
+  listElement.innerHTML = '';
+
+  sortHotspots(records).forEach((record, index) => {
+    const locationName =
+      record.Location ||
+      record.location ||
+      record.violation_location ||
+      'Unnamed location';
+
+    const totalViolations =
+      record['Total Violations'] ??
+      record.Total_Violations ??
+      record.total ??
+      record.frequency_count ??
+      null;
+
+    const item = document.createElement('li');
+    item.innerHTML = `
+      <span class="hotspot-list-rank">${index + 1}</span>
+      <span class="hotspot-list-copy">
+        <strong>${locationName}</strong>
+        ${totalViolations !== null
+          ? `<small>${Number(totalViolations).toLocaleString()} historical records</small>`
+          : ''}
+      </span>
+    `;
+    listElement.appendChild(item);
+  });
+
+  if (!records.length) {
+    const item = document.createElement('li');
+    item.className = 'hotspot-list-empty';
+    item.textContent = `No ${normalized.toLowerCase()}-risk locations found.`;
+    listElement.appendChild(item);
+  }
+}
+
+function highlightPredictedHotspotCard(riskLevel) {
+  const risk = riskEndpointValue(riskLevel);
+
+  ['High', 'Medium', 'Low'].forEach(level => {
+    document
+      .getElementById(`hotspotCard${level}`)
+      ?.classList.remove('hotspot-card-highlighted');
+  });
+
+  const activeCard = document.getElementById(
+    `hotspotCard${risk.charAt(0).toUpperCase()}${risk.slice(1)}`
+  );
+
+  activeCard?.classList.add('hotspot-card-highlighted');
+
+  document.getElementById('hotspotMonthlyHighlight').textContent =
+    `${risk.charAt(0).toUpperCase()}${risk.slice(1)} Risk`;
+}
+
+async function loadHotspots(monthlyRiskLevel = 'High') {
+  const loading = document.getElementById('hotspotLoading');
+  const errorBox = document.getElementById('hotspotError');
+  const content = document.getElementById('hotspotContent');
+
+  loading.classList.remove('d-none');
+  errorBox.classList.add('d-none');
+  content.classList.add('d-none');
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 10000);
+
+    const response = await fetch(HOTSPOT_ENDPOINT, {
+      method: 'GET',
+      headers: { 'Accept': 'application/json' },
+      cache: 'no-store',
+      signal: controller.signal
+    });
+
+    window.clearTimeout(timeoutId);
+
+    const payload = await response.json();
+
+    if (!response.ok || !payload.success) {
+      throw new Error(payload.message || 'Unable to load hotspot results.');
+    }
+
+    const records = getHotspotLocations(payload);
+    const groups = classifyHotspots(records);
+
+    renderHotspotGroup('high', groups.high);
+    renderHotspotGroup('medium', groups.medium);
+    renderHotspotGroup('low', groups.low);
+    highlightPredictedHotspotCard(monthlyRiskLevel);
+
+    loading.classList.add('d-none');
+    content.classList.remove('d-none');
+  } catch (error) {
+    loading.classList.add('d-none');
+    errorBox.textContent =
+      error.name === 'AbortError'
+        ? 'The hotspot request timed out. Make sure the Flask API is running on port 5001.'
+        : `${error.message} Make sure predict_hotspot.php and the Flask API are available.`;
+    errorBox.classList.remove('d-none');
+  }
+}
+
 async function loadMonthlyPrediction() {
   const loading = document.getElementById('aiPredictionLoading');
   const errorBox = document.getElementById('aiPredictionError');
@@ -616,6 +956,7 @@ async function loadMonthlyPrediction() {
 
     loading.classList.add('d-none');
     content.classList.remove('d-none');
+    await loadHotspots(riskLevel);
   } catch (error) {
     loading.classList.add('d-none');
     errorBox.textContent =
@@ -630,6 +971,7 @@ document.getElementById('refreshPredictionBtn')?.addEventListener(
 );
 
 loadMonthlyPrediction();
+setInterval(loadMonthlyPrediction, 60000);
 
 if (total(trendData) > 0) {
   new Chart(document.getElementById('trendChart'), {
