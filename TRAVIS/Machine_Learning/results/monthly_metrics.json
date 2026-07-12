@@ -1,0 +1,11 @@
+{
+  "dataset_rows": 24,
+  "test_accuracy": 0.6666666666666666,
+  "low_threshold": 2.0,
+  "high_threshold": 34.999999999999986,
+  "risk_distribution": {
+    "Low": 9,
+    "High": 8,
+    "Medium": 7
+  }
+}

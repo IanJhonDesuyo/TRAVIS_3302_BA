@@ -1,0 +1,4 @@
+Cluster,Location_Count,Mean_Total_Violations,Median_Total_Violations,Min_Total_Violations,Max_Total_Violations,Sum_Total_Violations,Risk Level
+0,8,37.875,37.5,30,48,303,Low Risk
+2,3,127.33333333333333,127.0,116,139,382,Medium Risk
+1,4,138.5,111.0,111,221,554,High Risk

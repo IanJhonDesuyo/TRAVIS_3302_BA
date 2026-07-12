@@ -1,0 +1,106 @@
+{
+  "algorithm": "K-Means Clustering",
+  "dataset_file": "hotspot_cluster.csv",
+  "unique_locations": 15,
+  "total_historical_violations": 1239,
+  "feature_count": 28,
+  "features": [
+    "CODING TRICYCLE - NUMBER CODING ORDINANCE",
+    "COLORUM JEEP, VAN BUS",
+    "COLORUM TRICYCLE - NUMBER CODING ORDINANCE",
+    "DISCOURTEOUS/ARROGANT DRIVER",
+    "DISREGARDING TRAFFIC SIGN/OFFICER",
+    "DRIVING NOT WEARING SHOES",
+    "DRIVING UNDER THE INFLUENCE OF LIQUOR",
+    "DRIVING W/SLEEVELESS SHIRT & SHORT",
+    "DRIVING WITH INVALID DRIVERS LICENSE",
+    "ILLEGAL PARKING",
+    "ILLEGAL TERMINAL",
+    "LOI 1482",
+    "NO CANVASS COVER-TRUCK",
+    "NO DRIVERS LICENSE",
+    "NO HELMET",
+    "NO PROF. DRIVER (OPTR.PUV, HEAVY EQ, AGRI. MACH)",
+    "NO SIDE MIRROR",
+    "NUISANCE MUFFLER/34J",
+    "OBSTRUCTION",
+    "OPERATING OUT OF LINE",
+    "OR/CR NOT CARRIED",
+    "OVERLOADING",
+    "RA 4136",
+    "RECKLESS DRIVING",
+    "REFUSAL TO SIGN TRAFFIC CIT.TICKET",
+    "STUDENT PERMIT NOT ACCOMPANIED BY LICENSED DRIVER",
+    "TAMPERED STICKER N.C.O.",
+    "UNREGISTERED MOTOR VEHICLE"
+  ],
+  "tested_cluster_counts": [
+    {
+      "clusters": 2,
+      "inertia": 261.78873894792497,
+      "silhouette_score": 0.2970659944463873
+    },
+    {
+      "clusters": 3,
+      "inertia": 205.0798333254321,
+      "silhouette_score": 0.2938371612989766
+    },
+    {
+      "clusters": 4,
+      "inertia": 163.00416511296538,
+      "silhouette_score": 0.26578016874484095
+    },
+    {
+      "clusters": 5,
+      "inertia": 132.6434672647521,
+      "silhouette_score": 0.2530778313201171
+    },
+    {
+      "clusters": 6,
+      "inertia": 103.01112043693543,
+      "silhouette_score": 0.22738827387763755
+    }
+  ],
+  "selected_clusters": 3,
+  "selected_inertia": 205.0798333254321,
+  "silhouette_score": 0.2938371612989766,
+  "risk_mapping": {
+    "0": "Low Risk",
+    "2": "Medium Risk",
+    "1": "High Risk"
+  },
+  "cluster_profiles": [
+    {
+      "Cluster": 0,
+      "Location_Count": 8,
+      "Mean_Total_Violations": 37.875,
+      "Median_Total_Violations": 37.5,
+      "Min_Total_Violations": 30,
+      "Max_Total_Violations": 48,
+      "Sum_Total_Violations": 303,
+      "Risk Level": "Low Risk"
+    },
+    {
+      "Cluster": 2,
+      "Location_Count": 3,
+      "Mean_Total_Violations": 127.33333333333333,
+      "Median_Total_Violations": 127.0,
+      "Min_Total_Violations": 116,
+      "Max_Total_Violations": 139,
+      "Sum_Total_Violations": 382,
+      "Risk Level": "Medium Risk"
+    },
+    {
+      "Cluster": 1,
+      "Location_Count": 4,
+      "Mean_Total_Violations": 138.5,
+      "Median_Total_Violations": 111.0,
+      "Min_Total_Violations": 111,
+      "Max_Total_Violations": 221,
+      "Sum_Total_Violations": 554,
+      "Risk Level": "High Risk"
+    }
+  ],
+  "interpretation": "Locations are grouped according to similar historical traffic violation patterns. Risk labels are assigned by ordering clusters according to their mean total historical violations.",
+  "limitation": "The clusters reflect historical patterns from the available TMO records and do not guarantee future traffic conditions. The model should be retrained when additional records become available."
+}

@@ -1,0 +1,25 @@
+Year,Month,Count of Violation,Risk Level
+2016,8,1,Low
+2017,3,2,Low
+2017,10,1,Low
+2017,11,2,Low
+2018,2,2,Low
+2018,6,1,Low
+2018,11,1,Low
+2019,3,5,Medium
+2019,4,4,Medium
+2019,5,5,Medium
+2019,6,3,Medium
+2019,7,149,High
+2019,8,146,High
+2019,9,131,High
+2019,10,159,High
+2019,11,111,High
+2019,12,31,Medium
+2020,1,1,Low
+2020,2,18,Medium
+2020,3,43,High
+2020,7,2,Low
+2020,8,5,Medium
+2020,9,138,High
+2020,10,278,High
