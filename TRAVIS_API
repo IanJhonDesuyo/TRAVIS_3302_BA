@@ -1,0 +1,78 @@
+# TRAVIS APIs Documentation
+
+## Overview
+
+This document lists the external APIs, internal APIs, and communication
+protocols used in the TRAVIS (Traffic Violation Recognition and AI
+Surveillance) system.
+
+## External APIs
+
+
+### Firebase Cloud Messaging (FCM) API
+
+**Purpose:** Push Notifications
+
+Sends real-time push notifications to the mobile application whenever
+congestion, traffic violations, collisions, or emergency events are
+detected.
+
+## Internal APIs
+
+### start_analysis.php (POST)
+
+Starts the AI analysis by launching the computer vision module to
+process the selected video source.
+
+### stop_analysis.php (POST)
+
+Stops the currently running AI analysis and updates the system status.
+
+### get_status.php (GET)
+
+Retrieves the current AI analysis status, processing progress, and
+system information.
+
+### update_status.php (POST)
+
+Receives updates from the Python computer vision module and updates the
+dashboard status.
+
+### get_monitoring_logs.php (GET)
+
+Retrieves monitoring logs, detected events, and traffic statistics
+stored in the database.
+
+### /video_feed (GET - Flask API)
+
+Streams the processed AI video with detection overlays to the monitoring
+dashboard in real time.
+
+### predict.php (POST) *(Planned)*
+
+Sends monitoring data to the Machine Learning model and returns
+predicted congestion levels.
+
+### mobile/dashboard.php (GET) *(Planned)*
+
+Provides summarized monitoring information for the React Native mobile
+application.
+
+### mobile/latest_status.php (GET) *(Planned)*
+
+Returns the latest monitoring status and AI detection results.
+
+### mobile/logs.php (GET) *(Planned)*
+
+Retrieves historical monitoring logs for mobile users.
+
+## Communication Protocol
+
+### RTSP (Real-Time Streaming Protocol)
+
+Used to receive the live video stream from the Tapo Camera.
+
+
+
+
+
