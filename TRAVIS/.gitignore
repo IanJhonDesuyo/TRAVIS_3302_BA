@@ -1,0 +1,54 @@
+# =========================
+# Python
+# =========================
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# =========================
+# Computer Vision
+# =========================
+computer_vision/__pycache__/
+computer_vision/results/
+computer_vision/snapshots/
+computer_vision/uploads/
+computer_vision/venv/
+computer_vision/.venv/
+
+# AI Model
+computer_vision/*.pt
+computer_vision/models/*.pt
+
+# =========================
+# Uploads
+# =========================
+uploads/videos/
+uploads/snapshots/
+
+# =========================
+# IDE
+# =========================
+.vscode/
+.idea/
+
+# =========================
+# Environment
+# =========================
+.env
+
+# =========================
+# OS Files
+# =========================
+
+# Runtime status files
+Web_app/api/analysis_status.json
+Web_app/api/latest_status.json
+
+# Web uploads
+Web_app/uploads/
+
+# Keep the uploads folder in Git
+!Web_app/uploads/.gitkeep
+Thumbs.db
+.DS_Store
