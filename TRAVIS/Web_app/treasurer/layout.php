@@ -55,7 +55,10 @@ function page_start(string $title, string $active = '', string $search = 'Search
     echo '<div class="ms-auto d-flex align-items-center gap-3">';
     $pendingCount = scalar("SELECT COUNT(*) FROM violations WHERE status IN ('pending', 'overdue')", 0);
     echo '<a href="' . esc(app_url('notifications.php')) . '" class="btn btn-light position-relative bell"><i class="bi bi-bell"></i>';
-    if ((int)$pendingCount > 0) echo '<span class="ping"></span>';
+    if ((int)$pendingCount > 0) {
+        $badgeText = (int)$pendingCount > 9 ? '9+' : (string)(int)$pendingCount;
+        echo '<span class="notif-badge">' . esc($badgeText) . '</span>';
+    }
     echo '</a><div class="dropdown"><button class="btn btn-light d-flex align-items-center gap-2" data-bs-toggle="dropdown"><span class="avatar">' . esc($init) . '</span><span class="d-none d-md-flex flex-column align-items-start lh-sm"><span class="small fw-semibold">' . esc($name) . '</span><span class="role-pill">' . esc($role) . '</span></span></button>';
     echo '<ul class="dropdown-menu dropdown-menu-end"><li><a class="dropdown-item" href="' . esc(app_url('profile.php')) . '"><i class="bi bi-person me-2"></i>Profile</a></li><li><hr class="dropdown-divider"></li><li><button class="dropdown-item text-danger" type="button" data-bs-toggle="modal" data-bs-target="#signOutModal"><i class="bi bi-box-arrow-right me-2"></i>Sign Out</button></li></ul></div></div></header><main class="content">';
 }

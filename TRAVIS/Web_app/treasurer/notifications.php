@@ -37,6 +37,23 @@ $systemAlerts = fetch_all("
     LIMIT 5
 ");
 
+// Anything timestamped after the treasurer's last visit to this page is "unread".
+// Read this BEFORE overwriting it so the current render still shows the correct state.
+$lastReadAt = (string)($_SESSION['notif_last_read_at'] ?? '1970-01-01 00:00:00');
+$_SESSION['notif_last_read_at'] = date('Y-m-d H:i:s');
+
+function is_unread(string $datetime, string $lastReadAt): bool {
+    return strtotime($datetime) > strtotime($lastReadAt);
+}
+
+function unread_dot(bool $unread): string {
+    return $unread ? '<span class="unread-dot" aria-hidden="true"></span>' : '';
+}
+
+function unread_label(bool $unread): string {
+    return $unread ? '<span class="unread-label">New</span>' : '';
+}
+
 function time_ago(string $datetime): string {
     $diff = time() - strtotime($datetime);
     if ($diff < 60) return 'Just now';
@@ -60,30 +77,30 @@ page_start('Notifications', 'notifications', 'Search notifications...', 'System 
   </div>
 <?php endif; ?>
 
-<?php foreach ($newViolations as $v): ?>
-  <div class="notif-card tone-info">
-    <div class="d-flex justify-content-between">
-      <strong>New Violation Recorded</strong>
+<?php foreach ($newViolations as $v): $unread = is_unread($v['created_at'], $lastReadAt); ?>
+  <div class="notif-card tone-info<?= $unread ? ' unread' : '' ?>">
+    <div class="d-flex justify-content-between align-items-start">
+      <strong><?= unread_dot($unread) ?>New Violation Recorded<?= unread_label($unread) ?></strong>
       <small class="text-muted"><?= esc(time_ago($v['created_at'])) ?></small>
     </div>
     <div class="text-muted small mt-1">Ticket <?= esc($v['ticket_number']) ?> &mdash; plate <?= esc($v['plate_number']) ?> flagged for <?= esc($v['violation_type']) ?> at <?= esc($v['violation_location']) ?>.</div>
   </div>
 <?php endforeach; ?>
 
-<?php foreach ($recentCompletedPayments as $p): ?>
-  <div class="notif-card tone-success">
-    <div class="d-flex justify-content-between">
-      <strong>Payment Completed</strong>
+<?php foreach ($recentCompletedPayments as $p): $unread = is_unread($p['payment_date'], $lastReadAt); ?>
+  <div class="notif-card tone-success<?= $unread ? ' unread' : '' ?>">
+    <div class="d-flex justify-content-between align-items-start">
+      <strong><?= unread_dot($unread) ?>Payment Completed<?= unread_label($unread) ?></strong>
       <small class="text-muted"><?= esc(time_ago($p['payment_date'])) ?></small>
     </div>
     <div class="text-muted small mt-1"><?= esc(payment_reference((int)$p['payment_id'])) ?> processed successfully for <?= peso($p['amount_paid']) ?> (plate <?= esc($p['plate_number']) ?>).</div>
   </div>
 <?php endforeach; ?>
 
-<?php foreach ($systemAlerts as $a): ?>
-  <div class="notif-card tone-danger">
-    <div class="d-flex justify-content-between">
-      <strong>System Alert</strong>
+<?php foreach ($systemAlerts as $a): $unread = is_unread($a['generated_at'], $lastReadAt); ?>
+  <div class="notif-card tone-danger<?= $unread ? ' unread' : '' ?>">
+    <div class="d-flex justify-content-between align-items-start">
+      <strong><?= unread_dot($unread) ?>System Alert<?= unread_label($unread) ?></strong>
       <small class="text-muted"><?= esc(time_ago($a['generated_at'])) ?></small>
     </div>
     <div class="text-muted small mt-1"><?= esc($a['message']) ?></div>
