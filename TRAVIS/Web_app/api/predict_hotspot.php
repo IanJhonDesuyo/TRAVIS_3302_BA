@@ -10,28 +10,34 @@ if ($risk !== '') {
     $flask_api .= '/' . rawurlencode($risk);
 }
 
-// Initialize cURL
-$ch = curl_init($flask_api);
+$response = false;
+$curlError = 'Machine-learning API is still starting.';
+$ch = null;
 
-curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($ch, CURLOPT_HTTPGET, true);
-curl_setopt($ch, CURLOPT_HTTPHEADER, [
-    "Accept: application/json"
-]);
-curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
-curl_setopt($ch, CURLOPT_TIMEOUT, 8);
+for ($attempt = 1; $attempt <= 20; $attempt++) {
+    $ch = curl_init($flask_api);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPGET, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ["Accept: application/json"]);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 1);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 5);
 
-$response = curl_exec($ch);
+    $response = curl_exec($ch);
+    if ($response !== false) break;
 
-// cURL error
-if (curl_errno($ch)) {
-    http_response_code(502);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+    $ch = null;
+    if ($attempt < 20) usleep(750000);
+}
+
+if ($response === false || !$ch) {
+    http_response_code(503);
     echo json_encode([
         "success" => false,
-        "message" => curl_error($ch)
+        "message" => "Machine-learning service did not become ready in time.",
+        "details" => $curlError
     ]);
-
-    curl_close($ch);
     exit;
 }
 

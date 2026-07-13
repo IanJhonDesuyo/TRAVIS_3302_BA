@@ -10,6 +10,46 @@ const stopAnalysisBtn = document.getElementById('stopAnalysisBtn');
 const analysisMessage = document.getElementById('analysisMessage');
 const uploadVideoBtn = document.getElementById('uploadVideoBtn');
 const cctvVideoInput = document.getElementById('cctvVideoInput');
+let previousCongestionAlertState = null;
+let previousCollisionState = null;
+let congestionAlertTimer = null;
+
+function hideCongestionAlert() {
+  document.getElementById('congestionLiveAlert')?.classList.remove('show');
+  if (congestionAlertTimer) window.clearTimeout(congestionAlertTimer);
+}
+
+function showCongestionAlert(data) {
+  const alert = document.getElementById('congestionLiveAlert');
+  const title = document.getElementById('liveSafetyAlertTitle');
+  const message = document.getElementById('congestionLiveAlertMessage');
+  if (!alert || !title || !message) return;
+
+  const visible = Number(data.vehicle_count ?? 0);
+  const level = String(data.congestion_level ?? 'Heavy');
+  title.textContent = 'Heavy traffic congestion detected';
+  message.textContent = `${level} congestion is active with ${visible} vehicle${visible === 1 ? '' : 's'} visible in the current frame.`;
+  alert.classList.add('show');
+
+  if (congestionAlertTimer) window.clearTimeout(congestionAlertTimer);
+  congestionAlertTimer = window.setTimeout(hideCongestionAlert, 10000);
+}
+
+function showCollisionAlert(data, collisionState) {
+  const alert = document.getElementById('congestionLiveAlert');
+  const title = document.getElementById('liveSafetyAlertTitle');
+  const message = document.getElementById('congestionLiveAlertMessage');
+  if (!alert || !title || !message) return;
+
+  title.textContent = collisionState === 'confirmed'
+    ? 'Collision risk confirmed'
+    : 'Potential collision detected';
+  message.textContent = 'Vehicle trajectories indicate a collision risk. Review the live stream and alert details immediately.';
+  alert.classList.add('show');
+
+  if (congestionAlertTimer) window.clearTimeout(congestionAlertTimer);
+  congestionAlertTimer = window.setTimeout(hideCongestionAlert, 12000);
+}
 
 // =============================
 // API Configuration
@@ -45,6 +85,13 @@ function badgeClass(type, value) {
     if (normalized === 'normal') return 'tag tag-success';
     if (normalized === 'warning') return 'tag tag-warning';
     if (normalized === 'alert') return 'tag tag-danger';
+  }
+
+  if (type === 'officer') {
+    if (normalized === 'detected') return 'tag tag-success';
+    if (normalized === 'multiple') return 'tag tag-info';
+    if (normalized === 'none') return 'tag tag-warning';
+    if (normalized === 'unknown') return 'tag tag-muted';
   }
 
   if (type === 'ai') {
@@ -264,8 +311,25 @@ async function refreshMonitoringStatus() {
     setText('outboundCount', data.outbound_count ?? 0);
     setBadge('congestionLevel', data.congestion_level ?? 'Unknown', 'congestion');
     setBadge('alertStatus', data.alert_status ?? 'NORMAL', 'alert');
-    setBadge('officerPresence', data.officer_presence ?? 'Unknown', 'default');
+
+    const congestionAlertState = String(data.alert_status ?? 'NORMAL').toLowerCase();
+    if (congestionAlertState === 'alert' && previousCongestionAlertState !== 'alert') {
+      showCongestionAlert(data);
+    }
+    previousCongestionAlertState = congestionAlertState;
+
+    setBadge('officerPresence', data.officer_presence ?? 'Unknown', 'officer');
     setBadge('potentialCollision', data.potential_collision ?? 'None', 'default');
+
+    const collisionState = String(data.potential_collision ?? 'none').toLowerCase();
+    if (
+      (collisionState === 'possible' || collisionState === 'confirmed')
+      && collisionState !== previousCollisionState
+    ) {
+      showCollisionAlert(data, collisionState);
+    }
+    previousCollisionState = collisionState;
+
     setText('lastUpdated', data.recorded_at ?? 'No data');
     setAnalysisControls(analysisStatus, data.message ?? '');
     setAnalysisSource(data);

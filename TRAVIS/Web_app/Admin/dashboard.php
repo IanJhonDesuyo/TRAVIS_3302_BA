@@ -96,7 +96,6 @@ require_once __DIR__ . '/layout.php';
 
 $todaySummary = fetch_one("
     SELECT
-        COALESCE(SUM(vehicle_count), 0) AS vehicle_observations,
         COALESCE(MAX(inbound_count), 0) AS inbound_total,
         COALESCE(MAX(outbound_count), 0) AS outbound_total,
         SUM(CASE
@@ -209,9 +208,9 @@ $recentViolations = fetch_all("
     LIMIT 5
 ");
 
-$vehiclesToday = (int) ($todaySummary['vehicle_observations'] ?? 0);
 $inboundToday = (int) ($todaySummary['inbound_total'] ?? 0);
 $outboundToday = (int) ($todaySummary['outbound_total'] ?? 0);
+$vehiclesToday = $inboundToday + $outboundToday;
 $congestionEvents = (int) ($todaySummary['congestion_events'] ?? 0);
 $collisionEvents = (int) ($todaySummary['collision_events'] ?? 0);
 
@@ -260,7 +259,7 @@ page_start('Dashboard', 'dashboard', 'Search violations, plates, locations...');
   <div class="col-sm-6 col-xl-3">
     <div class="stat-card dashboard-stat-card h-100">
       <div class="stat-icon tone-primary"><i class="bi bi-car-front"></i></div>
-      <div class="stat-label">Vehicle Observations Today</div>
+      <div class="stat-label">Vehicles Counted Today</div>
       <div class="stat-value"><?= num($vehiclesToday) ?></div>
       <small class="text-muted">
         <?= num($inboundToday) ?> inbound • <?= num($outboundToday) ?> outbound

@@ -68,3 +68,12 @@ OUTBOUND_LINE_NORMALIZED = (
     (420 / 1280, 735 / 720),
     (760 / 1280, 630 / 720)
 )
+
+# ==========================================
+# Optional modular collision detection
+# Remains off unless this flag or a selected
+# calibration profile explicitly enables it.
+# ==========================================
+ENABLE_COLLISION_DETECTION = False
+CALIBRATION_PROFILE = "calibration_profiles/example.json"
+ENABLE_OFFICER_DETECTION = True

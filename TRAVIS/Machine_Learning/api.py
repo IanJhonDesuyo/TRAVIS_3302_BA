@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 import calendar
 import logging
+import sys
 
 import joblib
 import pandas as pd
@@ -26,6 +27,20 @@ from flask_cors import CORS
 BASE_DIR = Path(__file__).resolve().parent
 MODEL_DIR = BASE_DIR / "models"
 RESULTS_DIR = BASE_DIR / "results"
+
+# The authenticated PHP layout starts this service with pythonw.exe to avoid
+# opening a console window. Flask/Click still prints a startup banner, so give
+# it valid streams before logging is configured; otherwise Python raises
+# OSError 22 and exits immediately after loading the models.
+if Path(sys.executable).name.lower() == "pythonw.exe":
+    _service_log = open(
+        BASE_DIR / "ml-api.log",
+        "a",
+        encoding="utf-8",
+        buffering=1,
+    )
+    sys.stdout = _service_log
+    sys.stderr = _service_log
 
 MONTHLY_MODEL_PATH = MODEL_DIR / "monthly_risk_model.pkl"
 HOTSPOT_MODEL_PATH = MODEL_DIR / "hotspot_clustering_model.pkl"
@@ -776,5 +791,7 @@ if __name__ == "__main__":
     app.run(
         host="127.0.0.1",
         port=5001,
-        debug=True,
+        debug=False,
+        threaded=True,
+        use_reloader=False,
     )

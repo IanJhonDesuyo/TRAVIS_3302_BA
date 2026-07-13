@@ -8,6 +8,9 @@ function sidebar(string $active = ''): void {
             ['dashboard.php','Dashboard','bi-speedometer2','dashboard'],
             ['monitoring.php','Live Monitoring','bi-camera-video','monitoring'],
         ],
+        'Intelligence' => [
+            ['decision_support.php','Decision Support','bi-cpu','decision-support'],
+        ],
         'Enforcement' => [
             ['violations.php','Violations','bi-cone-striped','violations'],
             ['payments.php','Payments','bi-cash-coin','payments'],
@@ -34,6 +37,7 @@ function sidebar(string $active = ''): void {
 }
 
 function page_start(string $title, string $active = '', string $search = 'Search...'): void {
+    ensure_ml_api_running();
     $admin = current_admin();
     $name = $admin['full_name'] ?? 'System Admin';
     $init = initials($name);
@@ -66,9 +70,9 @@ function page_end(bool $chart = false): void {
     unset($_SESSION['login_success']);
 
     echo '</main></div>';
-    echo '<div class="modal fade signout-modal" id="signOutModal" tabindex="-1" aria-labelledby="signOutModalLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-body text-center"><div class="signout-icon"><i class="bi bi-box-arrow-right"></i></div><h4 class="fw-bold mb-2" id="signOutModalLabel">Sign out of TRAVIS?</h4><p class="text-muted mb-4">Are you sure you want to end your current session? You will need to sign in again to access the dashboard.</p><div class="d-flex gap-3 justify-content-center"><button type="button" class="btn btn-light px-4" data-bs-dismiss="modal"><i class="bi bi-x-circle me-2"></i>Cancel</button><form method="post" action="' . esc(app_url('logout.php')) . '"><input type="hidden" name="csrf_token" value="' . esc(csrf_token()) . '"><button class="btn btn-signout px-4" type="submit"><i class="bi bi-box-arrow-right me-2"></i>Sign Out</button></form></div></div></div></div></div>';
+    echo '<div class="modal fade auth-prompt signout-modal" id="signOutModal" tabindex="-1" aria-labelledby="signOutModalLabel" aria-describedby="signOutModalDescription" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="auth-prompt-accent"></div><div class="modal-body text-center"><div class="auth-prompt-brand"><span class="auth-prompt-brand-mark">T</span><span>TRAVIS SECURITY</span></div><div class="auth-prompt-icon signout-icon"><i class="bi bi-box-arrow-right"></i></div><span class="auth-prompt-eyebrow">Session control</span><h4 id="signOutModalLabel">Sign out of TRAVIS?</h4><p id="signOutModalDescription">Your current session will end securely. You will need to enter your credentials again to access the dashboard.</p><div class="auth-prompt-actions"><button type="button" class="btn auth-prompt-cancel" data-bs-dismiss="modal"><i class="bi bi-arrow-left"></i><span>Stay signed in</span></button><form method="post" action="' . esc(app_url('logout.php')) . '"><input type="hidden" name="csrf_token" value="' . esc(csrf_token()) . '"><button class="btn btn-signout" type="submit"><span>Sign out securely</span><i class="bi bi-box-arrow-right"></i></button></form></div><small class="auth-prompt-note"><i class="bi bi-shield-lock"></i> Your account and session data remain protected.</small></div></div></div></div>';
     if ($showLoginSuccess) {
-        echo '<div class="modal fade login-success-modal" id="loginSuccessModal" tabindex="-1" aria-labelledby="loginSuccessModalLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-body text-center"><div class="login-success-icon"><i class="bi bi-check-lg"></i></div><h4 class="fw-bold mb-2" id="loginSuccessModalLabel">Login Successful!</h4><p class="text-muted mb-4">Welcome back, <strong>' . esc($loginName) . '</strong>. You have successfully signed in to the TRAVIS dashboard.</p><button type="button" class="btn btn-login-success px-5" data-bs-dismiss="modal"><i class="bi bi-speedometer2 me-2"></i>Continue to Dashboard</button></div></div></div></div>';
+        echo '<div class="modal fade auth-prompt login-success-modal" id="loginSuccessModal" tabindex="-1" aria-labelledby="loginSuccessModalLabel" aria-describedby="loginSuccessModalDescription" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="auth-prompt-accent"></div><div class="modal-body text-center"><div class="auth-prompt-brand"><span class="auth-prompt-brand-mark">T</span><span>TRAVIS COMMAND CENTER</span></div><div class="auth-prompt-icon login-success-icon"><i class="bi bi-check-lg"></i></div><span class="auth-prompt-eyebrow">Identity verified</span><h4 id="loginSuccessModalLabel">Welcome back, ' . esc($loginName) . '!</h4><p id="loginSuccessModalDescription">You have signed in successfully. Your secure dashboard and live traffic intelligence are ready.</p><button type="button" class="btn btn-login-success" data-bs-dismiss="modal"><span>Open dashboard</span><i class="bi bi-arrow-right"></i></button><small class="auth-prompt-note"><i class="bi bi-shield-check"></i> Secure administrator session active.</small></div></div></div></div>';
     }
     echo '<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>';
     if ($chart) echo '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>';

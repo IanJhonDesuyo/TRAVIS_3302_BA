@@ -5,17 +5,23 @@ import os
 import time
 import config
 from api_client import send_monitoring_log, send_status_update
-from utils import crossed_line, scale_line
 from camera_source import CameraSource
 from stream_server import start_stream, update_frame
 from congestion import get_congestion_level
 from alert_engine import AlertEngine
+from calibration import load_calibration
+from collision_detection import CollisionDetector
+from direction_counter import DirectionCounter
+from officer_detection import OfficerPresenceDetector
 
 
 def apply_selected_source():
     parser = argparse.ArgumentParser(description="TRAVIS AI video detection engine")
     parser.add_argument("--source-type", choices=["uploaded_video", "tapo_camera"], default=None)
     parser.add_argument("--source", default=None)
+    parser.add_argument("--calibration-profile", default=None)
+    parser.add_argument("--enable-collision", action="store_true")
+    parser.add_argument("--enable-officer-detection", action="store_true")
     args = parser.parse_args()
 
     if args.source_type == "uploaded_video":
@@ -56,6 +62,8 @@ last_api_update = 0
 last_log_save = 0
 last_logged_congestion_level = None
 last_logged_alert_status = None
+last_logged_collision_status = None
+last_logged_officer_status = None
 
 
 # ============================
@@ -96,16 +104,38 @@ total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) if config.VIDEO_SOURCE == 
 current_frame = 0
 source_started_at = time.time()
 
-INBOUND_LINE = scale_line(
-    config.INBOUND_LINE_NORMALIZED,
-    width,
-    height
+calibration = load_calibration(
+    width=width,
+    height=height,
+    legacy_inbound_line=config.INBOUND_LINE_NORMALIZED,
+    legacy_outbound_line=config.OUTBOUND_LINE_NORMALIZED,
+    profile_path=selected_source.calibration_profile or config.CALIBRATION_PROFILE,
 )
+INBOUND_LINE = calibration.inbound_line
+OUTBOUND_LINE = calibration.outbound_line
 
-OUTBOUND_LINE = scale_line(
-    config.OUTBOUND_LINE_NORMALIZED,
-    width,
-    height
+direction_counter = DirectionCounter(INBOUND_LINE, OUTBOUND_LINE)
+collision_enabled = bool(
+    selected_source.enable_collision
+    or config.ENABLE_COLLISION_DETECTION
+    or calibration.collision_enabled
+)
+collision_detector = CollisionDetector(
+    frame_size=(width, height),
+    settings=calibration.collision,
+    enabled=collision_enabled,
+)
+officer_detection_enabled = bool(
+    calibration.officer_zone
+    and (
+        selected_source.enable_officer_detection
+        or config.ENABLE_OFFICER_DETECTION
+        or calibration.officer_enabled
+    )
+)
+officer_detector = OfficerPresenceDetector(
+    enabled=officer_detection_enabled,
+    settings=calibration.officer,
 )
 
 FONT_SCALE = max(0.45, width / 1800)
@@ -117,10 +147,13 @@ POINT_RADIUS = max(3, width // 350)
 DASHBOARD_X = int(width * 0.01)
 DASHBOARD_Y = int(height * 0.02)
 DASHBOARD_W = int(width * 0.34)
-DASHBOARD_H = int(height * 0.34)
+DASHBOARD_H = int(height * 0.50)
 
 print("Inbound Line:", INBOUND_LINE)
 print("Outbound Line:", OUTBOUND_LINE)
+print("Calibration Profile:", calibration.name)
+print("Collision Detection:", "Enabled" if collision_enabled else "Disabled")
+print("Officer Presence Detection:", "Enabled" if officer_detection_enabled else "Disabled")
 
 if fps == 0:
     fps = 30
@@ -139,20 +172,6 @@ out = cv2.VideoWriter(OUTPUT_VIDEO, fourcc, fps, (width, height))
 
 
 # ============================
-# Direction Counting Lines
-# Adjust these coordinates based on your video
-# Green = Inbound
-# Red = Outbound
-# ============================
-inbound_count = 0
-outbound_count = 0
-
-counted_inbound = set()
-counted_outbound = set()
-
-track_history = {}
-
-# ============================
 # Main Loop
 # ============================
 while True:
@@ -166,6 +185,8 @@ while True:
 
     visible_vehicle_count = 0
     visible_person_count = 0
+    vehicle_tracks = []
+    persons_in_officer_zone = []
 
     annotated_frame = frame.copy()
 
@@ -207,6 +228,21 @@ while True:
         2
     )
 
+    if officer_detection_enabled and calibration.officer_zone:
+        for index, start_point in enumerate(calibration.officer_zone):
+            end_point = calibration.officer_zone[(index + 1) % len(calibration.officer_zone)]
+            cv2.line(annotated_frame, start_point, end_point, (255, 165, 0), 2)
+        zone_label_point = calibration.officer_zone[0]
+        cv2.putText(
+            annotated_frame,
+            "OFFICER ZONE",
+            (zone_label_point[0], max(20, zone_label_point[1] - 8)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            (255, 165, 0),
+            2,
+        )
+
     # YOLO + ByteTrack
     results = model.track(
         frame,
@@ -240,37 +276,31 @@ while True:
 
             if cls == config.PERSON_CLASS:
                 visible_person_count += 1
-                label = f"Person #{track_id}"
-                box_color = (255, 255, 0)
+                person_anchor = (center_x, y2)
+                in_officer_zone = calibration.contains_officer_point(person_anchor)
+                if in_officer_zone:
+                    persons_in_officer_zone.append({
+                        "track_id": track_id,
+                        "confidence": conf,
+                        "bbox": (x1, y1, x2, y2),
+                        "anchor": person_anchor,
+                    })
+                label = f"Zone Person #{track_id}" if in_officer_zone else f"Person #{track_id}"
+                box_color = (255, 165, 0) if in_officer_zone else (255, 255, 0)
 
             else:
                 visible_vehicle_count += 1
                 label = f"Vehicle #{track_id}"
                 box_color = (0, 255, 0)
-
-                if track_id != -1:
-                    if track_id not in track_history:
-                        track_history[track_id] = []
-
-                    track_history[track_id].append(current_point)
-
-                    if len(track_history[track_id]) > 10:
-                        track_history[track_id].pop(0)
-
-                    if len(track_history[track_id]) >= 2:
-                        previous_point = track_history[track_id][-2]
-
-                        # Inbound count
-                        if crossed_line(previous_point, current_point, INBOUND_LINE):
-                            if track_id not in counted_inbound:
-                                counted_inbound.add(track_id)
-                                inbound_count += 1
-
-                        # Outbound count
-                        if crossed_line(previous_point, current_point, OUTBOUND_LINE):
-                            if track_id not in counted_outbound:
-                                counted_outbound.add(track_id)
-                                outbound_count += 1
+                direction_counter.update(track_id, current_point)
+                vehicle_tracks.append({
+                    "track_id": track_id,
+                    "class_id": cls,
+                    "confidence": conf,
+                    "bbox": (x1, y1, x2, y2),
+                    "center": current_point,
+                    "inside_road_roi": calibration.contains_road_point(current_point),
+                })
 
             # Draw bounding box
             cv2.rectangle(
@@ -300,6 +330,12 @@ while True:
                 (0, 0, 255),
                 -1
             )
+
+    inbound_count, outbound_count = direction_counter.snapshot()
+    collision_result = collision_detector.update(vehicle_tracks, time.monotonic())
+    potential_collision = collision_result.status
+    officer_result = officer_detector.update(persons_in_officer_zone)
+    officer_presence = officer_result.status
 
     congestion_level = get_congestion_level(visible_vehicle_count)
 
@@ -388,11 +424,31 @@ while True:
 
     cv2.putText(
         annotated_frame,
-        "Tracking : ByteTrack",
+        f"Collision : {potential_collision.upper()}",
         (20, 265),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.6,
         (255, 255, 255),
+        2
+    )
+
+    cv2.putText(
+        annotated_frame,
+        "Tracking : ByteTrack",
+        (20, 295),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.6,
+        (255, 255, 255),
+        2
+    )
+
+    cv2.putText(
+        annotated_frame,
+        f"Officer Zone : {officer_presence.upper()}",
+        (20, 325),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.6,
+        (255, 165, 0),
         2
     )
 
@@ -406,10 +462,10 @@ while True:
             "vehicle_count": visible_vehicle_count,
             "inbound_count": inbound_count,
             "outbound_count": outbound_count,
-            "officer_presence": "Unknown",
+            "officer_presence": officer_presence,
             "congestion_level": congestion_level,
             "alert_status": alert_status,
-            "potential_collision": "None",
+            "potential_collision": potential_collision,
             "ai_status": "Running",
             "source_type": selected_source.source_type or ("uploaded_video" if config.VIDEO_SOURCE == "video" else config.VIDEO_SOURCE),
             "current_frame": current_frame,
@@ -425,18 +481,27 @@ while True:
     log_due = current_time - last_log_save >= 30
     congestion_changed = congestion_level != last_logged_congestion_level
     alert_changed = alert_status != last_logged_alert_status
+    collision_changed = potential_collision != last_logged_collision_status
+    officer_changed = officer_presence != last_logged_officer_status
 
-    if log_due or congestion_changed or alert_changed:
+    if log_due or congestion_changed or alert_changed or collision_changed or officer_changed:
+        collision_note = None
+        if collision_result.track_ids:
+            collision_note = (
+                f"Potential collision {potential_collision} between tracks "
+                f"{collision_result.track_ids[0]} and {collision_result.track_ids[1]} "
+                f"(confidence {collision_result.confidence:.2f})."
+            )
         log_payload = {
             "camera_id": config.CAMERA_ID,
             "vehicle_count": visible_vehicle_count,
             "inbound_count": inbound_count,
             "outbound_count": outbound_count,
             "congestion_level": congestion_level,
-            "officer_presence": "Unknown",
-            "potential_collision": "None",
-            "alert_generated": 1 if alert_status == "ALERT" else 0,
-            "incident_notes": None
+            "officer_presence": officer_presence,
+            "potential_collision": potential_collision,
+            "alert_generated": 1 if alert_status == "ALERT" or potential_collision != "none" else 0,
+            "incident_notes": collision_note
         }
 
         send_monitoring_log(config.MONITORING_LOG_API_URL, log_payload)
@@ -444,6 +509,8 @@ while True:
         last_log_save = current_time
         last_logged_congestion_level = congestion_level
         last_logged_alert_status = alert_status
+        last_logged_collision_status = potential_collision
+        last_logged_officer_status = officer_presence
 
     update_frame(annotated_frame)
 

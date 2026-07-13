@@ -26,22 +26,36 @@ if ($_SERVER["REQUEST_METHOD"] === "GET") {
 
 $flask_api = "http://127.0.0.1:5001/predict/monthly";
 
-$ch = curl_init($flask_api);
+$response = false;
+$curlError = 'Machine-learning API is still starting.';
+$ch = null;
 
-curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($ch, CURLOPT_POST, true);
-curl_setopt($ch, CURLOPT_HTTPHEADER, [
-    "Content-Type: application/json"
-]);
-curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($input));
+// api.py loads its model bundles before Flask begins listening. Retry long
+// enough for a fresh authenticated-session auto-start to finish.
+for ($attempt = 1; $attempt <= 20; $attempt++) {
+    $ch = curl_init($flask_api);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ["Content-Type: application/json"]);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($input));
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 1);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 5);
 
-$response = curl_exec($ch);
+    $response = curl_exec($ch);
+    if ($response !== false) break;
 
-if (curl_errno($ch)) {
+    $curlError = curl_error($ch);
+    curl_close($ch);
+    $ch = null;
+    if ($attempt < 20) usleep(750000);
+}
 
+if ($response === false || !$ch) {
+    http_response_code(503);
     echo json_encode([
         "success" => false,
-        "message" => curl_error($ch)
+        "message" => "Machine-learning service did not become ready in time.",
+        "details" => $curlError
     ]);
     exit;
 }

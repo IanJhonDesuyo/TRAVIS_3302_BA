@@ -1,0 +1,22 @@
+{
+  "profile_name": "Example 1280x720 Road Profile",
+  "road_roi": [[0.05, 0.25], [0.95, 0.25], [1.0, 1.0], [0.0, 1.0]],
+  "inbound_line": [[0.2578125, 0.4236111], [0.4375, 0.3958333]],
+  "outbound_line": [[0.328125, 1.0], [0.59375, 0.875]],
+  "officer_zone": [[0.55, 0.48], [0.67, 0.48], [0.67, 0.67], [0.55, 0.67]],
+  "officer": {
+    "enabled": true,
+    "presence_frames": 3,
+    "absence_frames": 15
+  },
+  "collision": {
+    "enabled": false,
+    "ttc_warning_seconds": 1.8,
+    "maximum_pair_distance": 2.2,
+    "contact_iou": 0.08,
+    "possible_frames": 5,
+    "confirmed_frames": 8,
+    "stationary_speed": 0.012,
+    "cooldown_seconds": 30
+  }
+}

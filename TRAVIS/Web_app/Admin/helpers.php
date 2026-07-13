@@ -16,6 +16,66 @@ if (empty($_SESSION['user']['id'])) {
     exit;
 }
 
+/**
+ * Start the local ML API for authenticated dashboard sessions when needed.
+ *
+ * The TCP probe prevents duplicate processes. A short lock/throttle also
+ * protects against several page requests arriving while Flask is starting.
+ */
+function ensure_ml_api_running(): bool {
+    $host = '127.0.0.1';
+    $port = 5001;
+
+    $connection = @fsockopen($host, $port, $errorCode, $errorMessage, 0.15);
+    if (is_resource($connection)) {
+        fclose($connection);
+        return true;
+    }
+
+    $projectRoot = dirname(__DIR__, 2);
+    $python = $projectRoot . DIRECTORY_SEPARATOR . '.venv' . DIRECTORY_SEPARATOR . 'Scripts' . DIRECTORY_SEPARATOR . 'pythonw.exe';
+    $apiScript = $projectRoot . DIRECTORY_SEPARATOR . 'Machine_Learning' . DIRECTORY_SEPARATOR . 'api.py';
+
+    if (PHP_OS_FAMILY !== 'Windows' || !is_file($python) || !is_file($apiScript)) {
+        error_log('TRAVIS ML API auto-start skipped: Python runtime or api.py is unavailable.');
+        return false;
+    }
+
+    $lockPath = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'travis_ml_api_start.lock';
+    $lock = @fopen($lockPath, 'c+');
+    if (!is_resource($lock) || !flock($lock, LOCK_EX | LOCK_NB)) {
+        if (is_resource($lock)) fclose($lock);
+        return false;
+    }
+
+    $lastAttempt = (int) trim((string) stream_get_contents($lock));
+    if ($lastAttempt > 0 && (time() - $lastAttempt) < 15) {
+        flock($lock, LOCK_UN);
+        fclose($lock);
+        return false;
+    }
+
+    rewind($lock);
+    ftruncate($lock, 0);
+    fwrite($lock, (string) time());
+    fflush($lock);
+
+    // All command parts come from fixed application paths, not request input.
+    $command = 'cmd /c start "" /B "' . str_replace('"', '""', $python) . '" "' . str_replace('"', '""', $apiScript) . '"';
+    $process = @popen($command, 'r');
+    $started = is_resource($process);
+    if ($started) pclose($process);
+
+    flock($lock, LOCK_UN);
+    fclose($lock);
+
+    if (!$started) {
+        error_log('TRAVIS ML API auto-start failed: unable to launch api.py.');
+    }
+
+    return $started;
+}
+
 function web_app_base_url(): string {
     $documentRoot = str_replace('\\', '/', rtrim($_SERVER['DOCUMENT_ROOT'] ?? '', '/'));
     $dir = str_replace('\\', '/', __DIR__);

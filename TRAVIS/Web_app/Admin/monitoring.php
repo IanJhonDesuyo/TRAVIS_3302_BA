@@ -343,6 +343,16 @@ page_start('Live Monitoring', 'monitoring', 'Search monitoring logs...');
   </div>
 </div>
 
+<div class="congestion-live-alert" id="congestionLiveAlert" role="alert" aria-live="assertive" aria-atomic="true">
+  <div class="congestion-live-alert-icon"><i class="bi bi-exclamation-triangle-fill"></i></div>
+  <div class="congestion-live-alert-copy">
+    <strong id="liveSafetyAlertTitle">Heavy traffic congestion detected</strong>
+    <span id="congestionLiveAlertMessage">The monitored area has exceeded the safe traffic threshold.</span>
+    <a href="<?= esc(app_url('alerts.php')) ?>">View alert details <i class="bi bi-arrow-right"></i></a>
+  </div>
+  <button type="button" aria-label="Dismiss congestion alert" onclick="hideCongestionAlert()"><i class="bi bi-x-lg"></i></button>
+</div>
+
 <script src="<?= esc(asset_url('js/monitoring.js') . '?v=' . filemtime(dirname(__DIR__, 2) . '/js/monitoring.js')) ?>"></script>
 
 <?php page_end(); ?>
