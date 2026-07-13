@@ -37,6 +37,8 @@ function page_start(string $title, string $active = '', string $search = 'Search
     $admin = current_admin();
     $name = $admin['full_name'] ?? 'System Admin';
     $init = initials($name);
+    $styleFile = dirname(__DIR__, 2) . '/css/style.css';
+    $styleVersion = is_file($styleFile) ? (string) filemtime($styleFile) : '1';
     echo '<!doctype html><html lang="en"><head><meta charset="utf-8" />';
     echo '<meta name="viewport" content="width=device-width,initial-scale=1" />';
     echo '<title>TRAVIS — ' . esc($title) . '</title>';
@@ -44,7 +46,7 @@ function page_start(string $title, string $active = '', string $search = 'Search
     echo '<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">';
     echo '<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />';
     echo '<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />';
-    echo '<link href="' . esc(asset_url('css/style.css')) . '" rel="stylesheet" />';
+    echo '<link href="' . esc(asset_url('css/style.css')) . '?v=' . esc($styleVersion) . '" rel="stylesheet" />';
     echo '<style>.empty-state{border:1px dashed #d1d5db;border-radius:14px;padding:24px;text-align:center;color:#6b7280;background:#f9fafb}.camera-stage{min-height:420px;background:linear-gradient(135deg,#0f172a,#1e3a8a);border-radius:18px;display:flex;align-items:center;justify-content:center;color:#fff;position:relative;overflow:hidden}.camera-stage video{width:100%;height:100%;max-height:480px;object-fit:contain;background:#000}.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}.mini-metric{background:#fff;border:1px solid #edf2f7;border-radius:14px;padding:14px}.mini-metric small{color:#64748b}.mini-metric strong{display:block;font-size:1.3rem}.nav-link.active{background:rgba(255,255,255,.12);color:#fff}</style>';
     echo '</head><body class="admin-dashboard">';
     sidebar($active);

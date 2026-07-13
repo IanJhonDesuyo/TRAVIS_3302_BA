@@ -1,8 +1,3 @@
-Library
-/
-style.css
-
-
 :root {
   --primary: #1e3a8a;
   --primary-dark: #172554;
@@ -34,6 +29,7 @@ body {
   position: fixed;
   top: 0; left: 0; bottom: 0;
   width: var(--sidebar-w);
+  max-width: 100vw;
   background: linear-gradient(180deg, var(--primary-dark), var(--primary));
   color: #fff;
   z-index: 1040;
@@ -45,13 +41,13 @@ body {
   border-bottom: 1px solid rgba(255,255,255,.1);
   display: flex; align-items: center; gap: .75rem;
 }
-.sidebar-brand .logo {
+.sidebar-brand .brand-logo {
+  flex: 0 0 40px;
   width: 40px; height: 40px;
-  background: var(--accent);
+  object-fit: cover;
   border-radius: 8px;
-  display: grid; place-items: center;
-  font-weight: 700; color: #1a1a1a;
 }
+.sidebar-brand > div { min-width: 0; }
 .sidebar-brand h5 { margin: 0; font-weight: 700; letter-spacing: .5px; }
 .sidebar-brand small { color: rgba(255,255,255,.6); font-size: .7rem; }
 
@@ -71,7 +67,7 @@ body {
 .sidebar .badge { margin-left: auto; }
 
 /* Main */
-.main-wrapper { margin-left: var(--sidebar-w); min-height: 100vh; display: flex; flex-direction: column; }
+.main-wrapper { width: calc(100% - var(--sidebar-w)); margin-left: var(--sidebar-w); min-height: 100vh; display: flex; flex-direction: column; }
 .topbar {
   background: var(--surface);
   border-bottom: 1px solid var(--border);
@@ -168,7 +164,7 @@ body {
 @media (max-width: 991.98px) {
   .sidebar { transform: translateX(-100%); }
   .sidebar.show { transform: translateX(0); }
-  .main-wrapper { margin-left: 0; }
+  .main-wrapper { width: 100%; margin-left: 0; }
 }
 
 .btn-primary { background: var(--primary); border-color: var(--primary); }
@@ -436,6 +432,93 @@ body {
 
   .ai-guidance-row strong {
     text-align: left;
+  }
+}
+
+/* ============================================================
+   TRAVIS PROFESSIONAL NAVY GLASS THEME
+   ============================================================ */
+
+body.admin-dashboard {
+  background:
+    radial-gradient(circle at 88% 4%, rgba(59, 130, 246, .11), transparent 30rem),
+    linear-gradient(145deg, #eef3f9 0%, #f7f9fc 48%, #e8eef6 100%);
+  background-attachment: fixed;
+}
+
+.sidebar {
+  background:
+    radial-gradient(circle at 20% 0%, rgba(59, 130, 246, .22), transparent 18rem),
+    linear-gradient(165deg, #081a36 0%, #102f58 52%, #174577 100%);
+  box-shadow: 14px 0 34px rgba(8, 26, 54, .14);
+  transition: transform .38s cubic-bezier(.22, 1, .36, 1), box-shadow .3s ease;
+}
+
+.sidebar-brand {
+  background: rgba(255, 255, 255, .025);
+  backdrop-filter: blur(10px);
+}
+
+.sidebar .nav-link {
+  border: 1px solid transparent;
+  transition: background-color .25s ease, border-color .25s ease,
+              color .25s ease, transform .25s cubic-bezier(.22, 1, .36, 1);
+}
+
+.sidebar .nav-link:hover {
+  border-color: rgba(255, 255, 255, .08);
+  background: rgba(255, 255, 255, .09);
+  transform: translateX(4px);
+}
+
+.sidebar .nav-link.active {
+  border-color: rgba(255, 255, 255, .16);
+  background: linear-gradient(110deg, rgba(245, 158, 11, .96), rgba(251, 191, 36, .90));
+  box-shadow: 0 8px 20px rgba(2, 12, 27, .18);
+}
+
+.topbar {
+  background: rgba(255, 255, 255, .80);
+  border-color: rgba(23, 59, 99, .10);
+  box-shadow: 0 8px 24px rgba(15, 45, 75, .045);
+  backdrop-filter: blur(16px) saturate(125%);
+}
+
+.stat-card,
+.section-card {
+  border-color: rgba(23, 59, 99, .11);
+  background: rgba(255, 255, 255, .78);
+  box-shadow: 0 12px 30px rgba(15, 45, 75, .06);
+  backdrop-filter: blur(14px) saturate(115%);
+  transition: transform .34s cubic-bezier(.22, 1, .36, 1),
+              box-shadow .34s ease, border-color .34s ease;
+  animation: travis-card-enter .55s cubic-bezier(.22, 1, .36, 1) both;
+}
+
+.stat-card:hover,
+.section-card:hover {
+  border-color: rgba(37, 99, 235, .20);
+  box-shadow: 0 18px 38px rgba(15, 45, 75, .10);
+  transform: translateY(-3px);
+}
+
+.backdrop {
+  background: rgba(4, 15, 32, .48);
+  backdrop-filter: blur(3px);
+  transition: opacity .3s ease;
+}
+
+@keyframes travis-card-enter {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
   }
 }
 
@@ -995,5 +1078,181 @@ body {
 
   .ai-highlight-note {
     white-space: normal;
+  }
+}
+
+/* ============================================================
+   TRAVIS THEME V2 — SAFE LAYOUT INTEGRATION
+   Visual treatment adapted from style(1).css. The positioning
+   rules below are intentionally explicit to prevent overlap.
+   ============================================================ */
+
+body.admin-dashboard {
+  --primary: #1976d2;
+  --primary-dark: #0b4faf;
+  --primary-light: #4fc3f7;
+  --secondary: #00a99d;
+  --secondary-light: #26c6b8;
+  --bg: #eef4fb;
+  --surface: #ffffff;
+  --text: #1f2937;
+  --muted: #64748b;
+  --border: #dbe4ee;
+  --card-radius: 18px;
+  --card-shadow: 0 15px 35px rgba(15, 23, 42, .08);
+  overflow-x: hidden;
+  background:
+    radial-gradient(circle at 92% 3%, rgba(79, 195, 247, .13), transparent 30rem),
+    linear-gradient(180deg, #eef5ff 0%, #f8fafc 100%);
+}
+
+/* Desktop: sidebar and content always own separate columns. */
+body.admin-dashboard .sidebar {
+  inset: 0 auto 0 0;
+  width: var(--sidebar-w);
+  max-width: var(--sidebar-w);
+  border-right: 1px solid rgba(255, 255, 255, .06);
+  background: linear-gradient(180deg, #081b33 0%, #0d2442 58%, #12345a 100%);
+  box-shadow: 6px 0 30px rgba(0, 0, 0, .12);
+}
+
+body.admin-dashboard .main-wrapper {
+  width: auto;
+  min-width: 0;
+  margin-left: var(--sidebar-w);
+}
+
+body.admin-dashboard .content,
+body.admin-dashboard .content > * {
+  min-width: 0;
+}
+
+body.admin-dashboard .sidebar .nav-link {
+  margin: 6px 10px;
+  border-radius: 14px;
+}
+
+body.admin-dashboard .sidebar .nav-link.active {
+  color: #fff;
+  border-color: rgba(255, 255, 255, .13);
+  background: linear-gradient(135deg, #1976d2, #00a99d);
+  box-shadow: 0 10px 25px rgba(25, 118, 210, .30);
+}
+
+body.admin-dashboard .topbar {
+  z-index: 1020;
+  background: rgba(255, 255, 255, .76);
+  border-bottom: 1px solid rgba(255, 255, 255, .55);
+  backdrop-filter: blur(16px) saturate(125%);
+}
+
+body.admin-dashboard .section-card,
+body.admin-dashboard .stat-card {
+  border: 1px solid rgba(255, 255, 255, .58);
+  border-radius: var(--card-radius);
+  background: rgba(255, 255, 255, .86);
+  box-shadow: var(--card-shadow);
+  backdrop-filter: blur(14px) saturate(112%);
+}
+
+body.admin-dashboard .stat-card .stat-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 15px;
+  box-shadow: 0 10px 22px rgba(25, 118, 210, .18);
+}
+
+body.admin-dashboard .stat-card .stat-value {
+  color: #173b63;
+  font-size: 1.85rem;
+  font-weight: 800;
+}
+
+body.admin-dashboard .btn-primary {
+  border: 0;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #1976d2, #00a99d);
+  box-shadow: 0 8px 20px rgba(25, 118, 210, .22);
+  transition: transform .28s cubic-bezier(.22, 1, .36, 1), filter .28s ease, box-shadow .28s ease;
+}
+
+body.admin-dashboard .btn-primary:hover {
+  background: linear-gradient(135deg, #1268bd, #00988d);
+  box-shadow: 0 12px 25px rgba(25, 118, 210, .27);
+  filter: brightness(1.03);
+  transform: translateY(-2px);
+}
+
+body.admin-dashboard .btn-light {
+  border-radius: 12px;
+}
+
+body.admin-dashboard .form-control,
+body.admin-dashboard .form-select {
+  border-color: var(--border);
+  border-radius: 12px;
+  transition: border-color .2s ease, box-shadow .2s ease, background-color .2s ease;
+}
+
+body.admin-dashboard .form-control:focus,
+body.admin-dashboard .form-select:focus {
+  border-color: #1976d2;
+  box-shadow: 0 0 0 .2rem rgba(25, 118, 210, .13);
+}
+
+body.admin-dashboard .table-responsive,
+body.admin-dashboard .table-scroll {
+  border-radius: 16px;
+}
+
+body.admin-dashboard .table tbody tr {
+  transition: background-color .2s ease;
+}
+
+body.admin-dashboard .table tbody tr:hover {
+  background: rgba(219, 234, 254, .52);
+}
+
+body.admin-dashboard ::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+body.admin-dashboard ::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 20px;
+  background: #a9bbcf;
+  background-clip: padding-box;
+}
+
+body.admin-dashboard ::-webkit-scrollbar-thumb:hover {
+  background: #849db8;
+  background-clip: padding-box;
+}
+
+body.admin-dashboard ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@media (max-width: 991.98px) {
+  body.admin-dashboard .sidebar {
+    width: min(280px, 86vw);
+    max-width: 86vw;
+    z-index: 1040;
+    transform: translate3d(-100%, 0, 0);
+    will-change: transform;
+  }
+
+  body.admin-dashboard .sidebar.show {
+    transform: translate3d(0, 0, 0);
+  }
+
+  body.admin-dashboard .main-wrapper {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  body.admin-dashboard .content {
+    padding: 1rem;
   }
 }
