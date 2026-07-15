@@ -53,3 +53,23 @@ Web_app/uploads/
 !Web_app/uploads/.gitkeep
 Thumbs.db
 .DS_Store
+
+
+# Expo
+.expo/
+node_modules/
+
+# Logs
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# Environment
+.env
+.env.*
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db

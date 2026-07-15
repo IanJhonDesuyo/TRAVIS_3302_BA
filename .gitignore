@@ -1,0 +1,11 @@
+# Expo
+.expo/
+
+# Python virtual environment
+.venv/
+
+# Node
+node_modules/
+
+# Environment
+.env
