@@ -246,14 +246,10 @@ async function fetchJson(url, options = {}) {
     data = JSON.parse(raw);
   } catch (e) {
 
-    if (typeof window.travisNotify === 'function') {
-      window.travisNotify(
-        'Invalid server response',
-        'The monitoring service returned an unreadable response. Check the server log or browser console for details.',
-        'danger'
-      );
-    }
-    console.error('Invalid backend response:', raw);
+    alert(
+      "BACKEND RESPONSE:\n\n" +
+      raw
+    );
 
     throw new Error(
       "Backend did not return valid JSON.\n\nCheck browser console."

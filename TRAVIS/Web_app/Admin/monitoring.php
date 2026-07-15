@@ -79,7 +79,9 @@ page_start('Live Monitoring', 'monitoring', 'Search monitoring logs...');
 </div>
 
 <?php if ($uploadMessage): ?>
-  <?php feedback_notice($uploadMessage, str_contains(strtolower($uploadMessage), 'success') ? 'success' : 'warning'); ?>
+<div class="alert <?= str_contains(strtolower($uploadMessage), 'success') ? 'alert-success' : 'alert-warning' ?>">
+  <?= esc($uploadMessage) ?>
+</div>
 <?php endif; ?>
 
 <div class="row g-3 mb-4">

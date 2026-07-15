@@ -171,7 +171,7 @@ page_start('Violations', 'violations', 'Search plate or ticket...');
 </div>
 
 <?php if ($message): ?>
-  <?php feedback_notice($message, $messageType); ?>
+  <div class="alert alert-<?= esc($messageType) ?>"><?= esc($message) ?></div>
 <?php endif; ?>
 
 <div class="row g-3 mb-4">
@@ -231,7 +231,7 @@ page_start('Violations', 'violations', 'Search plate or ticket...');
 
                 <?php if (in_array($v['status'], ['pending', 'overdue'], true)): ?>
                   <a class="btn btn-sm btn-success" href="<?= esc(app_url('payments.php?violation_id=' . (int)$v['violation_id'])) ?>" title="Proceed to payment"><i class="bi bi-cash-coin"></i></a>
-                  <form method="post" class="d-inline" data-confirm="The violation will be marked as cancelled but retained for audit history. Paid records cannot be cancelled." data-confirm-title="Cancel this violation?" data-confirm-label="Cancel violation" data-confirm-eyebrow="Record status" data-confirm-tone="danger">
+                  <form method="post" class="d-inline" onsubmit="return confirm('Cancel this violation record? The record will not be deleted.');">
                     <input type="hidden" name="action" value="cancel_violation">
                     <input type="hidden" name="violation_id" value="<?= (int)$v['violation_id'] ?>">
                     <button class="btn btn-sm btn-light text-danger" title="Cancel record"><i class="bi bi-slash-circle"></i></button>
@@ -247,81 +247,35 @@ page_start('Violations', 'violations', 'Search plate or ticket...');
 </div>
 
 <?php foreach ($violations as $v): ?>
-  <div class="modal fade violation-detail-modal" id="view<?= (int)$v['violation_id'] ?>" tabindex="-1" aria-labelledby="viewTitle<?= (int)$v['violation_id'] ?>" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+  <div class="modal fade" id="view<?= (int)$v['violation_id'] ?>" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
       <div class="modal-content">
-        <div class="violation-detail-accent" aria-hidden="true"></div>
-        <div class="modal-header violation-detail-header">
-          <div class="violation-detail-heading">
-            <span class="violation-detail-icon"><i class="bi bi-file-earmark-text"></i></span>
-            <div>
-              <span class="violation-detail-eyebrow">Enforcement record</span>
-              <h5 class="modal-title" id="viewTitle<?= (int)$v['violation_id'] ?>">Violation Details</h5>
-            </div>
-          </div>
-          <button class="btn-close" data-bs-dismiss="modal" aria-label="Close violation details"></button>
+        <div class="modal-header">
+          <div><h5 class="modal-title">Violation Details</h5><small class="text-muted"><?= esc($v['ticket_number']) ?></small></div>
+          <button class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
-
-        <div class="modal-body violation-detail-body">
-          <div class="violation-detail-summary">
-            <div class="violation-ticket-summary">
-              <span class="violation-summary-label">Ticket number</span>
-              <strong><?= esc($v['ticket_number']) ?></strong>
-              <span class="tag <?= tag_class($v['status']) ?>"><?= esc(ucfirst($v['status'])) ?></span>
-            </div>
-            <div class="violation-penalty-summary">
-              <span class="violation-summary-label">Total penalty</span>
-              <strong><?= peso($v['penalty_amount']) ?></strong>
-              <small><i class="bi bi-shield-check"></i> Official recorded amount</small>
-            </div>
-          </div>
-
-          <div class="violation-detail-section">
-            <div class="violation-section-title">
-              <span><i class="bi bi-person-vcard"></i></span>
-              <div><strong>Driver & Vehicle</strong><small>Registered identity and vehicle information</small></div>
-            </div>
-            <div class="violation-detail-grid">
-              <div class="violation-detail-item"><span>Driver</span><strong><?= esc($v['driver_name']) ?></strong></div>
-              <div class="violation-detail-item"><span>License number</span><strong><?= esc($v['license_number']) ?></strong></div>
-              <div class="violation-detail-item"><span>Plate number</span><strong class="violation-plate"><?= esc($v['plate_number']) ?></strong></div>
-              <div class="violation-detail-item"><span>Vehicle type</span><strong><?= esc($v['vehicle_type']) ?></strong></div>
-            </div>
-          </div>
-
-          <div class="violation-detail-section">
-            <div class="violation-section-title">
-              <span><i class="bi bi-geo-alt"></i></span>
-              <div><strong>Incident Information</strong><small>Violation classification, place, and occurrence</small></div>
-            </div>
-            <div class="violation-detail-grid">
-              <div class="violation-detail-item"><span>Violation type</span><strong><?= esc($v['violation_type']) ?></strong></div>
-              <div class="violation-detail-item"><span>Date & time</span><strong><?= esc($v['violation_date'] . ' ' . $v['violation_time']) ?></strong></div>
-              <div class="violation-detail-item violation-detail-wide"><span>Location</span><strong><?= esc($v['violation_location']) ?></strong></div>
-            </div>
-          </div>
-
-          <div class="violation-detail-section violation-audit-section">
-            <div class="violation-section-title">
-              <span><i class="bi bi-clock-history"></i></span>
-              <div><strong>Record Audit</strong><small>Source and creation information</small></div>
-            </div>
-            <div class="violation-detail-grid violation-audit-grid">
-              <div class="violation-detail-item"><span>Input method</span><strong><?= esc($v['input_method']) ?></strong></div>
-              <div class="violation-detail-item"><span>Encoded by</span><strong><?= esc($v['encoded_by_name'] ?? 'System / Mobile App') ?></strong></div>
-              <div class="violation-detail-item"><span>Created at</span><strong><?= esc($v['created_at']) ?></strong></div>
-            </div>
+        <div class="modal-body">
+          <div class="row g-3">
+            <div class="col-md-6"><strong>Status</strong><br><span class="tag <?= tag_class($v['status']) ?>"><?= esc(ucfirst($v['status'])) ?></span></div>
+            <div class="col-md-6"><strong>Penalty</strong><br><?= peso($v['penalty_amount']) ?></div>
+            <div class="col-md-6"><strong>Driver</strong><br><?= esc($v['driver_name']) ?></div>
+            <div class="col-md-6"><strong>License Number</strong><br><?= esc($v['license_number']) ?></div>
+            <div class="col-md-6"><strong>Plate Number</strong><br><?= esc($v['plate_number']) ?></div>
+            <div class="col-md-6"><strong>Vehicle Type</strong><br><?= esc($v['vehicle_type']) ?></div>
+            <div class="col-md-6"><strong>Violation Type</strong><br><?= esc($v['violation_type']) ?></div>
+            <div class="col-md-6"><strong>Location</strong><br><?= esc($v['violation_location']) ?></div>
+            <div class="col-md-6"><strong>Date & Time</strong><br><?= esc($v['violation_date'] . ' ' . $v['violation_time']) ?></div>
+            <div class="col-md-6"><strong>Input Method</strong><br><?= esc($v['input_method']) ?></div>
+            <div class="col-md-6"><strong>Encoded By</strong><br><?= esc($v['encoded_by_name'] ?? 'System / Mobile App') ?></div>
+            <div class="col-md-6"><strong>Created At</strong><br><?= esc($v['created_at']) ?></div>
           </div>
         </div>
-
-        <div class="modal-footer violation-detail-footer">
-          <button class="btn violation-close-btn" data-bs-dismiss="modal"><i class="bi bi-x-lg"></i><span>Close</span></button>
-          <div class="violation-detail-actions">
+        <div class="modal-footer">
+          <button class="btn btn-light" data-bs-dismiss="modal">Close</button>
           <?php if (in_array($v['status'], ['pending', 'overdue'], true)): ?>
-            <a class="btn violation-payment-btn" href="<?= esc(app_url('payments.php?violation_id=' . (int)$v['violation_id'])) ?>"><i class="bi bi-cash-coin"></i><span>Proceed to Payment</span></a>
+            <a class="btn btn-success" href="<?= esc(app_url('payments.php?violation_id=' . (int)$v['violation_id'])) ?>"><i class="bi bi-cash-coin me-1"></i>Proceed to Payment</a>
           <?php endif; ?>
-            <button class="btn violation-print-btn" type="button" onclick="window.print()"><i class="bi bi-printer"></i><span>Print</span></button>
-          </div>
+          <button class="btn btn-primary" type="button" onclick="window.print()"><i class="bi bi-printer me-1"></i>Print</button>
         </div>
       </div>
     </div>
