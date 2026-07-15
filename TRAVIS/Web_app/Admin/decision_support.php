@@ -45,16 +45,12 @@ $peakHour = fetch_one("
     LIMIT 1
 ") ?: [];
 
-$monthlyTrend = monthly_violation_counts();
-
-$violationTypeRows = fetch_all("
-    SELECT violation_type, COUNT(*) AS total
-    FROM violations
-    WHERE YEAR(violation_date) = YEAR(CURDATE())
-    GROUP BY violation_type
-    ORDER BY total DESC
-    LIMIT 8
-");
+$chartData = violation_chart_data(
+    isset($_GET['chart_range']) ? (string) $_GET['chart_range'] : null,
+    isset($_GET['chart_status']) ? (string) $_GET['chart_status'] : null,
+    8
+);
+$monthlyTrend = $chartData['trend'];
 
 $locationRows = fetch_all("
     SELECT violation_location, COUNT(*) AS total
@@ -65,13 +61,8 @@ $locationRows = fetch_all("
     LIMIT 8
 ");
 
-$violationTypeLabels = [];
-$violationTypeData = [];
-
-foreach ($violationTypeRows as $row) {
-    $violationTypeLabels[] = (string) $row['violation_type'];
-    $violationTypeData[] = (int) $row['total'];
-}
+$violationTypeLabels = $chartData['type_labels'];
+$violationTypeData = $chartData['type_data'];
 
 $locationLabels = [];
 $locationData = [];
@@ -508,10 +499,23 @@ page_start(
       </p>
     </div>
 
-    <span class="ds-status">
-      <span class="ds-status-dot"></span>
-      AI services connected
-    </span>
+    <div class="d-flex flex-wrap align-items-end gap-2">
+      <div>
+        <label class="form-label small text-muted mb-1" for="dsPredictionMonth">Forecast month</label>
+        <select class="form-select form-select-sm" id="dsPredictionMonth" aria-label="Forecast month"></select>
+      </div>
+      <div>
+        <label class="form-label small text-muted mb-1" for="dsPredictionYear">Year</label>
+        <select class="form-select form-select-sm" id="dsPredictionYear" aria-label="Forecast year"></select>
+      </div>
+      <button class="btn btn-sm btn-primary" type="button" id="dsPredictBtn">
+        <i class="bi bi-stars me-1"></i>Predict
+      </button>
+      <span class="ds-status">
+        <span class="ds-status-dot"></span>
+        AI services connected
+      </span>
+    </div>
   </div>
 
   <div id="dsLoading" class="alert alert-light border">
@@ -681,6 +685,35 @@ page_start(
       </div>
     </div>
 
+    <form method="get" class="chart-filter-form mb-3" aria-label="Filter decision-support charts">
+      <div class="chart-filter-heading">
+        <span><i class="bi bi-sliders"></i></span>
+        <div><strong>Chart Filters</strong><small>Refine both database analytics charts</small></div>
+      </div>
+      <div class="chart-filter-controls">
+        <label>
+          <span>Period</span>
+          <select name="chart_range" class="form-select form-select-sm">
+            <?php foreach ($chartData['range_options'] as $value => $label): ?>
+              <option value="<?= esc($value) ?>" <?= $chartData['range'] === $value ? 'selected' : '' ?>><?= esc($label) ?></option>
+            <?php endforeach; ?>
+          </select>
+        </label>
+        <label>
+          <span>Status</span>
+          <select name="chart_status" class="form-select form-select-sm">
+            <?php foreach ($chartData['status_options'] as $value => $label): ?>
+              <option value="<?= esc($value) ?>" <?= $chartData['status'] === $value ? 'selected' : '' ?>><?= esc($label) ?></option>
+            <?php endforeach; ?>
+          </select>
+        </label>
+        <button class="btn chart-filter-apply" type="submit"><i class="bi bi-funnel"></i><span>Apply filters</span></button>
+        <?php if ($chartData['range'] !== 'year' || $chartData['status'] !== 'all'): ?>
+          <a class="chart-filter-reset" href="<?= esc(app_url('decision_support.php')) ?>"><i class="bi bi-arrow-counterclockwise"></i>Reset</a>
+        <?php endif; ?>
+      </div>
+    </form>
+
     <div class="row g-3 mb-3">
       <div class="col-lg-6">
         <div class="ds-card">
@@ -725,8 +758,8 @@ page_start(
               <i class="bi bi-activity"></i>
             </span>
             <div>
-              <h6>Monthly Violation Trend</h6>
-              <small>Database records for the current year</small>
+              <h6>Violation Trend</h6>
+              <small><?= esc($chartData['period_label'] . ' · ' . $chartData['status_label']) ?></small>
             </div>
           </div>
           <canvas id="dsTrendChart"></canvas>
@@ -741,7 +774,7 @@ page_start(
             </span>
             <div>
               <h6>Top Violation Types</h6>
-              <small>Most frequently recorded categories</small>
+              <small><?= esc($chartData['period_label'] . ' · ' . $chartData['status_label']) ?></small>
             </div>
           </div>
           <canvas id="dsViolationChart"></canvas>
@@ -826,7 +859,7 @@ page_start(
 const DS_MONTHLY_ENDPOINT = '../api/predict_monthly.php';
 const DS_HOTSPOT_ENDPOINT = '../api/predict_hotspot.php';
 
-const dsMonths = <?= json_encode(month_labels()) ?>;
+const dsMonths = <?= json_encode($chartData['labels']) ?>;
 const dsMonthlyTrend = <?= json_encode($monthlyTrend) ?>;
 const dsViolationLabels = <?= json_encode($violationTypeLabels) ?>;
 const dsViolationData = <?= json_encode($violationTypeData) ?>;
@@ -1058,9 +1091,16 @@ async function loadDecisionSupport() {
   content.classList.add('d-none');
 
   try {
+    const month = Number(document.getElementById('dsPredictionMonth')?.value);
+    const year = Number(document.getElementById('dsPredictionYear')?.value);
     const [monthlyResponse, hotspotResponse] = await Promise.all([
       fetch(DS_MONTHLY_ENDPOINT, {
-        headers: { Accept: 'application/json' },
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ month, year }),
         cache: 'no-store'
       }),
       fetch(DS_HOTSPOT_ENDPOINT, {
@@ -1151,6 +1191,32 @@ async function loadDecisionSupport() {
     errorBox.classList.remove('d-none');
   }
 }
+
+function dsInitializePredictionPeriodFilter() {
+  const monthSelect = document.getElementById('dsPredictionMonth');
+  const yearSelect = document.getElementById('dsPredictionYear');
+  if (!monthSelect || !yearSelect) return;
+
+  const monthNames = Array.from({ length: 12 }, (_, index) =>
+    new Intl.DateTimeFormat('en', { month: 'long' }).format(new Date(2000, index, 1))
+  );
+  const nextMonth = new Date();
+  nextMonth.setMonth(nextMonth.getMonth() + 1, 1);
+
+  monthNames.forEach((name, index) => monthSelect.add(new Option(name, index + 1)));
+  for (let year = nextMonth.getFullYear(); year <= Math.min(2100, nextMonth.getFullYear() + 10); year++) {
+    yearSelect.add(new Option(String(year), year));
+  }
+
+  monthSelect.value = String(nextMonth.getMonth() + 1);
+  yearSelect.value = String(nextMonth.getFullYear());
+}
+
+document.getElementById('dsPredictBtn')?.addEventListener('click', loadDecisionSupport);
+document.getElementById('dsPredictionMonth')?.addEventListener('change', loadDecisionSupport);
+document.getElementById('dsPredictionYear')?.addEventListener('change', loadDecisionSupport);
+
+dsInitializePredictionPeriodFilter();
 
 new Chart(document.getElementById('dsTrendChart'), {
   type: 'line',

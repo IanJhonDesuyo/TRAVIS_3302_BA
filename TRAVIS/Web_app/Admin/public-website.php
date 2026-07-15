@@ -177,7 +177,7 @@ page_start('Public Website', 'public', 'Search public posts...');
   <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createModal"><i class="bi bi-plus-lg me-1"></i>New Announcement</button>
 </div>
 
-<?php if ($message): ?><div class="alert alert-<?= esc($messageType) ?>"><?= esc($message) ?></div><?php endif; ?>
+<?php if ($message): feedback_notice($message, $messageType); endif; ?>
 
 <div class="row g-3 mb-4">
   <div class="col-sm-6 col-xl-3"><div class="stat-card"><div class="stat-icon tone-success"><i class="bi bi-megaphone"></i></div><div class="stat-label">Published</div><div class="stat-value"><?= num($published) ?></div></div></div>
@@ -213,7 +213,7 @@ page_start('Public Website', 'public', 'Search public posts...');
           <button class="btn btn-sm btn-light" data-bs-toggle="modal" data-bs-target="#view<?= (int)$post['announcement_id'] ?>"><i class="bi bi-eye"></i></button>
           <button class="btn btn-sm btn-light" data-bs-toggle="modal" data-bs-target="#edit<?= (int)$post['announcement_id'] ?>"><i class="bi bi-pencil-square"></i></button>
           <?php if($post['status']!=='published'): ?><form method="post" class="d-inline"><input type="hidden" name="action" value="status"><input type="hidden" name="announcement_id" value="<?= (int)$post['announcement_id'] ?>"><input type="hidden" name="status" value="published"><button class="btn btn-sm btn-success"><i class="bi bi-send-check"></i></button></form><?php else: ?><form method="post" class="d-inline"><input type="hidden" name="action" value="status"><input type="hidden" name="announcement_id" value="<?= (int)$post['announcement_id'] ?>"><input type="hidden" name="status" value="draft"><button class="btn btn-sm btn-light text-warning"><i class="bi bi-arrow-counterclockwise"></i></button></form><?php endif; ?>
-          <?php if($post['status']!=='archived'): ?><form method="post" class="d-inline" onsubmit="return confirm('Archive this announcement?');"><input type="hidden" name="action" value="status"><input type="hidden" name="announcement_id" value="<?= (int)$post['announcement_id'] ?>"><input type="hidden" name="status" value="archived"><button class="btn btn-sm btn-light text-danger"><i class="bi bi-archive"></i></button></form><?php endif; ?>
+          <?php if($post['status']!=='archived'): ?><form method="post" class="d-inline" data-confirm="The announcement will be removed from active publication and retained in the archive." data-confirm-title="Archive this announcement?" data-confirm-label="Archive announcement" data-confirm-eyebrow="Content status" data-confirm-tone="danger"><input type="hidden" name="action" value="status"><input type="hidden" name="announcement_id" value="<?= (int)$post['announcement_id'] ?>"><input type="hidden" name="status" value="archived"><button class="btn btn-sm btn-light text-danger"><i class="bi bi-archive"></i></button></form><?php endif; ?>
         </td>
       </tr>
     <?php endforeach; ?>

@@ -181,7 +181,7 @@ page_start('Payments', 'payments', 'Search payments...');
 </div>
 
 <?php if ($message): ?>
-  <div class="alert alert-<?= esc($messageType) ?>"><?= esc($message) ?></div>
+  <?php feedback_notice($message, $messageType); ?>
 <?php endif; ?>
 
 <div class="row g-3 mb-4">
@@ -220,7 +220,7 @@ page_start('Payments', 'payments', 'Search payments...');
         </div>
 
         <div class="col-lg-5">
-          <form method="post" class="border rounded-3 p-3">
+          <form method="post" class="border rounded-3 p-3" data-confirm="This will record the full violation fee as a completed payment and mark the violation as paid." data-confirm-title="Record this payment?" data-confirm-label="Record payment" data-confirm-eyebrow="Payment confirmation" data-confirm-tone="success">
             <input type="hidden" name="action" value="record_payment">
             <input type="hidden" name="violation_id" value="<?= (int)$selectedViolation['violation_id'] ?>">
 
@@ -243,7 +243,7 @@ page_start('Payments', 'payments', 'Search payments...');
             </div>
 
             <div class="alert alert-light border small">A payment reference will be generated from the saved payment ID.</div>
-            <button class="btn btn-success w-100" onclick="return confirm('Confirm and record this payment?');"><i class="bi bi-check2-circle me-1"></i>Confirm Payment</button>
+            <button class="btn btn-success w-100"><i class="bi bi-check2-circle me-1"></i>Confirm Payment</button>
           </form>
         </div>
       </div>

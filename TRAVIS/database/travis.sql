@@ -211,7 +211,8 @@
     `announcement_id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `title` VARCHAR(255) NOT NULL,
     `content` TEXT NOT NULL,
-    `announcement_type` ENUM('public announcement','traffic advisory','tmo activity','public notice') NOT NULL,
+    `announcement_type` ENUM('public announcement','traffic advisory','tmo activity','public notice','event','road closure','emergency notice') NOT NULL,
+    `image_path` VARCHAR(255) NULL,
     `publish_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `expiry_date` DATETIME NULL,
     `status` ENUM('draft','published','archived') NOT NULL DEFAULT 'draft',
@@ -220,6 +221,17 @@
     PRIMARY KEY (`announcement_id`),
     KEY `idx_announcements_created_by` (`created_by`),
     CONSTRAINT `fk_announcements_created_by` FOREIGN KEY (`created_by`) REFERENCES `users`(`user_id`) ON DELETE SET NULL ON UPDATE CASCADE
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+  -- System Settings
+  CREATE TABLE `system_settings` (
+    `setting_key` VARCHAR(100) NOT NULL,
+    `setting_value` TEXT NOT NULL,
+    `updated_by` BIGINT UNSIGNED NULL,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`setting_key`),
+    KEY `idx_system_settings_updated_by` (`updated_by`),
+    CONSTRAINT `fk_system_settings_updated_by` FOREIGN KEY (`updated_by`) REFERENCES `users`(`user_id`) ON DELETE SET NULL ON UPDATE CASCADE
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
   -- Indexes for performance and referential integrity
