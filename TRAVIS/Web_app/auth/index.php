@@ -30,12 +30,17 @@ function verify_password(string $password, string $storedPassword): bool
     return hash_equals($storedPassword, $password);
 }
 
-function portal_redirect_for_role(string $role): string
+function portal_redirect_for_role(string $role, string $email = ''): string
 {
     $normalizedRole = strtolower(trim($role));
+    $normalizedEmail = strtolower(trim($email));
 
-    if (in_array($normalizedRole, ['treasury personnel', 'treasurer'], true)) {
-        return '../treasurer/dashboard.php';
+    $isTreasurer = in_array($normalizedRole, ['treasury personnel', 'treasurer'], true)
+        || str_contains($normalizedEmail, 'treasurer')
+        || str_contains($normalizedEmail, 'treasury');
+
+    if ($isTreasurer) {
+        return '../Treasurer/dashboard.php';
     }
 
     return '../Admin/dashboard.php';
@@ -105,7 +110,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ]);
     }
 
-    $redirect = portal_redirect_for_role((string)$user['role']);
+    $redirect = portal_redirect_for_role((string)$user['role'], (string)$user['email']);
 
     $accept = strtolower((string)($_SERVER['HTTP_ACCEPT'] ?? ''));
     $isAjax = strtolower((string)($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '')) === 'xmlhttprequest';
@@ -129,7 +134,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 }
 
 if (!empty($_SESSION['user']['id'])) {
-    header('Location: ' . portal_redirect_for_role((string)($_SESSION['user']['role'] ?? '')));
+    header('Location: ' . portal_redirect_for_role((string)($_SESSION['user']['role'] ?? ''), (string)($_SESSION['user']['email'] ?? '')));
     exit;
 }
 
