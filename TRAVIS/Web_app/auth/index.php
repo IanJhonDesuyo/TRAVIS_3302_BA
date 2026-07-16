@@ -30,6 +30,17 @@ function verify_password(string $password, string $storedPassword): bool
     return hash_equals($storedPassword, $password);
 }
 
+function portal_redirect_for_role(string $role): string
+{
+    $normalizedRole = strtolower(trim($role));
+
+    if (in_array($normalizedRole, ['treasury personnel', 'treasurer'], true)) {
+        return '../treasurer/dashboard.php';
+    }
+
+    return '../Admin/dashboard.php';
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     require_once __DIR__ . '/../Admin/db_connect.php';
 
@@ -94,7 +105,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ]);
     }
 
-    $redirect = '../Admin/dashboard.php';
+    $redirect = portal_redirect_for_role((string)$user['role']);
 
     $accept = strtolower((string)($_SERVER['HTTP_ACCEPT'] ?? ''));
     $isAjax = strtolower((string)($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '')) === 'xmlhttprequest';
@@ -118,7 +129,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 }
 
 if (!empty($_SESSION['user']['id'])) {
-    header('Location: ../Admin/dashboard.php');
+    header('Location: ' . portal_redirect_for_role((string)($_SESSION['user']['role'] ?? '')));
     exit;
 }
 

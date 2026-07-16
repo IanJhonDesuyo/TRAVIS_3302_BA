@@ -168,14 +168,24 @@ $onlineCameras = scalar("
 
 $totalCameras = scalar("SELECT COUNT(*) FROM cameras", 0);
 
-$chartData = violation_chart_data(
-    isset($_GET['chart_range']) ? (string) $_GET['chart_range'] : null,
-    isset($_GET['chart_status']) ? (string) $_GET['chart_status'] : null,
-    6
-);
-$trendData = $chartData['trend'];
-$topViolationLabels = $chartData['type_labels'];
-$topViolationData = $chartData['type_data'];
+$trendData = monthly_violation_counts();
+
+$topViolationRows = fetch_all("
+    SELECT violation_type, COUNT(*) AS total
+    FROM violations
+    WHERE YEAR(violation_date) = YEAR(CURDATE())
+    GROUP BY violation_type
+    ORDER BY total DESC
+    LIMIT 6
+");
+
+$topViolationLabels = [];
+$topViolationData = [];
+
+foreach ($topViolationRows as $row) {
+    $topViolationLabels[] = (string) $row['violation_type'];
+    $topViolationData[] = (int) $row['total'];
+}
 
 $recentAlerts = fetch_all("
     SELECT alert_type, severity, message, status, generated_at
@@ -296,19 +306,9 @@ page_start('Dashboard', 'dashboard', 'Search violations, plates, locations...');
       <small class="text-muted">Random Forest monthly risk prediction combined with K-Means hotspot intelligence</small>
     </div>
 
-    <div class="d-flex flex-wrap align-items-end gap-2">
-      <div>
-        <label class="form-label small text-muted mb-1" for="predictionMonth">Forecast month</label>
-        <select class="form-select form-select-sm" id="predictionMonth" aria-label="Forecast month"></select>
-      </div>
-      <div>
-        <label class="form-label small text-muted mb-1" for="predictionYear">Year</label>
-        <select class="form-select form-select-sm" id="predictionYear" aria-label="Forecast year"></select>
-      </div>
-      <button class="btn btn-sm btn-light" type="button" id="refreshPredictionBtn">
-        <i class="bi bi-stars me-1"></i>Predict
-      </button>
-    </div>
+    <button class="btn btn-sm btn-light" type="button" id="refreshPredictionBtn">
+      <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+    </button>
   </div>
 
   <div id="aiPredictionLoading" class="ai-loading-state">
@@ -567,43 +567,14 @@ page_start('Dashboard', 'dashboard', 'Search violations, plates, locations...');
   <?php endif; ?>
 </div>
 
-<form method="get" class="chart-filter-form mb-3" aria-label="Filter dashboard charts">
-  <div class="chart-filter-heading">
-    <span><i class="bi bi-sliders"></i></span>
-    <div><strong>Chart Filters</strong><small>Refine the violation analytics shown below</small></div>
-  </div>
-  <div class="chart-filter-controls">
-    <label>
-      <span>Period</span>
-      <select name="chart_range" class="form-select form-select-sm">
-        <?php foreach ($chartData['range_options'] as $value => $label): ?>
-          <option value="<?= esc($value) ?>" <?= $chartData['range'] === $value ? 'selected' : '' ?>><?= esc($label) ?></option>
-        <?php endforeach; ?>
-      </select>
-    </label>
-    <label>
-      <span>Status</span>
-      <select name="chart_status" class="form-select form-select-sm">
-        <?php foreach ($chartData['status_options'] as $value => $label): ?>
-          <option value="<?= esc($value) ?>" <?= $chartData['status'] === $value ? 'selected' : '' ?>><?= esc($label) ?></option>
-        <?php endforeach; ?>
-      </select>
-    </label>
-    <button class="btn chart-filter-apply" type="submit"><i class="bi bi-funnel"></i><span>Apply filters</span></button>
-    <?php if ($chartData['range'] !== 'year' || $chartData['status'] !== 'all'): ?>
-      <a class="chart-filter-reset" href="<?= esc(app_url('dashboard.php')) ?>"><i class="bi bi-arrow-counterclockwise"></i>Reset</a>
-    <?php endif; ?>
-  </div>
-</form>
-
 <!-- Two essential charts only -->
 <div class="row g-3 mb-4">
   <div class="col-lg-7">
     <div class="section-card h-100">
       <div class="section-head">
         <div>
-          <h6>Violation Trend</h6>
-          <small class="text-muted"><?= esc($chartData['period_label'] . ' · ' . $chartData['status_label']) ?></small>
+          <h6>Monthly Violation Trends</h6>
+          <small class="text-muted">Current year</small>
         </div>
       </div>
 
@@ -616,7 +587,7 @@ page_start('Dashboard', 'dashboard', 'Search violations, plates, locations...');
   <div class="col-lg-5">
     <div class="section-card h-100">
       <div class="section-head">
-        <div><h6>Top Violation Types</h6><small class="text-muted"><?= esc($chartData['period_label'] . ' · ' . $chartData['status_label']) ?></small></div>
+        <h6>Top Violation Types</h6>
       </div>
 
       <canvas id="topViolationChart" height="155"></canvas>
@@ -686,12 +657,10 @@ page_start('Dashboard', 'dashboard', 'Search violations, plates, locations...');
 const MONTHLY_PREDICTION_ENDPOINT = '../api/predict_monthly.php';
 const HOTSPOT_ENDPOINT = '../api/predict_hotspot.php';
 
-const months = <?= json_encode($chartData['labels']) ?>;
+const months = <?= json_encode(month_labels()) ?>;
 const trendData = <?= json_encode($trendData) ?>;
 const topViolationLabels = <?= json_encode($topViolationLabels) ?>;
 const topViolationData = <?= json_encode($topViolationData) ?>;
-const chartPeriodLabel = <?= json_encode($chartData['period_label']) ?>;
-const chartStatusLabel = <?= json_encode($chartData['status_label']) ?>;
 
 const chartBlues = ['#0b3d78', '#1565c0', '#1976d2', '#2196f3', '#4fc3f7', '#7dd3fc'];
 const blueGrid = 'rgba(25, 118, 210, .12)';
@@ -933,15 +902,11 @@ async function loadMonthlyPrediction() {
   content.classList.add('d-none');
 
   try {
-    const month = Number(document.getElementById('predictionMonth')?.value);
-    const year = Number(document.getElementById('predictionYear')?.value);
     const response = await fetch(MONTHLY_PREDICTION_ENDPOINT, {
-      method: 'POST',
+      method: 'GET',
       headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json'
+        'Accept': 'application/json'
       },
-      body: JSON.stringify({ month, year }),
       cache: 'no-store'
     });
 
@@ -999,31 +964,11 @@ async function loadMonthlyPrediction() {
   }
 }
 
-function initializePredictionPeriodFilter() {
-  const monthSelect = document.getElementById('predictionMonth');
-  const yearSelect = document.getElementById('predictionYear');
-  if (!monthSelect || !yearSelect) return;
+document.getElementById('refreshPredictionBtn')?.addEventListener(
+  'click',
+  loadMonthlyPrediction
+);
 
-  const monthNames = Array.from({ length: 12 }, (_, index) =>
-    new Intl.DateTimeFormat('en', { month: 'long' }).format(new Date(2000, index, 1))
-  );
-  const nextMonth = new Date();
-  nextMonth.setMonth(nextMonth.getMonth() + 1, 1);
-
-  monthNames.forEach((name, index) => monthSelect.add(new Option(name, index + 1)));
-  for (let year = nextMonth.getFullYear(); year <= Math.min(2100, nextMonth.getFullYear() + 10); year++) {
-    yearSelect.add(new Option(String(year), year));
-  }
-
-  monthSelect.value = String(nextMonth.getMonth() + 1);
-  yearSelect.value = String(nextMonth.getFullYear());
-}
-
-document.getElementById('refreshPredictionBtn')?.addEventListener('click', loadMonthlyPrediction);
-document.getElementById('predictionMonth')?.addEventListener('change', loadMonthlyPrediction);
-document.getElementById('predictionYear')?.addEventListener('change', loadMonthlyPrediction);
-
-initializePredictionPeriodFilter();
 loadMonthlyPrediction();
 setInterval(loadMonthlyPrediction, 60000);
 
@@ -1066,13 +1011,13 @@ if (total(trendData) > 0) {
   const peak = maxIndex(trendData);
   setInterpretation(
     'trendInterpretation',
-    `Interpretation: For ${chartPeriodLabel.toLowerCase()} (${chartStatusLabel.toLowerCase()}), ${months[peak]} recorded the highest count at ${Number(trendData[peak]).toLocaleString()}.`
+    `Interpretation: ${months[peak]} recorded the highest monthly count at ${Number(trendData[peak]).toLocaleString()}.`
   );
 } else {
   showEmpty('trendEmpty', 'No violation trend data yet.');
   setInterpretation(
     'trendInterpretation',
-    `Interpretation: No ${chartStatusLabel.toLowerCase()} violation trend can be identified for ${chartPeriodLabel.toLowerCase()}.`
+    'Interpretation: No current-year violation trend can be identified yet.'
   );
 }
 
@@ -1111,7 +1056,7 @@ if (total(topViolationData) > 0) {
   const leadingViolation = maxIndex(topViolationData);
   setInterpretation(
     'topViolationInterpretation',
-    `Interpretation: For ${chartPeriodLabel.toLowerCase()} (${chartStatusLabel.toLowerCase()}), ${topViolationLabels[leadingViolation]} is the leading violation type with ${Number(topViolationData[leadingViolation]).toLocaleString()} records.`
+    `Interpretation: ${topViolationLabels[leadingViolation]} is the leading violation type with ${Number(topViolationData[leadingViolation]).toLocaleString()} records.`
   );
 } else {
   showEmpty('topViolationEmpty', 'No violation type data available.');

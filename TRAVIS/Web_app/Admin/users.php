@@ -267,7 +267,7 @@ page_start('Users', 'users', 'Search users...');
 </div>
 
 <?php if ($message): ?>
-  <?php feedback_notice($message, $messageType); ?>
+  <div class="alert alert-<?= esc($messageType) ?>"><?= esc($message) ?></div>
 <?php endif; ?>
 
 <div class="row g-3 mb-4">
@@ -403,7 +403,7 @@ page_start('Users', 'users', 'Search users...');
                 </button>
 
                 <?php if ($user['status'] === 'active'): ?>
-                  <form method="post" class="d-inline" data-confirm="This user will lose access until the account is activated again." data-confirm-title="Deactivate this account?" data-confirm-label="Deactivate account" data-confirm-eyebrow="Account access" data-confirm-tone="warning">
+                  <form method="post" class="d-inline" onsubmit="return confirm('Deactivate this user account?');">
                     <input type="hidden" name="action" value="change_status">
                     <input type="hidden" name="user_id" value="<?= (int)$user['user_id'] ?>">
                     <input type="hidden" name="status" value="inactive">
@@ -412,7 +412,7 @@ page_start('Users', 'users', 'Search users...');
                     </button>
                   </form>
                 <?php else: ?>
-                  <form method="post" class="d-inline" data-confirm="This user will regain access based on the assigned role and permissions." data-confirm-title="Activate this account?" data-confirm-label="Activate account" data-confirm-eyebrow="Account access" data-confirm-tone="success">
+                  <form method="post" class="d-inline" onsubmit="return confirm('Activate this user account?');">
                     <input type="hidden" name="action" value="change_status">
                     <input type="hidden" name="user_id" value="<?= (int)$user['user_id'] ?>">
                     <input type="hidden" name="status" value="active">
@@ -423,7 +423,7 @@ page_start('Users', 'users', 'Search users...');
                 <?php endif; ?>
 
                 <?php if ($user['status'] !== 'suspended'): ?>
-                  <form method="post" class="d-inline" data-confirm="This account will be suspended immediately and the user will no longer be permitted to access the system." data-confirm-title="Suspend this account?" data-confirm-label="Suspend account" data-confirm-eyebrow="Security action" data-confirm-tone="danger">
+                  <form method="post" class="d-inline" onsubmit="return confirm('Suspend this user account?');">
                     <input type="hidden" name="action" value="change_status">
                     <input type="hidden" name="user_id" value="<?= (int)$user['user_id'] ?>">
                     <input type="hidden" name="status" value="suspended">
