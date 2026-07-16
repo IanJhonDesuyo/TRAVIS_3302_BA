@@ -36,6 +36,29 @@ function sidebar(string $active = ''): void {
     echo '</aside><div class="backdrop" id="backdrop"></div>';
 }
 
+function feedback_notice(string $message, string $type = 'info'): void {
+    if ($message === '') return;
+    $allowedTypes = ['success', 'danger', 'warning', 'info'];
+    $type = in_array($type, $allowedTypes, true) ? $type : 'info';
+    $icons = [
+        'success' => 'bi-check-circle-fill',
+        'danger' => 'bi-x-octagon-fill',
+        'warning' => 'bi-exclamation-triangle-fill',
+        'info' => 'bi-info-circle-fill',
+    ];
+    $titles = [
+        'success' => 'Action completed',
+        'danger' => 'Action unsuccessful',
+        'warning' => 'Attention required',
+        'info' => 'System information',
+    ];
+    echo '<div class="system-feedback system-feedback-' . esc($type) . '" role="alert" data-system-feedback>';
+    echo '<span class="system-feedback-icon"><i class="bi ' . esc($icons[$type]) . '"></i></span>';
+    echo '<span class="system-feedback-copy"><strong>' . esc($titles[$type]) . '</strong><span>' . esc($message) . '</span></span>';
+    echo '<button type="button" aria-label="Dismiss notification" data-feedback-dismiss><i class="bi bi-x-lg"></i></button>';
+    echo '</div>';
+}
+
 function page_start(string $title, string $active = '', string $search = 'Search...'): void {
     ensure_ml_api_running();
     $admin = current_admin();
@@ -67,16 +90,20 @@ function page_start(string $title, string $active = '', string $search = 'Search
 function page_end(bool $chart = false): void {
     $showLoginSuccess = !empty($_SESSION['login_success']);
     $loginName = (string)($_SESSION['user']['name'] ?? 'User');
+    $appScriptFile = dirname(__DIR__, 2) . '/js/app.js';
+    $appScriptVersion = is_file($appScriptFile) ? (string) filemtime($appScriptFile) : '1';
     unset($_SESSION['login_success']);
 
     echo '</main></div>';
     echo '<div class="modal fade auth-prompt signout-modal" id="signOutModal" tabindex="-1" aria-labelledby="signOutModalLabel" aria-describedby="signOutModalDescription" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="auth-prompt-accent"></div><div class="modal-body text-center"><div class="auth-prompt-brand"><span class="auth-prompt-brand-mark">T</span><span>TRAVIS SECURITY</span></div><div class="auth-prompt-icon signout-icon"><i class="bi bi-box-arrow-right"></i></div><span class="auth-prompt-eyebrow">Session control</span><h4 id="signOutModalLabel">Sign out of TRAVIS?</h4><p id="signOutModalDescription">Your current session will end securely. You will need to enter your credentials again to access the dashboard.</p><div class="auth-prompt-actions"><button type="button" class="btn auth-prompt-cancel" data-bs-dismiss="modal"><i class="bi bi-arrow-left"></i><span>Stay signed in</span></button><form method="post" action="' . esc(app_url('logout.php')) . '"><input type="hidden" name="csrf_token" value="' . esc(csrf_token()) . '"><button class="btn btn-signout" type="submit"><span>Sign out securely</span><i class="bi bi-box-arrow-right"></i></button></form></div><small class="auth-prompt-note"><i class="bi bi-shield-lock"></i> Your account and session data remain protected.</small></div></div></div></div>';
+    echo '<div class="modal fade auth-prompt system-confirm-modal" id="systemConfirmModal" tabindex="-1" aria-labelledby="systemConfirmTitle" aria-describedby="systemConfirmMessage" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="auth-prompt-accent"></div><div class="modal-body text-center"><div class="auth-prompt-brand"><span class="auth-prompt-brand-mark">T</span><span>TRAVIS ACTION CENTER</span></div><div class="auth-prompt-icon system-confirm-icon" id="systemConfirmIcon"><i class="bi bi-question-lg"></i></div><span class="auth-prompt-eyebrow" id="systemConfirmEyebrow">Confirm action</span><h4 id="systemConfirmTitle">Continue with this action?</h4><p id="systemConfirmMessage">Please review this operation before continuing.</p><div class="auth-prompt-actions"><button type="button" class="btn auth-prompt-cancel" data-bs-dismiss="modal"><i class="bi bi-x-lg"></i><span>Cancel</span></button><button type="button" class="btn system-confirm-submit" id="systemConfirmSubmit"><span id="systemConfirmSubmitLabel">Continue</span><i class="bi bi-arrow-right"></i></button></div><small class="auth-prompt-note"><i class="bi bi-shield-check"></i> The action will only proceed after confirmation.</small></div></div></div></div>';
+    echo '<div class="system-notification-region" id="systemNotificationRegion" aria-live="polite" aria-atomic="true"></div>';
     if ($showLoginSuccess) {
         echo '<div class="modal fade auth-prompt login-success-modal" id="loginSuccessModal" tabindex="-1" aria-labelledby="loginSuccessModalLabel" aria-describedby="loginSuccessModalDescription" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="auth-prompt-accent"></div><div class="modal-body text-center"><div class="auth-prompt-brand"><span class="auth-prompt-brand-mark">T</span><span>TRAVIS COMMAND CENTER</span></div><div class="auth-prompt-icon login-success-icon"><i class="bi bi-check-lg"></i></div><span class="auth-prompt-eyebrow">Identity verified</span><h4 id="loginSuccessModalLabel">Welcome back, ' . esc($loginName) . '!</h4><p id="loginSuccessModalDescription">You have signed in successfully. Your secure dashboard and live traffic intelligence are ready.</p><button type="button" class="btn btn-login-success" data-bs-dismiss="modal"><span>Open dashboard</span><i class="bi bi-arrow-right"></i></button><small class="auth-prompt-note"><i class="bi bi-shield-check"></i> Secure administrator session active.</small></div></div></div></div>';
     }
     echo '<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>';
     if ($chart) echo '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>';
-    echo '<script src="' . esc(asset_url('js/app.js')) . '"></script>';
+    echo '<script src="' . esc(asset_url('js/app.js')) . '?v=' . esc($appScriptVersion) . '"></script>';
     if ($showLoginSuccess) {
         echo '<script>document.addEventListener("DOMContentLoaded",function(){var element=document.getElementById("loginSuccessModal");if(element){bootstrap.Modal.getOrCreateInstance(element).show();}});</script>';
     }
