@@ -84,7 +84,7 @@ $justGenerated = ($_GET['generated'] ?? '') === '1';
 $generateSuccess = $justGenerated && !empty($previewRows);
 $generateFailed = $justGenerated && empty($previewRows);
 
-page_start('Collection Reports', 'reports', 'Search reports...', 'Generate and export payment collection reports');
+page_start('Collection Reports', 'reports', 'Search reports...', 'Generate and export payment collection reports', false);
 ?>
 
 
@@ -164,6 +164,7 @@ page_start('Collection Reports', 'reports', 'Search reports...', 'Generate and e
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>
 const trendLabels = <?= json_encode(array_map(fn($r) => date('M j', strtotime($r['week_start'])), $weeklyTrend)) ?>;
 const trendData = <?= json_encode(array_map(fn($r) => (float)$r['total'], $weeklyTrend)) ?>;
@@ -224,4 +225,4 @@ document.addEventListener('DOMContentLoaded', function () {
 </script>
 <?php endif; ?>
 
-<?php page_end(true); ?>
+<?php page_end(); ?>

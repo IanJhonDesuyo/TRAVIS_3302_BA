@@ -13,7 +13,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'recor
     $violationId = (int)($_POST['violation_id'] ?? 0);
     $amountPaid = (float)payment_post('amount_paid', '0');
     $paymentMethod = payment_post('payment_method', 'cash');
-    $receiptRef = payment_post('receipt_reference');
     $notes = payment_post('notes');
     $paymentDateInput = payment_post('payment_date');
     $paymentDateTime = ($paymentDateInput !== '' && strtotime($paymentDateInput) !== false)
@@ -66,23 +65,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'recor
 
             $receivedBy = (int)($_SESSION['user']['id'] ?? 0);
             $stmt = $conn->prepare("
-                INSERT INTO payments (violation_id, amount_paid, payment_status, payment_date, received_by, payment_method, receipt_reference, notes)
-                VALUES (?, ?, 'completed', ?, ?, ?, ?, ?)
+                INSERT INTO payments (violation_id, amount_paid, payment_status, payment_date, received_by, payment_method, notes)
+                VALUES (?, ?, 'completed', ?, ?, ?, ?)
             ");
             if ($stmt) {
-                $stmt->bind_param('idsisss', $violationId, $amountPaid, $paymentDateTime, $receivedBy, $paymentMethod, $receiptRef, $notes);
+                $stmt->bind_param('idsiss', $violationId, $amountPaid, $paymentDateTime, $receivedBy, $paymentMethod, $notes);
                 $stmt->execute();
             } else {
                 // Fallback for schemas without a "notes" column on payments.
                 $stmt = $conn->prepare("
-                    INSERT INTO payments (violation_id, amount_paid, payment_status, payment_date, received_by, payment_method, receipt_reference)
-                    VALUES (?, ?, 'completed', ?, ?, ?, ?)
+                    INSERT INTO payments (violation_id, amount_paid, payment_status, payment_date, received_by, payment_method)
+                    VALUES (?, ?, 'completed', ?, ?, ?)
                 ");
-                $stmt->bind_param('idsiss', $violationId, $amountPaid, $paymentDateTime, $receivedBy, $paymentMethod, $receiptRef);
+                $stmt->bind_param('idsis', $violationId, $amountPaid, $paymentDateTime, $receivedBy, $paymentMethod);
                 $stmt->execute();
             }
 
             $paymentId = $conn->insert_id;
+
+            // Auto-generate the official receipt number now that the payment_id is known.
+            $receiptRef = payment_reference((int)$paymentId);
+            $stmt = $conn->prepare("UPDATE payments SET receipt_reference = ? WHERE payment_id = ?");
+            $stmt->bind_param('si', $receiptRef, $paymentId);
+            $stmt->execute();
 
             $stmt = $conn->prepare("UPDATE violations SET status = 'paid' WHERE violation_id = ?");
             $stmt->bind_param('i', $violationId);
@@ -147,10 +152,10 @@ $paymentParams = [];
 $paymentTypes = '';
 
 if ($paymentSearch !== '') {
-    $paymentWhere[] = "(v.ticket_number LIKE ? OR v.plate_number LIKE ?)";
+    $paymentWhere[] = "(v.ticket_number LIKE ? OR v.plate_number LIKE ? OR p.receipt_reference LIKE ?)";
     $like = "%{$paymentSearch}%";
-    array_push($paymentParams, $like, $like);
-    $paymentTypes .= 'ss';
+    array_push($paymentParams, $like, $like, $like);
+    $paymentTypes .= 'sss';
 }
 
 if ($methodFilter !== '') {
@@ -186,7 +191,7 @@ $thisMonth = scalar("SELECT COALESCE(SUM(amount_paid), 0) FROM payments WHERE YE
 $pendingAmount = scalar("SELECT COALESCE(SUM(penalty_amount), 0) FROM violations WHERE status IN ('pending', 'overdue')", 0);
 $pendingCount = scalar("SELECT COUNT(*) FROM violations WHERE status IN ('pending', 'overdue')", 0);
 
-page_start('Payments', 'payments', 'Search payments...', 'Process unpaid violations and record collections');
+page_start('Payments', 'payments', 'Search payments...', 'Process unpaid violations and record collections', false);
 ?>
 
 <div class="row g-3 mb-4">
@@ -270,6 +275,12 @@ page_start('Payments', 'payments', 'Search payments...', 'Process unpaid violati
         <div class="alert alert-warning">This violation was cancelled and cannot be paid.</div>
       <?php endif; ?>
 
+      <div id="ppSelectWarning" class="alert alert-warning d-none d-flex align-items-start gap-2" role="alert">
+        <i class="bi bi-exclamation-triangle-fill mt-1"></i>
+        <div class="flex-grow-1">Please select a violation from the Pending Violations list first.</div>
+        <button type="button" class="btn-close" aria-label="Close" onclick="document.getElementById('ppSelectWarning').classList.add('d-none')"></button>
+      </div>
+
       <form method="post" id="processPaymentForm" class="flex-grow-1 d-flex flex-column">
         <input type="hidden" name="action" value="record_payment">
         <input type="hidden" name="csrf_token" value="<?= esc(csrf_token()) ?>">
@@ -293,7 +304,7 @@ page_start('Payments', 'payments', 'Search payments...', 'Process unpaid violati
           </div>
           <div class="col-md-6">
             <label class="form-label">Official Receipt Number</label>
-            <input type="text" class="form-control" name="receipt_reference" placeholder="OR-2026-008422">
+            <input type="text" class="form-control" value="Auto-generated on save" readonly tabindex="-1" style="color:#94a3b8;">
           </div>
         </div>
 
@@ -366,6 +377,8 @@ document.querySelectorAll('.pending-row').forEach(function (row) {
     document.getElementById('pp_amount').value = row.dataset.fine;
     document.querySelectorAll('.pending-row').forEach(function (r) { r.classList.remove('table-active'); });
     row.classList.add('table-active');
+    var warning = document.getElementById('ppSelectWarning');
+    if (warning) warning.classList.add('d-none');
   });
 });
 </script>
@@ -406,11 +419,16 @@ document.querySelectorAll('.pending-row').forEach(function (row) {
   openBtn.addEventListener('click', function () {
     if (!form.reportValidity()) return;
 
+    var warning = document.getElementById('ppSelectWarning');
     var violationId = document.getElementById('pp_violation_id').value;
     if (!violationId || violationId === '0') {
-      alert('Please select a violation from the Pending Violations list first.');
+      if (warning) {
+        warning.classList.remove('d-none');
+        warning.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
       return;
     }
+    if (warning) warning.classList.add('d-none');
 
     var methodSelect = form.querySelector('[name="payment_method"]');
     var amount = parseFloat(document.getElementById('pp_amount').value || '0');
@@ -420,7 +438,7 @@ document.querySelectorAll('.pending-row').forEach(function (row) {
     document.getElementById('sum_amount').textContent = '\u20b1' + amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     document.getElementById('sum_method').textContent = methodSelect.options[methodSelect.selectedIndex].text;
     document.getElementById('sum_date').textContent = form.querySelector('[name="payment_date"]').value || '—';
-    document.getElementById('sum_receipt').textContent = form.querySelector('[name="receipt_reference"]').value.trim() || '—';
+    document.getElementById('sum_receipt').textContent = 'Auto-generated on save';
     document.getElementById('sum_notes').textContent = form.querySelector('[name="notes"]').value.trim() || '—';
 
     bootstrap.Modal.getOrCreateInstance(document.getElementById('confirmPaymentModal')).show();
@@ -440,7 +458,7 @@ document.querySelectorAll('.pending-row').forEach(function (row) {
     <form method="get" class="filter-toolbar" id="paymentFilterForm">
       <?php if ($selectedViolationId > 0): ?><input type="hidden" name="violation_id" value="<?= $selectedViolationId ?>"><?php endif; ?>
       <input type="hidden" name="pending_search" value="<?= esc($pendingSearch) ?>">
-      <input class="form-control" style="min-width:220px" id="paymentSearchInput" name="payment_search" value="<?= esc($paymentSearch) ?>" placeholder="Ticket or plate...">
+      <input class="form-control" style="min-width:220px" id="paymentSearchInput" name="payment_search" value="<?= esc($paymentSearch) ?>" placeholder="Ticket, plate, or receipt no...">
       <select class="form-select" style="max-width:190px" id="paymentMethodSelect" name="method">
         <option value="">All Methods</option>
         <?php foreach (payment_method_options() as $value => $label): ?>

@@ -64,7 +64,7 @@ $user = fetch_one("SELECT full_name, email, role, status, created_at FROM users 
 $totalProcessed = scalar("SELECT COUNT(*) FROM payments WHERE received_by = ? AND payment_status = 'completed'", 0, [(string)$userId]);
 $totalCollected = scalar("SELECT COALESCE(SUM(amount_paid), 0) FROM payments WHERE received_by = ? AND payment_status = 'completed'", 0, [(string)$userId]);
 
-page_start('My Profile', 'profile', 'Search...', 'Manage your account and security');
+page_start('My Profile', 'profile', 'Search...', 'Manage your account and security', false);
 ?>
 
 <div class="section-card profile-hero mb-4 d-flex flex-wrap align-items-center gap-3">

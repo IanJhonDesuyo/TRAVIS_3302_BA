@@ -103,7 +103,7 @@ if ($params) {
 $violationTypes = fetch_all("SELECT DISTINCT violation_type FROM violations ORDER BY violation_type ASC");
 $hasFilters = $search !== '' || $status !== '' || $dateFilter !== '' || $violationTypeFilter !== '';
 
-page_start('Traffic Violation Records', 'violations', 'Search violations, receipts, plates...', 'All AI-captured violations');
+page_start('Traffic Violation Records', 'violations', 'Search violations, receipts, plates...', 'All AI-captured violations', false);
 ?>
 
 <div class="section-card">
@@ -160,7 +160,21 @@ page_start('Traffic Violation Records', 'violations', 'Search violations, receip
               <td><span class="tag <?= tag_class($v['status']) ?>"><?= esc(ucfirst($v['status'])) ?></span></td>
               <td class="text-end text-nowrap">
                 <button class="btn btn-sm btn-light" data-bs-toggle="modal" data-bs-target="#view<?= (int)$v['violation_id'] ?>" title="View details"><i class="bi bi-eye"></i></button>
-                <button class="btn btn-sm btn-light" type="button" onclick="window.print()" title="Print"><i class="bi bi-printer"></i></button>
+                <button class="btn btn-sm btn-light" type="button" title="Print"
+                  onclick="printViolation(this)"
+                  data-ticket="<?= esc($v['ticket_number']) ?>"
+                  data-status="<?= esc(ucfirst($v['status'])) ?>"
+                  data-status-class="<?= esc(tag_class($v['status'])) ?>"
+                  data-penalty="<?= esc(peso($v['penalty_amount'])) ?>"
+                  data-driver="<?= esc($v['driver_name']) ?>"
+                  data-license="<?= esc($v['license_number']) ?>"
+                  data-plate="<?= esc($v['plate_number']) ?>"
+                  data-vehicle="<?= esc($v['vehicle_type']) ?>"
+                  data-violation-type="<?= esc($v['violation_type']) ?>"
+                  data-location="<?= esc($v['violation_location']) ?>"
+                  data-datetime="<?= esc($v['violation_date'] . ' ' . $v['violation_time']) ?>"
+                  data-input-method="<?= esc($v['input_method']) ?>"
+                ><i class="bi bi-printer"></i></button>
                 <?php if (in_array($v['status'], ['pending', 'overdue'], true)): ?>
                   <a class="btn btn-sm btn-success" href="<?= esc(app_url('payments.php?violation_id=' . (int)$v['violation_id'])) ?>" title="Process payment"><i class="bi bi-cash-coin"></i></a>
                 <?php endif; ?>
@@ -204,6 +218,86 @@ page_start('Traffic Violation Records', 'violations', 'Search violations, receip
 })();
 </script>
 
+<div id="printSheet" class="print-sheet-overlay">
+  <div class="ps-title">Violation Details</div>
+  <div class="ps-subtitle" id="ps_ticket"></div>
+  <hr>
+  <div class="ps-row">
+    <div><div class="ps-label">Status</div><div class="ps-value"><span class="tag" id="ps_status_tag"></span></div></div>
+    <div><div class="ps-label">Penalty</div><div class="ps-value" id="ps_penalty"></div></div>
+    <div><div class="ps-label">Driver</div><div class="ps-value" id="ps_driver"></div></div>
+    <div><div class="ps-label">License Number</div><div class="ps-value" id="ps_license"></div></div>
+    <div><div class="ps-label">Plate Number</div><div class="ps-value" id="ps_plate"></div></div>
+    <div><div class="ps-label">Vehicle Type</div><div class="ps-value" id="ps_vehicle"></div></div>
+    <div><div class="ps-label">Violation Type</div><div class="ps-value" id="ps_violation_type"></div></div>
+    <div><div class="ps-label">Location</div><div class="ps-value" id="ps_location"></div></div>
+    <div><div class="ps-label">Date &amp; Time</div><div class="ps-value" id="ps_datetime"></div></div>
+    <div><div class="ps-label">Input Method</div><div class="ps-value" id="ps_input_method"></div></div>
+  </div>
+</div>
+
+<style>
+.print-sheet-overlay {
+  position: fixed;
+  top: 0; left: 0;
+  width: 800px;
+  max-width: 100%;
+  background: #fff;
+  padding: 2.5rem;
+  visibility: hidden;
+  z-index: -1;
+}
+.print-sheet-overlay .ps-title { font-size: 1.6rem; font-weight: 700; margin-bottom: .15rem; color: #111827; }
+.print-sheet-overlay .ps-subtitle { color: #64748b; font-size: .9rem; margin-bottom: 1rem; }
+.print-sheet-overlay hr { margin: 0 0 1.75rem; }
+.print-sheet-overlay .ps-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem 2rem; }
+.print-sheet-overlay .ps-label { font-weight: 700; color: #111827; margin-bottom: .2rem; }
+.print-sheet-overlay .ps-value { color: #111827; }
+
+@media print {
+  body.printing-violation * { visibility: hidden !important; }
+  body.printing-violation .print-sheet-overlay,
+  body.printing-violation .print-sheet-overlay * { visibility: visible !important; }
+  body.printing-violation .print-sheet-overlay {
+    position: absolute;
+    top: 0; left: 0;
+    z-index: 99999;
+  }
+}
+</style>
+
+<script>
+function printViolation(btn) {
+  var d = btn.dataset;
+  document.getElementById('ps_ticket').textContent = d.ticket || '';
+  var tag = document.getElementById('ps_status_tag');
+  tag.textContent = d.status || '';
+  tag.className = 'tag ' + (d.statusClass || '');
+  document.getElementById('ps_penalty').textContent = d.penalty || '';
+  document.getElementById('ps_driver').textContent = d.driver || '';
+  document.getElementById('ps_license').textContent = d.license || '';
+  document.getElementById('ps_plate').textContent = d.plate || '';
+  document.getElementById('ps_vehicle').textContent = d.vehicle || '';
+  document.getElementById('ps_violation_type').textContent = d.violationType || '';
+  document.getElementById('ps_location').textContent = d.location || '';
+  document.getElementById('ps_datetime').textContent = d.datetime || '';
+  document.getElementById('ps_input_method').textContent = d.inputMethod || '';
+
+  document.body.classList.add('printing-violation');
+
+  var cleanup = function () {
+    document.body.classList.remove('printing-violation');
+    window.removeEventListener('afterprint', cleanup);
+  };
+  window.addEventListener('afterprint', cleanup);
+
+  window.print();
+
+  // Fallback cleanup for browsers that don't reliably fire afterprint.
+  setTimeout(cleanup, 2000);
+}
+</script>
+
 <?php foreach ($violations as $v): ?>
   <div class="modal fade" id="view<?= (int)$v['violation_id'] ?>" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-centered">
@@ -231,7 +325,21 @@ page_start('Traffic Violation Records', 'violations', 'Search violations, receip
           <?php if (in_array($v['status'], ['pending', 'overdue'], true)): ?>
             <a class="btn btn-success" href="<?= esc(app_url('payments.php?violation_id=' . (int)$v['violation_id'])) ?>"><i class="bi bi-cash-coin me-1"></i>Process Payment</a>
           <?php endif; ?>
-          <button class="btn btn-primary" type="button" onclick="window.print()"><i class="bi bi-printer me-1"></i>Print</button>
+          <button class="btn btn-primary" type="button" title="Print"
+            onclick="printViolation(this)"
+            data-ticket="<?= esc($v['ticket_number']) ?>"
+            data-status="<?= esc(ucfirst($v['status'])) ?>"
+            data-status-class="<?= esc(tag_class($v['status'])) ?>"
+            data-penalty="<?= esc(peso($v['penalty_amount'])) ?>"
+            data-driver="<?= esc($v['driver_name']) ?>"
+            data-license="<?= esc($v['license_number']) ?>"
+            data-plate="<?= esc($v['plate_number']) ?>"
+            data-vehicle="<?= esc($v['vehicle_type']) ?>"
+            data-violation-type="<?= esc($v['violation_type']) ?>"
+            data-location="<?= esc($v['violation_location']) ?>"
+            data-datetime="<?= esc($v['violation_date'] . ' ' . $v['violation_time']) ?>"
+            data-input-method="<?= esc($v['input_method']) ?>"
+          ><i class="bi bi-printer me-1"></i>Print</button>
         </div>
       </div>
     </div>

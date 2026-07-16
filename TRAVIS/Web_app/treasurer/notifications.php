@@ -46,7 +46,7 @@ function time_ago(string $datetime): string {
     return floor($diff / 86400) . ' days ago';
 }
 
-page_start('Notifications', 'notifications', 'Search notifications...', 'System alerts and updates relevant to collections');
+page_start('Notifications', 'notifications', 'Search notifications...', 'System alerts and updates relevant to collections', false);
 ?>
 
 

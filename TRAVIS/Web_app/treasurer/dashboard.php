@@ -87,7 +87,7 @@ $statusBreakdown = payment_status_breakdown();
 $dailyTrend = daily_collection_trend(7);
 $monthlyTotals = monthly_collection_totals();
 
-page_start('Dashboard', 'dashboard', 'Search violations, receipts, plates...', 'Overview of collections and violation payments');
+page_start('Dashboard', 'dashboard', 'Search violations, receipts, plates...', 'Overview of collections and violation payments', false);
 ?>
 
 <div class="row g-3 mb-4">

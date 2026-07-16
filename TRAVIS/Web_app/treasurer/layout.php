@@ -31,7 +31,7 @@ function sidebar(string $active = ''): void {
     echo '</aside><div class="backdrop" id="backdrop"></div>';
 }
 
-function page_start(string $title, string $active = '', string $search = 'Search violations, receipts, plates...', string $subtitle = ''): void {
+function page_start(string $title, string $active = '', string $search = 'Search violations, receipts, plates...', string $subtitle = '', bool $showSearch = true): void {
     $admin = current_admin();
     $name = $admin['full_name'] ?? 'Treasury Personnel';
     $role = $admin['role'] ?? 'Treasurer';
@@ -52,7 +52,7 @@ function page_start(string $title, string $active = '', string $search = 'Search
     echo '<div class="topbar-title-block"><h5 class="mb-0">' . esc($title) . '</h5>';
     if ($subtitle !== '') echo '<small class="text-muted">' . esc($subtitle) . '</small>';
     echo '</div>';
-    echo '<div class="search"><i class="bi bi-search"></i><input class="form-control" placeholder="' . esc($search) . '" /></div>';
+    if ($showSearch) echo '<div class="search"><i class="bi bi-search"></i><input class="form-control" placeholder="' . esc($search) . '" /></div>';
     echo '<div class="ms-auto d-flex align-items-center gap-3">';
     $pendingCount = scalar("SELECT COUNT(*) FROM violations WHERE status IN ('pending', 'overdue')", 0);
     echo '<a href="' . esc(app_url('notifications.php')) . '" class="btn btn-light position-relative bell"><i class="bi bi-bell"></i>';

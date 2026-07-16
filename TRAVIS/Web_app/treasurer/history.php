@@ -11,10 +11,10 @@ $params = [];
 $types = '';
 
 if ($search !== '') {
-    $where[] = "(v.ticket_number LIKE ? OR v.plate_number LIKE ? OR p.payment_id LIKE ?)";
+    $where[] = "(v.ticket_number LIKE ? OR v.plate_number LIKE ? OR p.payment_id LIKE ? OR p.receipt_reference LIKE ?)";
     $like = "%{$search}%";
-    array_push($params, $like, $like, $like);
-    $types .= 'sss';
+    array_push($params, $like, $like, $like, $like);
+    $types .= 'ssss';
 }
 
 if ($dateFrom !== '') {
@@ -112,7 +112,7 @@ if ($params) {
 
 $methodOptions = payment_method_options();
 
-page_start('Payment History', 'history', 'Search receipt, plate...', 'Recorded payments and receipts');
+page_start('Payment History', 'history', 'Search receipt, plate...', 'Recorded payments and receipts', false);
 ?>
 
 <div class="section-card">
