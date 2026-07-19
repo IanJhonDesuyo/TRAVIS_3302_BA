@@ -13,9 +13,29 @@ import {
   Modal,
   Alert,
   FlatList,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Picker } from '@react-native-picker/picker';
+import { Ionicons } from '@expo/vector-icons';
+
+// ========== COLOR TOKENS ==========
+// Same tokens as the rest of TRAVIS (light hybrid theme) for consistency.
+const COLORS = {
+  bg: '#F8FAFC',
+  header: '#0F172A',
+  surface: '#FFFFFF',
+  border: '#E2E8F0',
+  textPrimary: '#0F172A',
+  textSecondary: '#64748B',
+  textTertiary: '#94A3B8',
+  primary: '#2563EB',
+  success: '#10B981',
+  warning: '#F59E0B',
+  danger: '#EF4444',
+  neutral: '#94A3B8',
+};
+
+const mono = Platform.select({ ios: 'Courier', android: 'monospace', default: 'monospace' });
 
 // ========== TYPES ==========
 interface Violation {
@@ -46,6 +66,8 @@ interface Payment {
   payment_date: string;
   received_by_name: string | null;
 }
+
+type PaymentMethod = 'cash' | 'gcash' | 'bank_transfer' | 'other';
 
 // ========== MOCK DATA ==========
 const mockPendingViolations: Violation[] = [
@@ -132,30 +154,54 @@ const mockStats = {
 };
 
 // ========== HELPERS ==========
-const formatCurrency = (amount: number): string => `₱${amount.toLocaleString()}`;
+const formatCurrency = (amount: number): string => `\u20b1${amount.toLocaleString()}`;
 const shortCurrency = (amount: number): string => {
-  if (amount >= 1_000_000) return `₱${(amount / 1_000_000).toFixed(1)}M`;
-  if (amount >= 1_000) return `₱${(amount / 1_000).toFixed(1)}K`;
-  return `₱${amount.toFixed(0)}`;
+  if (amount >= 1_000_000) return `\u20b1${(amount / 1_000_000).toFixed(1)}M`;
+  if (amount >= 1_000) return `\u20b1${(amount / 1_000).toFixed(1)}K`;
+  return `\u20b1${amount.toFixed(0)}`;
 };
 
 const statusColor = (status: string): string => {
   const s = status.toLowerCase();
-  if (s === 'paid' || s === 'completed') return '#16a34a';
-  if (s === 'pending') return '#f59e0b';
-  if (s === 'overdue' || s === 'failed') return '#dc2626';
-  if (s === 'cancelled') return '#6b7280';
-  return '#6b7280';
+  if (s === 'paid' || s === 'completed') return COLORS.success;
+  if (s === 'pending') return COLORS.warning;
+  if (s === 'overdue' || s === 'failed') return COLORS.danger;
+  if (s === 'cancelled') return COLORS.neutral;
+  return COLORS.neutral;
 };
 
-const methodIcon = (method: string): string => {
+const methodIcon = (method: string): keyof typeof Ionicons.glyphMap => {
   switch (method) {
-    case 'cash': return '💵';
-    case 'gcash': return '📱';
-    case 'bank_transfer': return '🏦';
-    default: return '💳';
+    case 'cash': return 'cash-outline';
+    case 'gcash': return 'phone-portrait-outline';
+    case 'bank_transfer': return 'business-outline';
+    default: return 'card-outline';
   }
 };
+
+const methodLabel = (method: string): string => {
+  switch (method) {
+    case 'cash': return 'Cash';
+    case 'gcash': return 'GCash';
+    case 'bank_transfer': return 'Bank Transfer';
+    default: return 'Other';
+  }
+};
+
+const METHOD_FILTERS: { label: string; value: PaymentMethod | '' }[] = [
+  { label: 'All Methods', value: '' },
+  { label: 'Cash', value: 'cash' },
+  { label: 'GCash', value: 'gcash' },
+  { label: 'Bank Transfer', value: 'bank_transfer' },
+  { label: 'Other', value: 'other' },
+];
+
+const METHOD_OPTIONS: { label: string; value: PaymentMethod }[] = [
+  { label: 'Cash', value: 'cash' },
+  { label: 'GCash', value: 'gcash' },
+  { label: 'Bank Transfer', value: 'bank_transfer' },
+  { label: 'Other', value: 'other' },
+];
 
 // ========== SCREEN ==========
 export default function PaymentsScreen() {
@@ -171,20 +217,18 @@ export default function PaymentsScreen() {
   // Filter states
   const [pendingSearch, setPendingSearch] = useState('');
   const [paymentSearch, setPaymentSearch] = useState('');
-  const [methodFilter, setMethodFilter] = useState('');
+  const [methodFilter, setMethodFilter] = useState<PaymentMethod | ''>('');
 
   // Selected violation for payment processing
   const [selectedViolation, setSelectedViolation] = useState<Violation | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'gcash' | 'bank_transfer' | 'other'>('cash');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [processing, setProcessing] = useState(false);
 
-  // Load data on mount
   useEffect(() => {
     fetchData();
   }, []);
 
-  // Simulate API fetch
   const fetchData = async () => {
     // Replace with actual API calls
     await new Promise(resolve => setTimeout(resolve, 800));
@@ -200,7 +244,6 @@ export default function PaymentsScreen() {
     fetchData();
   };
 
-  // Filter pending violations
   const filteredPending = pendingViolations.filter(v => {
     const search = pendingSearch.toLowerCase();
     return (
@@ -211,7 +254,6 @@ export default function PaymentsScreen() {
     );
   });
 
-  // Filter payments
   const filteredPayments = payments.filter(p => {
     const search = paymentSearch.toLowerCase();
     const matchSearch = (
@@ -223,7 +265,6 @@ export default function PaymentsScreen() {
     return matchSearch && matchMethod;
   });
 
-  // Handle payment confirmation
   const handlePaymentConfirm = async () => {
     if (!selectedViolation) return;
     setProcessing(true);
@@ -236,84 +277,80 @@ export default function PaymentsScreen() {
     setProcessing(false);
     setModalVisible(false);
     setSelectedViolation(null);
-    // Refresh data
     fetchData();
   };
 
-  // Render stats cards
-  const renderStatCard = (label: string, value: string | number, subtext?: string, color: string = '#2563eb') => (
-    <View style={[styles.statCard, { borderLeftColor: color }]}>
-      <Text style={styles.statLabel}>{label}</Text>
-      <Text style={[styles.statValue, { color }]}>{value}</Text>
-      {subtext && <Text style={styles.statSubtext}>{subtext}</Text>}
+  // ---------- RENDER HELPERS ----------
+  const renderSummaryCell = (icon: React.ReactNode, label: string, value: string, isLast: boolean) => (
+    <View style={[styles.summaryCell, !isLast && styles.summaryCellDivider]}>
+      {icon}
+      <Text style={styles.summaryValue}>{value}</Text>
+      <Text style={styles.summaryLabel}>{label}</Text>
     </View>
   );
 
-  // Render pending violation item
   const renderPendingItem = ({ item }: { item: Violation }) => (
-    <TouchableOpacity
-      style={styles.pendingItem}
-      onPress={() => {
-        if (item.status === 'pending' || item.status === 'overdue') {
-          setSelectedViolation(item);
-          setModalVisible(true);
-        }
-      }}
-      activeOpacity={0.7}
-    >
-      <View style={styles.pendingHeader}>
+    <View style={styles.pendingItem}>
+      <View style={styles.itemHeader}>
         <Text style={styles.ticketNumber}>{item.ticket_number}</Text>
-        <View style={[styles.statusBadge, { backgroundColor: statusColor(item.status) + '20' }]}>
+        <View style={[styles.statusBadge, { backgroundColor: statusColor(item.status) + '1A' }]}>
           <Text style={[styles.statusText, { color: statusColor(item.status) }]}>
             {item.status.toUpperCase()}
           </Text>
         </View>
       </View>
       <Text style={styles.driverName}>{item.driver_name}</Text>
-      <Text style={styles.plateInfo}>{item.plate_number} • {item.vehicle_type}</Text>
-      <Text style={styles.violationType}>{item.violation_type}</Text>
-      <Text style={styles.locationDate}>
-        {item.violation_location} • {item.violation_date}
-      </Text>
+      <Text style={styles.plateInfo}>{item.plate_number} · {item.vehicle_type}</Text>
+      <View style={styles.itemMetaRow}>
+        <Text style={styles.violationType}>{item.violation_type}</Text>
+        <Text style={styles.locationDate}>{item.violation_location} · {item.violation_date}</Text>
+      </View>
+
+      <View style={styles.itemDivider} />
+
       <View style={styles.pendingFooter}>
         <Text style={styles.penalty}>{formatCurrency(item.penalty_amount)}</Text>
-        <TouchableOpacity style={styles.processButton}>
+        <TouchableOpacity
+          style={styles.processButton}
+          onPress={() => { setSelectedViolation(item); setPaymentMethod('cash'); setModalVisible(true); }}
+          activeOpacity={0.8}
+        >
           <Text style={styles.processButtonText}>Process Payment</Text>
         </TouchableOpacity>
       </View>
-    </TouchableOpacity>
+    </View>
   );
 
-  // Render payment transaction item
   const renderPaymentItem = ({ item }: { item: Payment }) => (
     <View style={styles.paymentItem}>
-      <View style={styles.paymentHeader}>
-        <Text style={styles.paymentReference}>PAY-{String(item.payment_id).padStart(6, '0')}</Text>
-        <View style={[styles.statusBadge, { backgroundColor: statusColor(item.payment_status) + '20' }]}>
+      <View style={styles.itemHeader}>
+        <Text style={styles.paymentReference}>{`PAY-${String(item.payment_id).padStart(6, '0')}`}</Text>
+        <View style={[styles.statusBadge, { backgroundColor: statusColor(item.payment_status) + '1A' }]}>
           <Text style={[styles.statusText, { color: statusColor(item.payment_status) }]}>
             {item.payment_status.toUpperCase()}
           </Text>
         </View>
       </View>
       <Text style={styles.paymentTicket}>{item.ticket_number}</Text>
-      <Text style={styles.paymentDriver}>{item.driver_name} • {item.plate_number}</Text>
+      <Text style={styles.paymentDriver}>{item.driver_name} · {item.plate_number}</Text>
       <Text style={styles.paymentViolation}>{item.violation_type}</Text>
+
+      <View style={styles.itemDivider} />
+
       <View style={styles.paymentFooter}>
-        <View style={styles.paymentMethod}>
-          <Text style={styles.methodIcon}>{methodIcon(item.payment_method)}</Text>
-          <Text style={styles.methodText}>{item.payment_method.toUpperCase()}</Text>
+        <View style={styles.paymentMethodRow}>
+          <Ionicons name={methodIcon(item.payment_method)} size={14} color={COLORS.textSecondary} />
+          <Text style={styles.methodText}>{methodLabel(item.payment_method)}</Text>
         </View>
         <Text style={styles.paymentAmount}>{formatCurrency(item.amount_paid)}</Text>
       </View>
-      <Text style={styles.paymentMeta}>
-        {item.payment_date} • Received by: {item.received_by_name || 'N/A'}
-      </Text>
+      <Text style={styles.paymentMeta}>{item.payment_date} · Received by {item.received_by_name || 'N/A'}</Text>
     </View>
   );
 
-  // Render empty state
   const renderEmpty = (message: string) => (
     <View style={styles.emptyState}>
+      <Ionicons name="document-text-outline" size={26} color={COLORS.textTertiary} />
       <Text style={styles.emptyText}>{message}</Text>
     </View>
   );
@@ -321,52 +358,49 @@ export default function PaymentsScreen() {
   if (loading) {
     return (
       <SafeAreaView style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#2563eb" />
-        <Text style={styles.loadingText}>Loading payments...</Text>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={styles.loadingText}>Loading payments…</Text>
       </SafeAreaView>
     );
   }
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor="#f8fafc" />
+      <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
       <ScrollView
         style={styles.container}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        contentContainerStyle={{ paddingBottom: 40 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />}
         showsVerticalScrollIndicator={false}
       >
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.pageTitle}>Payment Management</Text>
-          <Text style={styles.pageSub}>
-            Process unpaid violations, record collections, and review completed payment transactions.
-          </Text>
+          <Text style={styles.eyebrow}>PAYMENT MANAGEMENT</Text>
+          <Text style={styles.pageTitle}>Payments & Collections</Text>
+          <Text style={styles.pageSub}>Process unpaid violations, record collections, and review completed payment transactions.</Text>
         </View>
 
-        {/* Stats Cards */}
-        <View style={styles.statsRow}>
-          {renderStatCard('Collected Today', shortCurrency(stats.collectedToday), '', '#16a34a')}
-          {renderStatCard('This Week', shortCurrency(stats.thisWeek), '', '#2563eb')}
-          {renderStatCard('This Month', shortCurrency(stats.thisMonth), '', '#2563eb')}
-          {renderStatCard(
-            'Pending Settlement',
-            shortCurrency(stats.pendingAmount),
-            `${stats.pendingCount} unpaid violations`,
-            '#f59e0b'
-          )}
+        {/* Summary panel */}
+        <View style={styles.summaryPanel}>
+          {renderSummaryCell(<Ionicons name="cash-outline" size={16} color={COLORS.success} />, 'Collected Today', shortCurrency(stats.collectedToday), false)}
+          {renderSummaryCell(<Ionicons name="calendar-outline" size={16} color={COLORS.primary} />, 'This Week', shortCurrency(stats.thisWeek), false)}
+          {renderSummaryCell(<Ionicons name="stats-chart-outline" size={16} color={COLORS.primary} />, 'This Month', shortCurrency(stats.thisMonth), false)}
+          {renderSummaryCell(<Ionicons name="alert-circle-outline" size={16} color={COLORS.warning} />, `${stats.pendingCount} Unpaid`, shortCurrency(stats.pendingAmount), true)}
         </View>
 
-        {/* Pending Violations Section */}
+        {/* Pending Violations */}
         <View style={styles.sectionCard}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Pending Violations</Text>
             <Text style={styles.sectionSub}>Select a violation to begin payment processing.</Text>
           </View>
 
-          <View style={styles.searchContainer}>
+          <View style={styles.searchWrap}>
+            <Ionicons name="search" size={16} color={COLORS.textTertiary} style={styles.searchIcon} />
             <TextInput
               style={styles.searchInput}
               placeholder="Search ticket, driver, plate, violation..."
+              placeholderTextColor={COLORS.textTertiary}
               value={pendingSearch}
               onChangeText={setPendingSearch}
             />
@@ -380,39 +414,44 @@ export default function PaymentsScreen() {
               renderItem={renderPendingItem}
               keyExtractor={item => item.violation_id.toString()}
               scrollEnabled={false}
+              ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
             />
           )}
         </View>
 
-        {/* Payment Transactions Section */}
+        {/* Payment Transactions */}
         <View style={styles.sectionCard}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Payment Transactions</Text>
             <Text style={styles.sectionSub}>Completed and recorded collection history.</Text>
           </View>
 
-          <View style={styles.filterContainer}>
+          <View style={styles.searchWrap}>
+            <Ionicons name="search" size={16} color={COLORS.textTertiary} style={styles.searchIcon} />
             <TextInput
-              style={[styles.searchInput, { flex: 1, marginRight: 8 }]}
+              style={styles.searchInput}
               placeholder="Search ticket, driver, plate..."
+              placeholderTextColor={COLORS.textTertiary}
               value={paymentSearch}
               onChangeText={setPaymentSearch}
             />
-            <View style={styles.pickerWrapper}>
-              <Picker
-                selectedValue={methodFilter}
-                onValueChange={(itemValue) => setMethodFilter(itemValue)}
-                style={styles.picker}
-                dropdownIconColor="#0b3d78"
-              >
-                <Picker.Item label="All Methods" value="" />
-                <Picker.Item label="Cash" value="cash" />
-                <Picker.Item label="GCash" value="gcash" />
-                <Picker.Item label="Bank Transfer" value="bank_transfer" />
-                <Picker.Item label="Other" value="other" />
-              </Picker>
-            </View>
           </View>
+
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.methodFilterRow} contentContainerStyle={{ paddingRight: 4 }}>
+            {METHOD_FILTERS.map(f => {
+              const active = methodFilter === f.value;
+              return (
+                <TouchableOpacity
+                  key={f.label}
+                  style={[styles.filterChip, active && styles.filterChipActive]}
+                  onPress={() => setMethodFilter(f.value)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>{f.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
 
           {filteredPayments.length === 0 ? (
             renderEmpty('No payment transactions matched your current filters.')
@@ -422,40 +461,36 @@ export default function PaymentsScreen() {
               renderItem={renderPaymentItem}
               keyExtractor={item => item.payment_id.toString()}
               scrollEnabled={false}
+              ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
             />
           )}
         </View>
       </ScrollView>
 
       {/* Payment Modal */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={modalVisible}
-        onRequestClose={() => setModalVisible(false)}
-      >
+      <Modal animationType="slide" transparent visible={modalVisible} onRequestClose={() => setModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <View>
+              <View style={{ flex: 1 }}>
                 <Text style={styles.modalTitle}>Process Payment</Text>
                 <Text style={styles.modalSub}>Review violation before recording payment.</Text>
               </View>
-              <TouchableOpacity onPress={() => setModalVisible(false)}>
-                <Text style={styles.modalClose}>✕</Text>
+              <TouchableOpacity onPress={() => setModalVisible(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="close" size={22} color={COLORS.textTertiary} />
               </TouchableOpacity>
             </View>
 
             {selectedViolation && (
-              <ScrollView style={styles.modalBody}>
+              <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
                 <View style={styles.modalViolationDetails}>
                   <View style={styles.modalDetailRow}>
                     <Text style={styles.modalDetailLabel}>Ticket Number</Text>
-                    <Text style={styles.modalDetailValue}>{selectedViolation.ticket_number}</Text>
+                    <Text style={[styles.modalDetailValue, { fontFamily: mono }]}>{selectedViolation.ticket_number}</Text>
                   </View>
                   <View style={styles.modalDetailRow}>
                     <Text style={styles.modalDetailLabel}>Status</Text>
-                    <View style={[styles.statusBadge, { backgroundColor: statusColor(selectedViolation.status) + '20', alignSelf: 'flex-start' }]}>
+                    <View style={[styles.statusBadge, { backgroundColor: statusColor(selectedViolation.status) + '1A' }]}>
                       <Text style={[styles.statusText, { color: statusColor(selectedViolation.status) }]}>
                         {selectedViolation.status.toUpperCase()}
                       </Text>
@@ -467,7 +502,7 @@ export default function PaymentsScreen() {
                   </View>
                   <View style={styles.modalDetailRow}>
                     <Text style={styles.modalDetailLabel}>Plate Number</Text>
-                    <Text style={styles.modalDetailValue}>{selectedViolation.plate_number}</Text>
+                    <Text style={[styles.modalDetailValue, { fontFamily: mono }]}>{selectedViolation.plate_number}</Text>
                   </View>
                   <View style={styles.modalDetailRow}>
                     <Text style={styles.modalDetailLabel}>Violation</Text>
@@ -479,55 +514,52 @@ export default function PaymentsScreen() {
                   </View>
                   <View style={styles.modalDetailRow}>
                     <Text style={styles.modalDetailLabel}>Date & Time</Text>
-                    <Text style={styles.modalDetailValue}>
-                      {selectedViolation.violation_date} {selectedViolation.violation_time}
-                    </Text>
+                    <Text style={styles.modalDetailValue}>{selectedViolation.violation_date} {selectedViolation.violation_time}</Text>
                   </View>
                   <View style={[styles.modalDetailRow, { borderBottomWidth: 0 }]}>
                     <Text style={styles.modalDetailLabel}>Penalty</Text>
-                    <Text style={[styles.modalDetailValue, styles.modalPenalty]}>
-                      {formatCurrency(selectedViolation.penalty_amount)}
-                    </Text>
+                    <Text style={[styles.modalDetailValue, styles.modalPenalty]}>{formatCurrency(selectedViolation.penalty_amount)}</Text>
                   </View>
                 </View>
 
                 <View style={styles.modalForm}>
                   <Text style={styles.modalFormLabel}>Payment Method</Text>
-                  <View style={styles.pickerWrapper}>
-                    <Picker
-                      selectedValue={paymentMethod}
-                      onValueChange={(itemValue) => setPaymentMethod(itemValue)}
-                      style={styles.picker}
-                      dropdownIconColor="#0b3d78"
-                    >
-                      <Picker.Item label="Cash" value="cash" />
-                      <Picker.Item label="GCash" value="gcash" />
-                      <Picker.Item label="Bank Transfer" value="bank_transfer" />
-                      <Picker.Item label="Other" value="other" />
-                    </Picker>
+                  <View style={styles.methodOptionsRow}>
+                    {METHOD_OPTIONS.map(opt => {
+                      const active = paymentMethod === opt.value;
+                      return (
+                        <TouchableOpacity
+                          key={opt.value}
+                          style={[styles.methodOption, active && styles.methodOptionActive]}
+                          onPress={() => setPaymentMethod(opt.value)}
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons name={methodIcon(opt.value)} size={16} color={active ? COLORS.primary : COLORS.textSecondary} />
+                          <Text style={[styles.methodOptionText, active && styles.methodOptionTextActive]}>{opt.label}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
                   </View>
-                  <Text style={styles.modalNote}>
-                    A payment reference will be generated from the saved payment ID.
-                  </Text>
+                  <Text style={styles.modalNote}>A payment reference will be generated from the saved payment ID.</Text>
                 </View>
 
                 <View style={styles.modalActions}>
                   <TouchableOpacity
-                    style={[styles.modalButton, styles.cancelButton]}
+                    style={styles.cancelModalButton}
                     onPress={() => setModalVisible(false)}
                     disabled={processing}
                   >
-                    <Text style={styles.cancelButtonText}>Cancel</Text>
+                    <Text style={styles.cancelModalButtonText}>Cancel</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={[styles.modalButton, styles.confirmButton]}
+                    style={styles.confirmModalButton}
                     onPress={handlePaymentConfirm}
                     disabled={processing}
                   >
                     {processing ? (
-                      <ActivityIndicator size="small" color="#fff" />
+                      <ActivityIndicator size="small" color="#FFFFFF" />
                     ) : (
-                      <Text style={styles.confirmButtonText}>Confirm Payment</Text>
+                      <Text style={styles.confirmModalButtonText}>Confirm Payment</Text>
                     )}
                   </TouchableOpacity>
                 </View>
@@ -541,213 +573,144 @@ export default function PaymentsScreen() {
 }
 
 // ========== STYLES ==========
+const softShadow = {
+  shadowColor: '#0F172A',
+  shadowOffset: { width: 0, height: 4 },
+  shadowOpacity: 0.08,
+  shadowRadius: 16,
+  elevation: 4,
+};
+
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#f8fafc' },
-  container: { flex: 1, padding: 16 },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f8fafc' },
-  loadingText: { marginTop: 12, fontSize: 16, color: '#1e293b' },
-  header: { marginBottom: 16 },
-  pageTitle: { fontSize: 24, fontWeight: '700', color: '#0b3d78', marginBottom: 4 },
-  pageSub: { fontSize: 14, color: '#64748b' },
+  safeArea: { flex: 1, backgroundColor: COLORS.bg },
+  container: { flex: 1, paddingHorizontal: 20 },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.bg },
+  loadingText: { marginTop: 12, fontSize: 14, color: COLORS.textSecondary },
 
-  statsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    marginBottom: 16,
-  },
-  statCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 14,
-    width: '48%',
-    borderLeftWidth: 4,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 1,
-  },
-  statLabel: { fontSize: 12, color: '#64748b', marginBottom: 2 },
-  statValue: { fontSize: 20, fontWeight: '700' },
-  statSubtext: { fontSize: 11, color: '#94a3b8', marginTop: 2 },
+  header: { paddingTop: 18, marginBottom: 18 },
+  eyebrow: { fontSize: 11, fontWeight: '700', color: COLORS.primary, letterSpacing: 1, marginBottom: 6 },
+  pageTitle: { fontSize: 26, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 6, letterSpacing: -0.3 },
+  pageSub: { fontSize: 13, color: COLORS.textSecondary, lineHeight: 18 },
 
+  // Summary panel
+  summaryPanel: {
+    flexDirection: 'row', backgroundColor: COLORS.surface, borderRadius: 18,
+    borderWidth: 1, borderColor: COLORS.border, paddingVertical: 16, marginBottom: 18, ...softShadow,
+  },
+  summaryCell: { flex: 1, alignItems: 'center', paddingHorizontal: 4 },
+  summaryCellDivider: { borderRightWidth: 1, borderRightColor: COLORS.border },
+  summaryValue: { fontSize: 15, fontWeight: '700', color: COLORS.textPrimary, fontFamily: mono, marginTop: 6, marginBottom: 3 },
+  summaryLabel: { fontSize: 9, color: COLORS.textTertiary, textAlign: 'center' },
+
+  // Section card
   sectionCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    backgroundColor: COLORS.surface, borderRadius: 18, padding: 16, marginBottom: 18,
+    borderWidth: 1, borderColor: COLORS.border, ...softShadow,
   },
-  sectionHeader: { marginBottom: 12 },
-  sectionTitle: { fontSize: 16, fontWeight: '600', color: '#0b3d78' },
-  sectionSub: { fontSize: 12, color: '#64748b' },
+  sectionHeader: { marginBottom: 14 },
+  sectionTitle: { fontSize: 16, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 2 },
+  sectionSub: { fontSize: 12, color: COLORS.textTertiary },
 
-  searchContainer: { marginBottom: 12 },
-  searchInput: {
-    backgroundColor: '#f8fafc',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    padding: 10,
-    fontSize: 14,
-    height: 44,
+  // Search
+  searchWrap: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.bg,
+    borderRadius: 10, borderWidth: 1, borderColor: COLORS.border,
+    paddingHorizontal: 12, height: 42, marginBottom: 12,
   },
-  filterContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  pickerWrapper: {
-    backgroundColor: '#f8fafc',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    height: 44,
-    justifyContent: 'center',
-    minWidth: 120,
-  },
-  picker: {
-    height: 44,
-    width: '100%',
-  },
+  searchIcon: { marginRight: 8 },
+  searchInput: { flex: 1, fontSize: 14, color: COLORS.textPrimary },
 
+  // Method filter chips
+  methodFilterRow: { marginBottom: 14 },
+  filterChip: {
+    backgroundColor: COLORS.bg, borderWidth: 1, borderColor: COLORS.border,
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, marginRight: 8,
+  },
+  filterChipActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  filterChipText: { fontSize: 12, fontWeight: '600', color: COLORS.textSecondary },
+  filterChipTextActive: { color: '#FFFFFF' },
+
+  // Pending violation item
   pendingItem: {
-    backgroundColor: '#f8fafc',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
+    backgroundColor: COLORS.bg, borderRadius: 14, padding: 14,
+    borderWidth: 1, borderColor: COLORS.border,
   },
-  pendingHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  ticketNumber: { fontSize: 14, fontWeight: '600', color: '#0b3d78' },
-  statusBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12 },
-  statusText: { fontSize: 11, fontWeight: '600' },
-  driverName: { fontSize: 15, fontWeight: '500', color: '#1e293b' },
-  plateInfo: { fontSize: 13, color: '#64748b' },
-  violationType: { fontSize: 14, fontWeight: '500', color: '#0b3d78', marginTop: 2 },
-  locationDate: { fontSize: 13, color: '#64748b' },
-  pendingFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  penalty: { fontSize: 16, fontWeight: '700', color: '#0b3d78' },
-  processButton: {
-    backgroundColor: '#2563eb',
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  processButtonText: { color: '#fff', fontSize: 12, fontWeight: '600' },
+  itemHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  ticketNumber: { fontSize: 13, fontWeight: '600', color: COLORS.textPrimary, fontFamily: mono },
+  statusBadge: { paddingHorizontal: 9, paddingVertical: 3, borderRadius: 10 },
+  statusText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.3 },
+  driverName: { fontSize: 14, fontWeight: '600', color: COLORS.textPrimary },
+  plateInfo: { fontSize: 12, color: COLORS.textSecondary, marginBottom: 6 },
+  itemMetaRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  violationType: { fontSize: 13, fontWeight: '600', color: COLORS.primary },
+  locationDate: { fontSize: 11, color: COLORS.textTertiary },
+  itemDivider: { height: 1, backgroundColor: COLORS.border, marginVertical: 10 },
+  pendingFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  penalty: { fontSize: 16, fontWeight: '700', color: COLORS.textPrimary, fontFamily: mono },
+  processButton: { backgroundColor: COLORS.primary, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 20 },
+  processButtonText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
 
+  // Payment item
   paymentItem: {
-    backgroundColor: '#f8fafc',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
+    backgroundColor: COLORS.bg, borderRadius: 14, padding: 14,
+    borderWidth: 1, borderColor: COLORS.border,
   },
-  paymentHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  paymentReference: { fontSize: 14, fontWeight: '600', color: '#0b3d78' },
-  paymentTicket: { fontSize: 14, color: '#1e293b' },
-  paymentDriver: { fontSize: 13, color: '#64748b' },
-  paymentViolation: { fontSize: 14, fontWeight: '500', color: '#0b3d78', marginTop: 2 },
-  paymentFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  paymentMethod: { flexDirection: 'row', alignItems: 'center' },
-  methodIcon: { fontSize: 16, marginRight: 4 },
-  methodText: { fontSize: 13, color: '#64748b' },
-  paymentAmount: { fontSize: 16, fontWeight: '700', color: '#0b3d78' },
-  paymentMeta: { fontSize: 12, color: '#94a3b8', marginTop: 4 },
+  paymentReference: { fontSize: 13, fontWeight: '600', color: COLORS.textPrimary, fontFamily: mono },
+  paymentTicket: { fontSize: 13, color: COLORS.textSecondary, fontFamily: mono },
+  paymentDriver: { fontSize: 13, color: COLORS.textSecondary },
+  paymentViolation: { fontSize: 13, fontWeight: '600', color: COLORS.primary, marginTop: 2 },
+  paymentFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  paymentMethodRow: { flexDirection: 'row', alignItems: 'center' },
+  methodText: { fontSize: 12, color: COLORS.textSecondary, marginLeft: 6 },
+  paymentAmount: { fontSize: 15, fontWeight: '700', color: COLORS.textPrimary, fontFamily: mono },
+  paymentMeta: { fontSize: 11, color: COLORS.textTertiary, marginTop: 8 },
 
-  emptyState: { padding: 20, alignItems: 'center' },
-  emptyText: { fontSize: 14, color: '#94a3b8', textAlign: 'center' },
+  // Empty state
+  emptyState: { alignItems: 'center', paddingVertical: 30 },
+  emptyText: { fontSize: 13, color: COLORS.textSecondary, textAlign: 'center', marginTop: 8, lineHeight: 18 },
 
   // Modal
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContent: {
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    width: '92%',
-    maxHeight: '85%',
-  },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(15,23,42,0.5)', justifyContent: 'center', alignItems: 'center' },
+  modalContent: { backgroundColor: COLORS.surface, borderRadius: 20, width: '92%', maxHeight: '85%' },
   modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
+    padding: 20, borderBottomWidth: 1, borderBottomColor: COLORS.border,
   },
-  modalTitle: { fontSize: 18, fontWeight: '700', color: '#0b3d78' },
-  modalSub: { fontSize: 13, color: '#64748b' },
-  modalClose: { fontSize: 22, color: '#94a3b8', padding: 4 },
+  modalTitle: { fontSize: 18, fontWeight: '700', color: COLORS.textPrimary },
+  modalSub: { fontSize: 12, color: COLORS.textSecondary, marginTop: 2 },
 
-  modalBody: { padding: 20, maxHeight: 500 },
-  modalViolationDetails: {
-    backgroundColor: '#f8fafc',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 16,
-  },
+  modalBody: { padding: 20, maxHeight: 520 },
+  modalViolationDetails: { backgroundColor: COLORS.bg, borderRadius: 12, padding: 12, marginBottom: 18 },
   modalDetailRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 4,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: COLORS.border,
   },
-  modalDetailLabel: { fontSize: 13, color: '#64748b' },
-  modalDetailValue: { fontSize: 13, fontWeight: '500', color: '#0b3d78', textAlign: 'right', flex: 1, marginLeft: 12 },
-  modalPenalty: { fontSize: 16, fontWeight: '700', color: '#0b3d78' },
+  modalDetailLabel: { fontSize: 12, color: COLORS.textTertiary },
+  modalDetailValue: { fontSize: 13, fontWeight: '600', color: COLORS.textPrimary, textAlign: 'right', flex: 1, marginLeft: 12 },
+  modalPenalty: { fontSize: 16, fontWeight: '700', fontFamily: mono },
 
-  modalForm: { marginBottom: 16 },
-  modalFormLabel: { fontSize: 14, fontWeight: '500', color: '#0b3d78', marginBottom: 6 },
-  modalNote: { fontSize: 12, color: '#94a3b8', marginTop: 8, fontStyle: 'italic' },
+  modalForm: { marginBottom: 8 },
+  modalFormLabel: { fontSize: 13, fontWeight: '600', color: COLORS.textPrimary, marginBottom: 10 },
+  methodOptionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  methodOption: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.bg,
+    borderWidth: 1, borderColor: COLORS.border, borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 9,
+  },
+  methodOptionActive: { backgroundColor: COLORS.primary + '14', borderColor: COLORS.primary },
+  methodOptionText: { fontSize: 12, fontWeight: '600', color: COLORS.textSecondary, marginLeft: 6 },
+  methodOptionTextActive: { color: COLORS.primary },
+  modalNote: { fontSize: 11, color: COLORS.textTertiary, marginTop: 10, fontStyle: 'italic' },
 
-  modalActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 10,
-    marginTop: 8,
+  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 8, paddingBottom: 4 },
+  cancelModalButton: {
+    paddingVertical: 11, paddingHorizontal: 20, borderRadius: 10, minWidth: 100, alignItems: 'center',
+    backgroundColor: COLORS.bg, borderWidth: 1, borderColor: COLORS.border,
   },
-  modalButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    minWidth: 100,
-    alignItems: 'center',
+  cancelModalButtonText: { fontSize: 13, fontWeight: '600', color: COLORS.textSecondary },
+  confirmModalButton: {
+    paddingVertical: 11, paddingHorizontal: 20, borderRadius: 10, minWidth: 100, alignItems: 'center',
+    backgroundColor: COLORS.primary,
   },
-  cancelButton: { backgroundColor: '#f1f5f9' },
-  confirmButton: { backgroundColor: '#2563eb' },
-  cancelButtonText: { fontSize: 14, fontWeight: '600', color: '#0b3d78' },
-  confirmButtonText: { fontSize: 14, fontWeight: '600', color: '#fff' },
+  confirmModalButtonText: { fontSize: 13, fontWeight: '700', color: '#FFFFFF' },
 });
