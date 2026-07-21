@@ -765,6 +765,11 @@ div[style*="border-radius: 999px"]:not(.tag):not(.system-online-badge){
             <h6>Monthly Risk Prediction</h6>
             <small class="text-muted">Random Forest classifier</small>
           </div>
+          <div class="d-flex align-items-center gap-2 flex-wrap">
+            <label class="small text-muted mb-0" for="dsPredictionMonth">Forecast period</label>
+            <input class="form-control form-control-sm" type="month" id="dsPredictionMonth" value="<?= esc(date('Y-m', strtotime('first day of next month'))) ?>" min="2000-01" max="2100-12" style="width:155px">
+            <button class="btn btn-sm btn-light" type="button" id="dsPredictBtn"><i class="bi bi-stars me-1"></i>Predict</button>
+          </div>
         </div>
 
         <div class="ds-risk-badge" id="dsRiskBadge">—</div>
@@ -1265,8 +1270,14 @@ async function loadDecisionSupport() {
   content.classList.add('d-none');
 
   try {
+    const selectedPeriod = document.getElementById('dsPredictionMonth')?.value || '';
+    const [selectedYear, selectedMonth] = selectedPeriod.split('-').map(Number);
+    const monthlyUrl = selectedYear && selectedMonth
+      ? `${DS_MONTHLY_ENDPOINT}?year=${selectedYear}&month=${selectedMonth}`
+      : DS_MONTHLY_ENDPOINT;
+
     const [monthlyResponse, hotspotResponse] = await Promise.all([
-      fetch(DS_MONTHLY_ENDPOINT, {
+      fetch(monthlyUrl, {
         headers: { Accept: 'application/json' },
         cache: 'no-store'
       }),
@@ -1427,6 +1438,8 @@ new Chart(document.getElementById('dsViolationChart'), {
 });
 
 loadDecisionSupport();
+document.getElementById('dsPredictBtn')?.addEventListener('click', loadDecisionSupport);
+document.getElementById('dsPredictionMonth')?.addEventListener('change', loadDecisionSupport);
 setInterval(loadDecisionSupport, 60000);
 </script>
 

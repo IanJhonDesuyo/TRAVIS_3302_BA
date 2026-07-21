@@ -480,6 +480,32 @@ a:hover{color:#fff}
     touch-action:none;
 }
 #calibrationCanvas.active{display:block;}
+
+/* Keep the monitoring summary balanced instead of leaving single cards behind. */
+.monitoring-kpi-grid{
+    display:grid;
+    grid-template-columns:repeat(5,minmax(0,1fr));
+    gap:14px;
+    margin-bottom:1.5rem;
+}
+.monitoring-kpi-grid > div{min-width:0;}
+.monitoring-kpi-grid .stat-card{height:100%;}
+.monitoring-last-updated .stat-card{
+    display:flex;
+    min-height:auto;
+    flex-direction:row;
+    align-items:center;
+    gap:14px;
+}
+.monitoring-last-updated .stat-icon{flex:0 0 auto;margin-bottom:0;}
+.monitoring-last-updated .stat-label{margin:0;white-space:nowrap;}
+.monitoring-last-updated .stat-value{font-size:1.1rem !important;}
+@media (max-width:1199.98px){
+    .monitoring-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr));}
+}
+@media (max-width:575.98px){
+    .monitoring-kpi-grid{grid-template-columns:1fr;}
+}
 </style>
 
 <div class="d-flex justify-content-between flex-wrap mb-4 gap-2">
@@ -642,8 +668,8 @@ a:hover{color:#fff}
   </div>
 </div>
 
-<div class="row g-3 mb-4">
-  <div class="col-sm-6 col-xl-3">
+<div class="monitoring-kpi-grid">
+  <div>
     <div class="stat-card">
       <div class="stat-icon tone-success"><i class="bi bi-cpu"></i></div>
       <div class="stat-label">AI Status</div>
@@ -651,7 +677,7 @@ a:hover{color:#fff}
     </div>
   </div>
 
-  <div class="col-sm-6 col-xl-3">
+  <div>
     <div class="stat-card">
       <div class="stat-icon tone-primary"><i class="bi bi-camera-video"></i></div>
       <div class="stat-label">Source</div>
@@ -659,7 +685,7 @@ a:hover{color:#fff}
     </div>
   </div>
 
-  <div class="col-sm-6 col-xl-3">
+  <div>
     <div class="stat-card">
       <div class="stat-icon tone-primary"><i class="bi bi-car-front"></i></div>
       <div class="stat-label">Vehicle Count</div>
@@ -667,7 +693,7 @@ a:hover{color:#fff}
     </div>
   </div>
 
-  <div class="col-sm-6 col-xl-3">
+  <div>
     <div class="stat-card">
       <div class="stat-icon tone-success"><i class="bi bi-arrow-up-circle"></i></div>
       <div class="stat-label">Inbound</div>
@@ -675,17 +701,14 @@ a:hover{color:#fff}
     </div>
   </div>
 
-  <div class="col-sm-6 col-xl-3">
+  <div>
     <div class="stat-card">
       <div class="stat-icon tone-warning"><i class="bi bi-arrow-down-circle"></i></div>
       <div class="stat-label">Outbound</div>
       <div class="stat-value" id="outboundCount"><?= num($latest['outbound_count'] ?? 0) ?></div>
     </div>
   </div>
-</div>
-
-<div class="row g-3 mb-4">
-  <div class="col-sm-6 col-xl-3">
+  <div>
     <div class="stat-card">
       <div class="stat-icon tone-primary"><i class="bi bi-activity"></i></div>
       <div class="stat-label">Progress</div>
@@ -696,7 +719,7 @@ a:hover{color:#fff}
     </div>
   </div>
 
-  <div class="col-sm-6 col-xl-3">
+  <div>
     <div class="stat-card">
       <div class="stat-icon tone-warning"><i class="bi bi-speedometer2"></i></div>
       <div class="stat-label">Congestion Level</div>
@@ -704,7 +727,7 @@ a:hover{color:#fff}
     </div>
   </div>
 
-  <div class="col-sm-6 col-xl-3">
+  <div>
     <div class="stat-card">
       <div class="stat-icon tone-danger"><i class="bi bi-bell"></i></div>
       <div class="stat-label">Alert Status</div>
@@ -712,7 +735,7 @@ a:hover{color:#fff}
     </div>
   </div>
 
-  <div class="col-sm-6 col-xl-3">
+  <div>
     <div class="stat-card">
       <div class="stat-icon tone-success"><i class="bi bi-person-badge"></i></div>
       <div class="stat-label">Officer Presence</div>
@@ -720,7 +743,7 @@ a:hover{color:#fff}
     </div>
   </div>
 
-  <div class="col-sm-6 col-xl-3">
+  <div>
     <div class="stat-card">
       <div class="stat-icon tone-danger"><i class="bi bi-exclamation-triangle"></i></div>
       <div class="stat-label">Potential Collision</div>
@@ -729,8 +752,8 @@ a:hover{color:#fff}
   </div>
 </div>
 
-<div class="row g-3 mb-4">
-  <div class="col-sm-6 col-xl-3">
+<div class="row g-3 mb-4 monitoring-last-updated">
+  <div class="col-12">
     <div class="stat-card">
       <div class="stat-icon tone-primary"><i class="bi bi-clock-history"></i></div>
       <div class="stat-label">Last Updated Time</div>

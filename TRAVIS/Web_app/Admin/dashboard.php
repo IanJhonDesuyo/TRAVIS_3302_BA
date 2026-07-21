@@ -528,14 +528,22 @@ body{
 .compact-metric h4{color:#fff !important;font-weight:800}
 .compact-metric small{color:var(--text-soft) !important}
 
-.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px}
-.mini-metric{
-    background:rgba(255,255,255,.03);
-    border:1px solid var(--border-glass);
-    border-radius:12px;padding:12px 14px;
+.metric-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+#currentMonitoringCard .mini-metric{
+    min-width:0;
+    min-height:86px;
+    background:rgba(255,255,255,.035) !important;
+    border:1px solid var(--border-glass) !important;
+    border-radius:12px !important;
+    padding:13px 14px !important;
+    display:flex;
+    flex-direction:column;
+    justify-content:space-between;
 }
-.mini-metric small{color:var(--text-soft);display:block;font-size:.72rem;text-transform:uppercase;letter-spacing:.03em;margin-bottom:4px}
-.mini-metric strong{color:#fff}
+#currentMonitoringCard .mini-metric small{color:var(--text-soft) !important;display:block;font-size:.68rem;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px}
+#currentMonitoringCard .mini-metric strong{color:#fff !important;font-size:1rem;line-height:1.25;overflow-wrap:anywhere}
+@media(max-width:991.98px){.metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:575.98px){.metric-grid{grid-template-columns:1fr}}
 
 .tag{
     display:inline-block;padding:4px 12px;border-radius:999px;
@@ -823,9 +831,13 @@ page_start('Dashboard', 'dashboard', 'Search violations, plates, locations...');
       <small class="text-muted">Random Forest monthly risk prediction combined with K-Means hotspot intelligence</small>
     </div>
 
-    <button class="btn btn-sm btn-light" type="button" id="refreshPredictionBtn">
-      <i class="bi bi-arrow-clockwise me-1"></i>Refresh
-    </button>
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+      <label class="small text-muted mb-0" for="aiPredictionMonth">Forecast period</label>
+      <input class="form-control form-control-sm" type="month" id="aiPredictionMonth" value="<?= esc(date('Y-m', strtotime('first day of next month'))) ?>" min="2000-01" max="2100-12" style="width:155px">
+      <button class="btn btn-sm btn-light" type="button" id="refreshPredictionBtn">
+        <i class="bi bi-arrow-clockwise me-1"></i>Predict
+      </button>
+    </div>
   </div>
 
   <div id="aiPredictionLoading" class="ai-loading-state">
@@ -1021,7 +1033,7 @@ page_start('Dashboard', 'dashboard', 'Search violations, plates, locations...');
 </div>
 
 <!-- Current monitoring -->
-<div class="section-card mb-4">
+<div class="section-card mb-4" id="currentMonitoringCard">
   <div class="section-head">
     <div>
       <h6>Current Monitoring Status</h6>
@@ -1419,7 +1431,13 @@ async function loadMonthlyPrediction() {
   content.classList.add('d-none');
 
   try {
-    const response = await fetch(MONTHLY_PREDICTION_ENDPOINT, {
+    const selectedPeriod = document.getElementById('aiPredictionMonth')?.value || '';
+    const [selectedYear, selectedMonth] = selectedPeriod.split('-').map(Number);
+    const predictionUrl = selectedYear && selectedMonth
+      ? `${MONTHLY_PREDICTION_ENDPOINT}?year=${selectedYear}&month=${selectedMonth}`
+      : MONTHLY_PREDICTION_ENDPOINT;
+
+    const response = await fetch(predictionUrl, {
       method: 'GET',
       headers: {
         'Accept': 'application/json'
@@ -1485,6 +1503,7 @@ document.getElementById('refreshPredictionBtn')?.addEventListener(
   'click',
   loadMonthlyPrediction
 );  
+document.getElementById('aiPredictionMonth')?.addEventListener('change', loadMonthlyPrediction);
 
 loadMonthlyPrediction();
 setInterval(loadMonthlyPrediction, 60000);

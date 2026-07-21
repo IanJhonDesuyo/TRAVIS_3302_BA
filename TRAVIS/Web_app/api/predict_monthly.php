@@ -4,10 +4,10 @@ header("Content-Type: application/json");
 
 // Allow testing from browser
 if ($_SERVER["REQUEST_METHOD"] === "GET") {
-
+    $defaultPeriod = new DateTimeImmutable('first day of next month');
     $input = [
-        "year" => date("Y"),
-        "month" => date("n")
+        "year" => isset($_GET['year']) ? (int)$_GET['year'] : (int)$defaultPeriod->format('Y'),
+        "month" => isset($_GET['month']) ? (int)$_GET['month'] : (int)$defaultPeriod->format('n')
     ];
 
 } else {
@@ -48,6 +48,15 @@ for ($attempt = 1; $attempt <= 20; $attempt++) {
     curl_close($ch);
     $ch = null;
     if ($attempt < 20) usleep(750000);
+}
+
+if ($input['year'] < 2000 || $input['year'] > 2100 || $input['month'] < 1 || $input['month'] > 12) {
+    http_response_code(422);
+    echo json_encode([
+        'success' => false,
+        'message' => 'Select a valid month and year between 2000 and 2100.'
+    ]);
+    exit;
 }
 
 if ($response === false || !$ch) {
