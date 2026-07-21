@@ -7,6 +7,7 @@ $pythonExe = $projectRoot . "\\.venv\\Scripts\\python.exe";
 $cvDir = $projectRoot . "\\computer_vision";
 $detectScript = $cvDir . "\\detect_video.py";
 $videoPath = $cvDir . "\\uploads\\videos\\test.mp4";
+$cameraConfigPath = $cvDir . "\\camera_config.json";
 
 $statusFile = __DIR__ . "\\analysis_status.json";
 $logDir = $projectRoot . "\\Web_app\\uploads\\logs";
@@ -21,13 +22,48 @@ if ($_SERVER["REQUEST_METHOD"] !== "POST") {
     exit;
 }
 
-if (!file_exists($videoPath)) {
+$payload = json_decode(file_get_contents("php://input"), true);
+$sourceType = is_array($payload) ? ($payload["source_type"] ?? "uploaded_video") : "uploaded_video";
+
+if (!in_array($sourceType, ["uploaded_video", "tapo_camera"], true)) {
+    http_response_code(422);
+    echo json_encode(["success" => false, "message" => "Invalid video source."]);
+    exit;
+}
+
+if ($sourceType === "uploaded_video" && !file_exists($videoPath)) {
     echo json_encode([
         "success" => false,
         "analysis_status" => "Idle",
         "message" => "Upload a video first."
     ]);
     exit;
+}
+
+if ($sourceType === "tapo_camera") {
+    $host = trim((string) ($payload["tapo_host"] ?? ""));
+    $username = trim((string) ($payload["tapo_username"] ?? ""));
+    $password = (string) ($payload["tapo_password"] ?? "");
+    $stream = ($payload["tapo_stream"] ?? "stream2") === "stream1" ? "stream1" : "stream2";
+
+    if (!filter_var($host, FILTER_VALIDATE_IP) || $username === "" || $password === "") {
+        http_response_code(422);
+        echo json_encode(["success" => false, "message" => "Enter a valid camera IP, camera username, and password."]);
+        exit;
+    }
+
+    $cameraConfig = json_encode([
+        "host" => $host,
+        "username" => $username,
+        "password" => $password,
+        "stream" => $stream
+    ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+
+    if (file_put_contents($cameraConfigPath, $cameraConfig, LOCK_EX) === false) {
+        http_response_code(500);
+        echo json_encode(["success" => false, "message" => "Could not save the local camera configuration."]);
+        exit;
+    }
 }
 
 if (!file_exists($pythonExe)) {
@@ -62,7 +98,7 @@ file_put_contents($statusFile, json_encode([
 
 $command =
     'cd /d "' . $cvDir . '" && ' .
-    '"' . $pythonExe . '" "' . $detectScript . '" ' .
+    '"' . $pythonExe . '" "' . $detectScript . '" --source-type ' . $sourceType . ' ' .
     '> "' . $logFile . '" 2>&1';
 
 $psexec = 'start "" /B cmd.exe /C "' . $command . '"';
@@ -72,5 +108,5 @@ pclose(popen($psexec, "r"));
 echo json_encode([
     "success" => true,
     "analysis_status" => "Starting",
-    "message" => "AI analysis is starting."
+    "message" => $sourceType === "tapo_camera" ? "Tapo camera analysis is starting." : "Video analysis is starting."
 ]);

@@ -171,8 +171,8 @@ const trendData = <?= json_encode(array_map(fn($r) => (float)$r['total'], $weekl
 const typeLabels = <?= json_encode(array_column($violationTypeBreakdown, 'violation_type')) ?>;
 const typeData = <?= json_encode(array_map('intval', array_column($violationTypeBreakdown, 'total'))) ?>;
 
-Chart.defaults.font.family = "'Inter', sans-serif";
-Chart.defaults.color = '#64748b';
+Chart.defaults.font.family = "'Poppins', sans-serif";
+Chart.defaults.color = '#c9d8ea';
 
 const trendCtx = document.getElementById('chartTrend').getContext('2d');
 const trendGrad = trendCtx.createLinearGradient(0, 0, 0, 260);
@@ -191,7 +191,23 @@ new Chart(trendCtx, {
 new Chart(document.getElementById('chartTypes'), {
   type: 'polarArea',
   data: { labels: typeLabels, datasets: [{ data: typeData, backgroundColor: ['rgba(20,184,166,.7)','rgba(30,58,138,.7)','rgba(245,158,11,.7)','rgba(220,38,38,.7)','rgba(59,130,246,.7)','rgba(100,116,139,.6)','rgba(168,85,247,.6)','rgba(236,72,153,.6)'], borderWidth: 2, borderColor: '#fff' }] },
-  options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { usePointStyle: true, font: { size: 11 } } } } }
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { position: 'right', labels: { color: '#c9d8ea', usePointStyle: true, padding: 14, font: { size: 11 } } },
+      tooltip: { backgroundColor: '#0a1a30', titleColor: '#fff', bodyColor: '#c9d8ea', borderColor: 'rgba(255,255,255,.12)', borderWidth: 1 }
+    },
+    scales: {
+      r: {
+        beginAtZero: true,
+        grid: { color: 'rgba(255,255,255,.12)' },
+        angleLines: { color: 'rgba(255,255,255,.12)' },
+        ticks: { color: '#e2e8f0', backdropColor: 'rgba(10,26,48,.82)', backdropPadding: 3, z: 1 },
+        pointLabels: { color: '#c9d8ea' }
+      }
+    }
+  }
 });
 </script>
 

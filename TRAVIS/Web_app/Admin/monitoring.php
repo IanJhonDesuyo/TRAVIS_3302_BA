@@ -417,6 +417,22 @@ a:hover{color:#fff}
     color:#fff !important;
     box-shadow:0 0 0 .2rem rgba(56,189,248,.18) !important;
 }
+.form-select{
+    background-color:rgba(255,255,255,.06) !important;
+    background-image:url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23c9d8ea' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e") !important;
+    border:1px solid var(--border-glass) !important;
+    color:#fff !important;
+}
+.form-select:focus{
+    background-color:rgba(255,255,255,.09) !important;
+    border-color:var(--blue-accent) !important;
+    color:#fff !important;
+    box-shadow:0 0 0 .2rem rgba(56,189,248,.18) !important;
+}
+.form-select option{
+    background:var(--navy-800);
+    color:#fff;
+}
 .form-control::file-selector-button{
     background:rgba(255,255,255,.08);
     color:#fff;
@@ -448,7 +464,7 @@ a:hover{color:#fff}
     <div>
       <span class="dashboard-eyebrow">TRAVIS AI ENGINE</span>
       <h3 class="page-title">TRAVIS AI Monitoring</h3>
-      <p class="page-sub">AI-powered traffic monitoring for uploaded CCTV footage</p>
+      <p class="page-sub">AI-powered traffic monitoring for uploaded footage or a live Tapo camera</p>
     </div>
   </div>
 
@@ -472,7 +488,7 @@ a:hover{color:#fff}
       <div class="section-head">
         <div>
           <h6>Main Camera Monitor</h6>
-          <small class="text-muted">Uploaded CCTV test video analysis stream</small>
+          <small class="text-muted">Live browser stream from the selected AI video source</small>
         </div>
         <span class="tag tag-info" id="sourceStatus">Ready</span>
       </div>
@@ -480,7 +496,7 @@ a:hover{color:#fff}
       <div class="camera-stage mb-3" id="cameraStage">
         <img
           id="aiLiveStream"
-          src="http://localhost:5000/video_feed"
+          src="http://<?= esc(!empty($_SERVER['HTTP_HOST']) ? explode(':', $_SERVER['HTTP_HOST'])[0] : 'localhost') ?>:5000/video_feed"
           alt="TRAVIS Live AI Detection Stream"
           style="width:100%; height:100%; object-fit:cover; border-radius:12px; display:block;"
           onerror="this.style.display='none'; document.getElementById('streamFallback').style.display='flex';"
@@ -503,10 +519,6 @@ a:hover{color:#fff}
       </div>
 
       <div class="d-flex flex-wrap gap-2">
-        <button class="btn btn-primary" type="button" id="startCameraBtn">
-          <i class="bi bi-play-fill me-1"></i>Reconnect AI Stream
-        </button>
-
         <button class="btn btn-light" type="button" id="stopCameraBtn">
           <i class="bi bi-stop-fill me-1"></i>Hide Stream
         </button>
@@ -528,7 +540,31 @@ a:hover{color:#fff}
 
   <div class="col-lg-4">
     <div class="section-card mb-3">
-      <div class="section-head"><h6>Upload CCTV Video</h6></div>
+      <div class="section-head"><h6>Monitoring Source</h6></div>
+      <label class="form-label small fw-semibold" for="monitoringSource">Source</label>
+      <select class="form-select mb-3" id="monitoringSource">
+        <option value="uploaded_video">Uploaded CCTV video</option>
+        <option value="tapo_camera">Tapo camera (RTSP)</option>
+      </select>
+
+      <div id="tapoCameraFields" class="d-none">
+        <label class="form-label small fw-semibold" for="tapoHost">Camera IP address</label>
+        <input class="form-control mb-2" id="tapoHost" inputmode="decimal" placeholder="192.168.1.100" value="<?= esc($camera['ip_address'] ?? '') ?>">
+        <label class="form-label small fw-semibold" for="tapoUsername">Tapo camera account</label>
+        <input class="form-control mb-2" id="tapoUsername" autocomplete="username" placeholder="Camera account username">
+        <label class="form-label small fw-semibold" for="tapoPassword">Camera password</label>
+        <input class="form-control mb-2" id="tapoPassword" type="password" autocomplete="current-password" placeholder="Camera account password">
+        <label class="form-label small fw-semibold" for="tapoStream">Stream quality</label>
+        <select class="form-select mb-2" id="tapoStream">
+          <option value="stream2">Standard quality (recommended)</option>
+          <option value="stream1">High quality</option>
+        </select>
+        <small class="text-muted d-block mb-3">Use the camera account created in the Tapo app, not your TP-Link cloud login.</small>
+      </div>
+    </div>
+
+    <div class="section-card mb-3" id="uploadSourceCard">
+      <div class="section-head"><h6 id="sourceActionTitle">Upload CCTV Video</h6></div>
 
       <form method="post" enctype="multipart/form-data" id="uploadVideoForm">
         <label class="form-label small fw-semibold">LGU CCTV Video Copy</label>
@@ -544,7 +580,7 @@ a:hover{color:#fff}
 
       <div class="d-flex gap-2 mt-3">
         <button class="btn btn-accent flex-fill" type="button" id="startAnalysisBtn">
-          <i class="bi bi-play-circle me-1"></i>Start Analysis
+          <i class="bi bi-play-circle me-1"></i><span id="startAnalysisLabel">Start Analysis</span>
         </button>
 
         <button class="btn btn-light flex-fill" type="button" id="stopAnalysisBtn">
@@ -555,13 +591,6 @@ a:hover{color:#fff}
       <div class="small mt-2" id="analysisMessage"></div>
     </div>
 
-    <div class="section-card">
-      <div class="section-head"><h6>Camera Information</h6></div>
-      <div class="mini-metric mb-2"><small>Camera Name</small><strong><?= esc($camera['camera_name'] ?? 'No camera registered') ?></strong></div>
-      <div class="mini-metric mb-2"><small>Location</small><strong><?= esc($camera['location'] ?? 'Not set') ?></strong></div>
-      <div class="mini-metric mb-2"><small>IP Address</small><strong><?= esc($camera['ip_address'] ?? 'Not set') ?></strong></div>
-      <div class="mini-metric"><small>Status</small><strong><?= esc($camera['status'] ?? 'offline') ?></strong></div>
-    </div>
   </div>
 </div>
 

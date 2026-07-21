@@ -33,6 +33,13 @@
     UNIQUE KEY `uq_cameras_ip_address` (`ip_address`)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+  CREATE TABLE `system_settings` (
+    `setting_key` VARCHAR(100) NOT NULL,
+    `setting_value` TEXT NOT NULL,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`setting_key`)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
   CREATE TABLE `camera_monitoring_logs` (
     `log_id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `camera_id` BIGINT UNSIGNED NOT NULL,

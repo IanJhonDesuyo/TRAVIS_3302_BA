@@ -1,5 +1,84 @@
 <?php
+define('TRAVIS_PORTAL_LAYOUT', __DIR__ . '/layout.php');
+define('TRAVIS_EMBEDDED_ADMIN_PAGE', true);
+require dirname(__DIR__) . '/Admin/violations.php';
+exit;
+
 require_once __DIR__ . '/layout.php';
+
+$message = '';
+$messageType = 'info';
+
+function legacy_treasurer_violation_post(string $key, string $default = ''): string {
+    return trim((string)($_POST[$key] ?? $default));
+}
+
+function generate_treasurer_ticket_number(mysqli $conn): string {
+    $prefix = 'TRV-' . date('Ymd') . '-';
+    $stmt = $conn->prepare("SELECT ticket_number FROM violations WHERE ticket_number LIKE CONCAT(?, '%') ORDER BY violation_id DESC LIMIT 1");
+    $stmt->bind_param('s', $prefix);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $next = $row ? ((int)substr((string)$row['ticket_number'], -6)) + 1 : 1;
+    return $prefix . str_pad((string)$next, 6, '0', STR_PAD_LEFT);
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $csrfOk = hash_equals((string)($_SESSION['csrf_token'] ?? ''), (string)($_POST['csrf_token'] ?? ''));
+    $action = (string)($_POST['action'] ?? '');
+
+    if (!$csrfOk) {
+        $message = 'Your session expired. Please try again.';
+        $messageType = 'danger';
+    } elseif ($action === 'add_violation') {
+        $driver = legacy_treasurer_violation_post('driver_name');
+        $license = legacy_treasurer_violation_post('license_number');
+        $plate = strtoupper(legacy_treasurer_violation_post('plate_number'));
+        $vehicle = legacy_treasurer_violation_post('vehicle_type');
+        $type = legacy_treasurer_violation_post('violation_type');
+        $location = legacy_treasurer_violation_post('violation_location');
+        $date = legacy_treasurer_violation_post('violation_date');
+        $time = legacy_treasurer_violation_post('violation_time');
+        $amount = (float)legacy_treasurer_violation_post('penalty_amount', '0');
+        $allowedViolations = traffic_violation_types();
+        $allowedFees = array_map('floatval', traffic_penalty_fees());
+
+        if ($driver === '' || $license === '' || $plate === '' || $vehicle === '' || $type === '' || $location === '' || $date === '' || $time === '' || $amount <= 0) {
+            $message = 'Please complete all required fields and enter a valid penalty amount.';
+            $messageType = 'danger';
+        } elseif (!in_array($type, $allowedViolations, true)) {
+            $message = 'Please select a valid violation from the traffic ticket list.';
+            $messageType = 'danger';
+        } elseif (!in_array($amount, $allowedFees, true)) {
+            $message = 'Please select a valid penalty fee.';
+            $messageType = 'danger';
+        } else {
+            $ticket = generate_treasurer_ticket_number($conn);
+            $encodedBy = (int)($_SESSION['user']['id'] ?? 0);
+            $stmt = $conn->prepare("INSERT INTO violations (ticket_number,driver_name,license_number,plate_number,vehicle_type,violation_type,violation_location,violation_date,violation_time,penalty_amount,input_method,status,encoded_by) VALUES (?,?,?,?,?,?,?,?,?,?,'manual','pending',?)");
+            $stmt->bind_param('sssssssssdi', $ticket, $driver, $license, $plate, $vehicle, $type, $location, $date, $time, $amount, $encodedBy);
+            if ($stmt->execute()) {
+                $message = 'Violation added successfully. Ticket No.: ' . $ticket;
+                $messageType = 'success';
+            } else {
+                $message = 'Failed to add the violation record.';
+                $messageType = 'danger';
+            }
+        }
+    } elseif ($action === 'cancel_violation') {
+        $id = (int)($_POST['violation_id'] ?? 0);
+        $stmt = $conn->prepare("UPDATE violations SET status='cancelled' WHERE violation_id=? AND status IN ('pending','overdue')");
+        $stmt->bind_param('i', $id);
+        $stmt->execute();
+        if ($stmt->affected_rows > 0) {
+            $message = 'Violation cancelled. The record remains available for audit purposes.';
+            $messageType = 'success';
+        } else {
+            $message = 'Only pending or overdue violations can be cancelled.';
+            $messageType = 'warning';
+        }
+    }
+}
 
 $search = trim((string)($_GET['search'] ?? ''));
 $status = trim((string)($_GET['status'] ?? ''));
@@ -11,10 +90,10 @@ $params = [];
 $types = '';
 
 if ($search !== '') {
-    $where[] = "(v.ticket_number LIKE ? OR v.plate_number LIKE ? OR v.violation_type LIKE ? OR v.violation_location LIKE ?)";
+    $where[] = "(v.ticket_number LIKE ? OR v.driver_name LIKE ? OR v.plate_number LIKE ? OR v.violation_type LIKE ? OR v.violation_location LIKE ?)";
     $like = "%{$search}%";
-    array_push($params, $like, $like, $like, $like);
-    $types .= 'ssss';
+    array_push($params, $like, $like, $like, $like, $like);
+    $types .= 'sssss';
 }
 
 if ($status !== '') {
@@ -102,13 +181,41 @@ if ($params) {
 
 $violationTypes = fetch_all("SELECT DISTINCT violation_type FROM violations ORDER BY violation_type ASC");
 $hasFilters = $search !== '' || $status !== '' || $dateFilter !== '' || $violationTypeFilter !== '';
+$totalToday = scalar("SELECT COUNT(*) FROM violations WHERE violation_date = CURDATE()", 0);
+$unpaid = scalar("SELECT COUNT(*) FROM violations WHERE status IN ('pending','overdue')", 0);
+$paid = scalar("SELECT COUNT(*) FROM violations WHERE status = 'paid'", 0);
+$cancelled = scalar("SELECT COUNT(*) FROM violations WHERE status = 'cancelled'", 0);
 
 page_start('Traffic Violation Records', 'violations', 'Search violations, receipts, plates...', 'All AI-captured violations', false);
 ?>
 
+<style>.treasurer-page-heading{display:none}</style>
+
+<div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-4">
+  <div>
+    <span class="text-info small fw-semibold text-uppercase">Enforcement workflow</span>
+    <h3 class="page-title mt-1">Violation Records</h3>
+    <p class="page-sub">Record, review, and route unpaid violations to payment processing.</p>
+  </div>
+  <button class="btn btn-primary" type="button" data-bs-toggle="modal" data-bs-target="#addViolationModal"><i class="bi bi-plus-lg me-1"></i>Add Violation</button>
+</div>
+
+<?php if ($message !== ''): ?>
+  <div class="alert alert-<?= esc($messageType) ?> alert-dismissible fade show" role="alert">
+    <?= esc($message) ?><button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+  </div>
+<?php endif; ?>
+
+<div class="row g-3 mb-4">
+  <div class="col-sm-6 col-xl-3"><div class="stat-card"><div class="stat-icon tone-primary"><i class="bi bi-calendar-day"></i></div><div class="stat-label">Recorded Today</div><div class="stat-value"><?= num($totalToday) ?></div></div></div>
+  <div class="col-sm-6 col-xl-3"><div class="stat-card"><div class="stat-icon tone-warning"><i class="bi bi-hourglass-split"></i></div><div class="stat-label">Awaiting Payment</div><div class="stat-value"><?= num($unpaid) ?></div></div></div>
+  <div class="col-sm-6 col-xl-3"><div class="stat-card"><div class="stat-icon tone-success"><i class="bi bi-check2-circle"></i></div><div class="stat-label">Paid</div><div class="stat-value"><?= num($paid) ?></div></div></div>
+  <div class="col-sm-6 col-xl-3"><div class="stat-card"><div class="stat-icon tone-danger"><i class="bi bi-slash-circle"></i></div><div class="stat-label">Cancelled</div><div class="stat-value"><?= num($cancelled) ?></div></div></div>
+</div>
+
 <div class="section-card">
   <form method="get" class="d-flex flex-wrap align-items-center gap-2 mb-3">
-    <input class="form-control form-control-sm flex-grow-1" style="min-width:220px" id="liveSearch" name="search" value="<?= esc($search) ?>" placeholder="Search plate, ID, location...">
+    <input class="form-control form-control-sm flex-grow-1" style="min-width:220px" id="liveSearch" name="search" value="<?= esc($search) ?>" placeholder="Search ticket, driver, plate, violation, location...">
     <input class="form-control form-control-sm" style="max-width:170px" type="date" name="date" value="<?= esc($dateFilter) ?>">
     <select class="form-select form-select-sm" style="max-width:160px" name="status">
       <option value="">All Statuses</option>
@@ -177,6 +284,12 @@ page_start('Traffic Violation Records', 'violations', 'Search violations, receip
                 ><i class="bi bi-printer"></i></button>
                 <?php if (in_array($v['status'], ['pending', 'overdue'], true)): ?>
                   <a class="btn btn-sm btn-success" href="<?= esc(app_url('payments.php?violation_id=' . (int)$v['violation_id'])) ?>" title="Process payment"><i class="bi bi-cash-coin"></i></a>
+                  <form method="post" class="d-inline" onsubmit="return confirm('Cancel this violation? The record will remain available for audit.');">
+                    <input type="hidden" name="csrf_token" value="<?= esc(csrf_token()) ?>">
+                    <input type="hidden" name="action" value="cancel_violation">
+                    <input type="hidden" name="violation_id" value="<?= (int)$v['violation_id'] ?>">
+                    <button class="btn btn-sm btn-light text-danger" title="Cancel violation"><i class="bi bi-slash-circle"></i></button>
+                  </form>
                 <?php endif; ?>
               </td>
             </tr>
@@ -324,6 +437,12 @@ function printViolation(btn) {
           <button class="btn btn-light" data-bs-dismiss="modal">Close</button>
           <?php if (in_array($v['status'], ['pending', 'overdue'], true)): ?>
             <a class="btn btn-success" href="<?= esc(app_url('payments.php?violation_id=' . (int)$v['violation_id'])) ?>"><i class="bi bi-cash-coin me-1"></i>Process Payment</a>
+            <form method="post" class="d-inline" onsubmit="return confirm('Cancel this violation? The record will remain available for audit.');">
+              <input type="hidden" name="csrf_token" value="<?= esc(csrf_token()) ?>">
+              <input type="hidden" name="action" value="cancel_violation">
+              <input type="hidden" name="violation_id" value="<?= (int)$v['violation_id'] ?>">
+              <button class="btn btn-light text-danger" title="Cancel violation"><i class="bi bi-slash-circle me-1"></i>Cancel</button>
+            </form>
           <?php endif; ?>
           <button class="btn btn-primary" type="button" title="Print"
             onclick="printViolation(this)"
@@ -345,5 +464,35 @@ function printViolation(btn) {
     </div>
   </div>
 <?php endforeach; ?>
+
+<div class="modal fade" id="addViolationModal" tabindex="-1" aria-labelledby="addViolationModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content">
+      <form method="post">
+        <div class="modal-header">
+          <div><h5 class="modal-title" id="addViolationModalLabel">Manual Violation Input</h5><small class="text-muted">Encode a paper-issued traffic ticket</small></div>
+          <button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" name="csrf_token" value="<?= esc(csrf_token()) ?>">
+          <input type="hidden" name="action" value="add_violation">
+          <div class="row g-3">
+            <div class="col-md-6"><label class="form-label">Ticket Number</label><input class="form-control" value="Automatically generated" readonly><small class="text-muted">TRV-YYYYMMDD-000001</small></div>
+            <div class="col-md-6"><label class="form-label">Driver Name</label><input class="form-control" name="driver_name" required></div>
+            <div class="col-md-6"><label class="form-label">License Number</label><input class="form-control" name="license_number" required></div>
+            <div class="col-md-6"><label class="form-label">Plate Number</label><input class="form-control text-uppercase" name="plate_number" required></div>
+            <div class="col-md-6"><label class="form-label">Vehicle Type</label><select class="form-select" name="vehicle_type" required><option value="">Select vehicle type</option><option>Motorcycle</option><option>Car</option><option>SUV</option><option>Jeepney</option><option>Tricycle</option><option>Van</option><option>Truck</option><option>Bus</option><option>Other</option></select></div>
+            <div class="col-md-6"><label class="form-label">Violation Type</label><input class="form-control" name="violation_type" list="manualViolationTypes" placeholder="Type to search..." required><datalist id="manualViolationTypes"><?php foreach (traffic_violation_types() as $item): ?><option value="<?= esc($item) ?>"><?php endforeach; ?></datalist></div>
+            <div class="col-md-6"><label class="form-label">Violation Location</label><input class="form-control" name="violation_location" required></div>
+            <div class="col-md-3"><label class="form-label">Date</label><input class="form-control" type="date" name="violation_date" value="<?= esc(date('Y-m-d')) ?>" required></div>
+            <div class="col-md-3"><label class="form-label">Time</label><input class="form-control" type="time" name="violation_time" value="<?= esc(date('H:i')) ?>" required></div>
+            <div class="col-md-6"><label class="form-label">Penalty Fee</label><input class="form-control" type="number" name="penalty_amount" list="manualPenaltyFees" min="100" step="100" required><datalist id="manualPenaltyFees"><?php foreach (traffic_penalty_fees() as $fee): ?><option value="<?= esc($fee) ?>" label="<?= esc(peso($fee)) ?>"><?php endforeach; ?></datalist></div>
+          </div>
+        </div>
+        <div class="modal-footer"><button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button><button class="btn btn-primary" type="submit"><i class="bi bi-save me-1"></i>Save Violation</button></div>
+      </form>
+    </div>
+  </div>
+</div>
 
 <?php page_end(); ?>

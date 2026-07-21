@@ -115,6 +115,35 @@ $methodOptions = payment_method_options();
 page_start('Payment History', 'history', 'Search receipt, plate...', 'Recorded payments and receipts', false);
 ?>
 
+<style>
+.history-table .action-column { min-width: 118px; width: 118px; white-space: nowrap; }
+.history-table .receipt-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: auto;
+  min-width: 96px;
+  height: 34px;
+  margin: 0;
+  padding: 0 12px;
+  border: 1px solid rgba(79,195,247,.32);
+  border-radius: 9px;
+  background: rgba(56,189,248,.10);
+  color: var(--tp-cyan, #4fc3f7);
+  font-size: .78rem;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+.history-table .receipt-action-btn:hover {
+  color: #fff;
+  background: rgba(56,189,248,.20);
+  border-color: rgba(79,195,247,.55);
+}
+.history-table .receipt-action-btn i { font-size: .9rem; }
+</style>
+
 <div class="section-card">
   <div class="section-head flex-wrap gap-2">
     <div><h6 class="mb-0">Transactions</h6><small class="text-muted"><?= num($totalCount) ?> total &middot; page <?= num($page) ?> of <?= num($totalPages) ?></small></div>
@@ -139,8 +168,8 @@ page_start('Payment History', 'history', 'Search receipt, plate...', 'Recorded p
     <?php empty_state('No payment transactions matched your current filters.'); ?>
   <?php else: ?>
     <div class="table-responsive table-scroll">
-      <table class="table align-middle">
-        <thead><tr><th>Receipt No.</th><th>Violation ID</th><th>Plate Number</th><th>Amount</th><th>Payment Date</th><th>Processed By</th><th>Status</th><th class="text-end">Action</th></tr></thead>
+      <table class="table align-middle history-table">
+        <thead><tr><th>Receipt No.</th><th>Violation ID</th><th>Plate Number</th><th>Amount</th><th>Payment Date</th><th>Processed By</th><th>Status</th><th class="text-end action-column">Action</th></tr></thead>
         <tbody>
           <?php foreach ($history as $h): ?>
             <tr>
@@ -151,8 +180,8 @@ page_start('Payment History', 'history', 'Search receipt, plate...', 'Recorded p
               <td><?= esc($h['payment_date']) ?></td>
               <td><?= esc($h['received_by_name'] ?? 'Not recorded') ?></td>
               <td><span class="tag <?= tag_class($h['payment_status']) ?>"><?= esc(ucfirst($h['payment_status'])) ?></span></td>
-              <td class="text-end">
-                <button class="icon-link" data-bs-toggle="modal" data-bs-target="#receipt<?= (int)$h['payment_id'] ?>">
+              <td class="text-end action-column">
+                <button class="receipt-action-btn" type="button" data-bs-toggle="modal" data-bs-target="#receipt<?= (int)$h['payment_id'] ?>">
                   <i class="bi bi-printer"></i> Receipt
                 </button>
               </td>

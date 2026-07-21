@@ -1,4 +1,3 @@
-const startCameraBtn = document.getElementById('startCameraBtn');
 const stopCameraBtn = document.getElementById('stopCameraBtn');
 const captureSnapshotBtn = document.getElementById('captureSnapshotBtn');
 const sourceStatus = document.getElementById('sourceStatus');
@@ -10,9 +9,15 @@ const stopAnalysisBtn = document.getElementById('stopAnalysisBtn');
 const analysisMessage = document.getElementById('analysisMessage');
 const uploadVideoBtn = document.getElementById('uploadVideoBtn');
 const cctvVideoInput = document.getElementById('cctvVideoInput');
+const monitoringSource = document.getElementById('monitoringSource');
+const tapoCameraFields = document.getElementById('tapoCameraFields');
+const uploadSourceCard = document.getElementById('uploadSourceCard');
+const uploadVideoForm = document.getElementById('uploadVideoForm');
+const sourceActionTitle = document.getElementById('sourceActionTitle');
 let previousCongestionAlertState = null;
 let previousCollisionState = null;
 let congestionAlertTimer = null;
+let streamRetryTimer = null;
 
 function hideCongestionAlert() {
   document.getElementById('congestionLiveAlert')?.classList.remove('show');
@@ -60,7 +65,25 @@ function apiUrl(file) {
     return API_BASE + file;
 }
 
-const STREAM_URL = "http://localhost:5000/video_feed";
+const STREAM_URL = `${window.location.protocol}//${window.location.hostname}:5000/video_feed`;
+
+function updateSourceFields() {
+  const isTapo = monitoringSource?.value === 'tapo_camera';
+  tapoCameraFields?.classList.toggle('d-none', !isTapo);
+  uploadVideoForm?.classList.toggle('d-none', isTapo);
+
+  if (sourceActionTitle) {
+    sourceActionTitle.textContent = isTapo ? 'Tapo Camera Controls' : 'Upload CCTV Video';
+  }
+
+  const currentStartLabel = document.getElementById('startAnalysisLabel');
+  if (currentStartLabel) {
+    currentStartLabel.textContent = isTapo ? 'Start Tapo Camera' : 'Start Analysis';
+  }
+}
+
+monitoringSource?.addEventListener('change', updateSourceFields);
+updateSourceFields();
 
 function setText(id, value) {
   const el = document.getElementById(id);
@@ -122,12 +145,14 @@ function setBadge(id, value, type) {
 function setAnalysisControls(status, message) {
   const normalized = String(status ?? 'Idle').toLowerCase();
   const isBusy = normalized === 'starting' || normalized === 'running';
+  const isTapo = monitoringSource?.value === 'tapo_camera';
+  const startLabel = isTapo ? 'Start Tapo Camera' : 'Start Analysis';
 
   if (startAnalysisBtn) {
     startAnalysisBtn.disabled = isBusy;
     startAnalysisBtn.innerHTML = normalized === 'starting'
       ? '<i class="bi bi-hourglass-split me-1"></i>Starting...'
-      : '<i class="bi bi-play-circle me-1"></i>Start Analysis';
+      : `<i class="bi bi-play-circle me-1"></i><span id="startAnalysisLabel">${startLabel}</span>`;
   }
 
   if (stopAnalysisBtn) {
@@ -366,17 +391,45 @@ async function refreshMonitoringLogs() {
   }
 }
 
-function reconnectStream() {
+function connectStreamWithRetry(attempt = 0) {
   if (!aiLiveStream) return;
 
-  aiLiveStream.style.display = 'block';
+  if (streamRetryTimer) {
+    window.clearTimeout(streamRetryTimer);
+    streamRetryTimer = null;
+  }
 
-  if (streamFallback) {
-    streamFallback.style.display = "none";
-}
+  aiLiveStream.style.display = 'block';
   if (streamFallback) {
     streamFallback.style.display = 'none';
   }
+
+  aiLiveStream.onload = () => {
+    if (streamRetryTimer) window.clearTimeout(streamRetryTimer);
+    streamRetryTimer = null;
+    aiLiveStream.style.display = 'block';
+    if (streamFallback) streamFallback.style.display = 'none';
+    if (sourceStatus) {
+      sourceStatus.textContent = 'Live Data Active';
+      sourceStatus.className = 'tag tag-success';
+    }
+  };
+
+  aiLiveStream.onerror = () => {
+    aiLiveStream.style.display = 'none';
+    if (attempt < 12) {
+      streamRetryTimer = window.setTimeout(
+        () => connectStreamWithRetry(attempt + 1),
+        1500
+      );
+      return;
+    }
+    if (streamFallback) streamFallback.style.display = 'flex';
+    if (sourceStatus) {
+      sourceStatus.textContent = 'AI Stream Unavailable';
+      sourceStatus.className = 'tag tag-danger';
+    }
+  };
 
   aiLiveStream.src = `${STREAM_URL}?t=${new Date().getTime()}`;
 
@@ -387,7 +440,11 @@ function reconnectStream() {
 }
 
 function hideStream() {
+  if (streamRetryTimer) window.clearTimeout(streamRetryTimer);
+  streamRetryTimer = null;
   if (aiLiveStream) {
+    aiLiveStream.onload = null;
+    aiLiveStream.onerror = null;
     aiLiveStream.style.display = 'none';
   }
 
@@ -409,8 +466,20 @@ async function startAnalysis() {
   setAnalysisControls('Starting', 'Starting AI analysis...');
 
   try {
+    const sourceType = monitoringSource?.value ?? 'uploaded_video';
+    const requestBody = { source_type: sourceType };
+
+    if (sourceType === 'tapo_camera') {
+      requestBody.tapo_host = document.getElementById('tapoHost')?.value.trim() ?? '';
+      requestBody.tapo_username = document.getElementById('tapoUsername')?.value.trim() ?? '';
+      requestBody.tapo_password = document.getElementById('tapoPassword')?.value ?? '';
+      requestBody.tapo_stream = document.getElementById('tapoStream')?.value ?? 'stream2';
+    }
+
     const response = await fetchJson(apiUrl('start_analysis.php'), {
-      method: 'POST'
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody)
     });
 
     if (response.success !== true) {
@@ -422,7 +491,7 @@ async function startAnalysis() {
       response.message ?? 'Starting AI analysis...'
     );
 
-    reconnectStream();
+    connectStreamWithRetry();
     refreshDashboard();
 
   } catch (error) {
@@ -467,6 +536,11 @@ async function stopAnalysis() {
 
     if (aiLiveStream) {
 
+      if (streamRetryTimer) window.clearTimeout(streamRetryTimer);
+      streamRetryTimer = null;
+      aiLiveStream.onload = null;
+      aiLiveStream.onerror = null;
+
       // Disconnect the Flask stream
       aiLiveStream.src = "";
 
@@ -510,7 +584,6 @@ async function stopAnalysis() {
 
 }
 
-if (startCameraBtn) startCameraBtn.addEventListener('click', reconnectStream);
 if (stopCameraBtn) stopCameraBtn.addEventListener('click', hideStream);
 if (captureSnapshotBtn) {
   captureSnapshotBtn.addEventListener('click', () => {

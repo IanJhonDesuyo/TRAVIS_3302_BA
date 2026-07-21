@@ -16,6 +16,7 @@ computer_vision/snapshots/
 computer_vision/uploads/
 computer_vision/venv/
 computer_vision/.venv/
+computer_vision/camera_config.json
 
 # AI Model
 computer_vision/*.pt

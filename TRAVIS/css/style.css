@@ -129,6 +129,28 @@ body {
 .table thead th { color: var(--muted); font-weight: 600; text-transform: uppercase; font-size: .7rem; letter-spacing: .05em; border-bottom: 1px solid var(--border); }
 .table tbody td { vertical-align: middle; }
 
+/* Keep tables visually integrated with their surrounding section cards. */
+body.admin-dashboard .section-card .table {
+  --bs-table-bg: transparent;
+  --bs-table-accent-bg: transparent;
+  --bs-table-striped-bg: transparent;
+  --bs-table-hover-bg: transparent;
+  background-color: transparent !important;
+}
+
+body.admin-dashboard .section-card .table > :not(caption) > * > * {
+  background-color: transparent !important;
+  box-shadow: none;
+}
+
+body.admin-dashboard .section-card .table-scroll thead th {
+  background-color: transparent !important;
+}
+
+body.admin-dashboard .section-card .table tbody tr.table-active > * {
+  background-color: rgba(56, 189, 248, .08) !important;
+}
+
 /* Tags */
 .tag { display: inline-flex; align-items: center; gap: .3rem; padding: .2rem .6rem; border-radius: 999px; font-size: .72rem; font-weight: 600; }
 .tag-success { background: rgba(22,163,74,.12); color: var(--secondary); }

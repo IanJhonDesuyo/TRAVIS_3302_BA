@@ -1,20 +1,25 @@
 <?php
+define('TRAVIS_PORTAL_LAYOUT', __DIR__ . '/layout.php');
+define('TRAVIS_EMBEDDED_ADMIN_PAGE', true);
+require dirname(__DIR__) . '/Admin/payments.php';
+exit;
+
 require_once __DIR__ . '/layout.php';
 
 $message = '';
 $messageType = 'info';
 
-function payment_post(string $key, string $default = ''): string {
+function legacy_treasurer_payment_post(string $key, string $default = ''): string {
     return trim((string)($_POST[$key] ?? $default));
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'record_payment') {
     $csrfOk = hash_equals((string)($_SESSION['csrf_token'] ?? ''), (string)($_POST['csrf_token'] ?? ''));
     $violationId = (int)($_POST['violation_id'] ?? 0);
-    $amountPaid = (float)payment_post('amount_paid', '0');
-    $paymentMethod = payment_post('payment_method', 'cash');
-    $notes = payment_post('notes');
-    $paymentDateInput = payment_post('payment_date');
+    $amountPaid = (float)legacy_treasurer_payment_post('amount_paid', '0');
+    $paymentMethod = legacy_treasurer_payment_post('payment_method', 'cash');
+    $notes = legacy_treasurer_payment_post('notes');
+    $paymentDateInput = legacy_treasurer_payment_post('payment_date');
     $paymentDateTime = ($paymentDateInput !== '' && strtotime($paymentDateInput) !== false)
         ? date('Y-m-d H:i:s', strtotime($paymentDateInput))
         : date('Y-m-d H:i:s');
@@ -124,17 +129,17 @@ $pendingParams = [];
 $pendingTypes = '';
 
 if ($pendingSearch !== '') {
-    $pendingWhere .= " AND (v.ticket_number LIKE ? OR v.plate_number LIKE ? OR v.violation_type LIKE ?)";
+    $pendingWhere .= " AND (v.ticket_number LIKE ? OR v.driver_name LIKE ? OR v.plate_number LIKE ? OR v.violation_type LIKE ?)";
     $like = "%{$pendingSearch}%";
-    array_push($pendingParams, $like, $like, $like);
-    $pendingTypes .= 'sss';
+    array_push($pendingParams, $like, $like, $like, $like);
+    $pendingTypes .= 'ssss';
 }
 
 $pendingSql = "
     SELECT v.*
     FROM violations v
     {$pendingWhere}
-    ORDER BY CASE WHEN v.status = 'overdue' THEN 0 ELSE 1 END, v.violation_date ASC
+    ORDER BY CASE WHEN v.status = 'overdue' THEN 0 ELSE 1 END, v.violation_date ASC, v.created_at ASC
     LIMIT 50
 ";
 
@@ -152,10 +157,10 @@ $paymentParams = [];
 $paymentTypes = '';
 
 if ($paymentSearch !== '') {
-    $paymentWhere[] = "(v.ticket_number LIKE ? OR v.plate_number LIKE ? OR p.receipt_reference LIKE ?)";
+    $paymentWhere[] = "(v.ticket_number LIKE ? OR v.driver_name LIKE ? OR v.plate_number LIKE ? OR p.receipt_reference LIKE ?)";
     $like = "%{$paymentSearch}%";
-    array_push($paymentParams, $like, $like, $like);
-    $paymentTypes .= 'sss';
+    array_push($paymentParams, $like, $like, $like, $like);
+    $paymentTypes .= 'ssss';
 }
 
 if ($methodFilter !== '') {
@@ -167,13 +172,13 @@ if ($methodFilter !== '') {
 $paymentWhereSql = $paymentWhere ? 'WHERE ' . implode(' AND ', $paymentWhere) : '';
 
 $paymentSql = "
-    SELECT p.*, v.ticket_number, v.plate_number, v.violation_type, u.full_name AS received_by_name
+    SELECT p.*, v.ticket_number, v.driver_name, v.plate_number, v.violation_type, u.full_name AS received_by_name
     FROM payments p
     JOIN violations v ON v.violation_id = p.violation_id
     LEFT JOIN users u ON u.user_id = p.received_by
     {$paymentWhereSql}
     ORDER BY p.payment_date DESC, p.payment_id DESC
-    LIMIT 50
+    LIMIT 100
 ";
 
 if ($paymentParams) {
@@ -342,7 +347,7 @@ page_start('Payments', 'payments', 'Search payments...', 'Process unpaid violati
       <p class="text-muted small mb-3">Click to auto-fill</p>
 
       <form method="get" class="d-flex gap-2 mb-3">
-        <input class="form-control form-control-sm" name="pending_search" value="<?= esc($pendingSearch) ?>" placeholder="Search ticket, plate, violation...">
+        <input class="form-control form-control-sm" name="pending_search" value="<?= esc($pendingSearch) ?>" placeholder="Search ticket, driver, plate, violation...">
         <button class="btn btn-sm btn-light"><i class="bi bi-search"></i></button>
       </form>
 
@@ -458,7 +463,7 @@ document.querySelectorAll('.pending-row').forEach(function (row) {
     <form method="get" class="filter-toolbar" id="paymentFilterForm">
       <?php if ($selectedViolationId > 0): ?><input type="hidden" name="violation_id" value="<?= $selectedViolationId ?>"><?php endif; ?>
       <input type="hidden" name="pending_search" value="<?= esc($pendingSearch) ?>">
-      <input class="form-control" style="min-width:220px" id="paymentSearchInput" name="payment_search" value="<?= esc($paymentSearch) ?>" placeholder="Ticket, plate, or receipt no...">
+      <input class="form-control" style="min-width:220px" id="paymentSearchInput" name="payment_search" value="<?= esc($paymentSearch) ?>" placeholder="Ticket, driver, plate, or receipt...">
       <select class="form-select" style="max-width:190px" id="paymentMethodSelect" name="method">
         <option value="">All Methods</option>
         <?php foreach (payment_method_options() as $value => $label): ?>
@@ -490,12 +495,13 @@ document.querySelectorAll('.pending-row').forEach(function (row) {
   <?php else: ?>
     <div class="table-responsive table-scroll">
       <table class="table align-middle">
-        <thead><tr><th>Reference</th><th>Ticket</th><th>Plate</th><th>Violation</th><th>Amount</th><th>Method</th><th>Date</th><th>Status</th><th>Received By</th></tr></thead>
+        <thead><tr><th>Reference</th><th>Ticket</th><th>Driver</th><th>Plate</th><th>Violation</th><th>Amount</th><th>Method</th><th>Date</th><th>Status</th><th>Received By</th></tr></thead>
         <tbody>
           <?php foreach ($payments as $p): ?>
             <tr>
               <td class="fw-semibold"><?= esc(payment_reference((int)$p['payment_id'])) ?></td>
               <td><?= esc($p['ticket_number']) ?></td>
+              <td><?= esc($p['driver_name']) ?></td>
               <td><?= esc($p['plate_number']) ?></td>
               <td><?= esc($p['violation_type']) ?></td>
               <td class="fw-semibold"><?= peso($p['amount_paid']) ?></td>

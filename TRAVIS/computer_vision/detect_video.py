@@ -4,7 +4,7 @@ import cv2
 import os
 import time
 import config
-from api_client import send_monitoring_log, send_status_update
+from api_client import get_cv_settings, send_monitoring_log, send_status_update
 from camera_source import CameraSource
 from stream_server import start_stream, update_frame
 from congestion import get_congestion_level
@@ -37,6 +37,14 @@ def apply_selected_source():
 
 
 selected_source = apply_selected_source()
+
+runtime_settings = get_cv_settings(config.CV_SETTINGS_API_URL)
+config.CONFIDENCE_THRESHOLD = float(runtime_settings.get("confidence_threshold", config.CONFIDENCE_THRESHOLD))
+config.ENABLE_COLLISION_DETECTION = bool(int(runtime_settings.get("enable_collision_detection", int(config.ENABLE_COLLISION_DETECTION))))
+config.ENABLE_OFFICER_DETECTION = bool(int(runtime_settings.get("enable_officer_detection", int(config.ENABLE_OFFICER_DETECTION))))
+CONGESTION_LIGHT_MAX = int(runtime_settings.get("congestion_light_max", 5))
+CONGESTION_HEAVY_MIN = int(runtime_settings.get("congestion_heavy_min", 13))
+ALERT_COOLDOWN_SECONDS = int(runtime_settings.get("alert_cooldown_seconds", 300))
 
 # ============================
 # Load YOLO Model
@@ -89,6 +97,7 @@ start_stream()
 camera = CameraSource()
 
 alert_engine = AlertEngine()
+alert_engine.cooldown = ALERT_COOLDOWN_SECONDS
 
 cap = camera.open()
 
@@ -158,8 +167,10 @@ print("Officer Presence Detection:", "Enabled" if officer_detection_enabled else
 if fps == 0:
     fps = 30
 
-fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-out = cv2.VideoWriter(OUTPUT_VIDEO, fourcc, fps, (width, height))
+out = None
+if config.VIDEO_SOURCE == "video":
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    out = cv2.VideoWriter(OUTPUT_VIDEO, fourcc, fps, (width, height))
 
 # ============================
 # Detection Classes
@@ -175,9 +186,22 @@ out = cv2.VideoWriter(OUTPUT_VIDEO, fourcc, fps, (width, height))
 # Main Loop
 # ============================
 while True:
-    ret, frame = cap.read()
+    if config.VIDEO_SOURCE == "tapo":
+        ret = True
+        for _ in range(max(1, config.TAPO_FRAMES_TO_GRAB)):
+            if not cap.grab():
+                ret = False
+                break
+        ret, frame = cap.retrieve() if ret else (False, None)
+    else:
+        ret, frame = cap.read()
 
     if not ret:
+        if config.VIDEO_SOURCE == "tapo":
+            cap = camera.reconnect()
+            if cap is not None:
+                continue
+            print("Tapo camera connection lost and could not be restored.")
         break
 
     current_frame += 1
@@ -248,6 +272,8 @@ while True:
         frame,
         persist=True,
         tracker="bytetrack.yaml",
+        imgsz=config.LIVE_INFERENCE_SIZE if config.VIDEO_SOURCE == "tapo" else 640,
+        classes=config.ALLOWED_CLASSES,
         verbose=False
     )
 
@@ -337,7 +363,11 @@ while True:
     officer_result = officer_detector.update(persons_in_officer_zone)
     officer_presence = officer_result.status
 
-    congestion_level = get_congestion_level(visible_vehicle_count)
+    congestion_level = get_congestion_level(
+        visible_vehicle_count,
+        light_max=CONGESTION_LIGHT_MAX,
+        heavy_min=CONGESTION_HEAVY_MIN,
+    )
 
     alert_status = alert_engine.update(congestion_level)
 
@@ -514,15 +544,18 @@ while True:
 
     update_frame(annotated_frame)
 
-    out.write(annotated_frame)
+    if out is not None:
+        out.write(annotated_frame)
 
-    cv2.imshow("TRAVIS AI Direction-Based Counting", annotated_frame)
+    if config.VIDEO_SOURCE != "tapo":
+        cv2.imshow("TRAVIS AI Direction-Based Counting", annotated_frame)
 
-    if cv2.waitKey(1) & 0xFF == ord("q"):
+    if config.VIDEO_SOURCE != "tapo" and cv2.waitKey(1) & 0xFF == ord("q"):
         break
 
 cap.release()
-out.release()
+if out is not None:
+    out.release()
 cv2.destroyAllWindows()
 
 print("--------------------------------")

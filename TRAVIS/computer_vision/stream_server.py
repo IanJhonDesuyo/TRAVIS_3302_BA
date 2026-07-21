@@ -6,7 +6,6 @@ Shared-memory MJPEG stream
 from flask import Flask, Response
 import cv2
 import threading
-import numpy as np
 
 app = Flask(__name__)
 
@@ -14,8 +13,9 @@ app = Flask(__name__)
 # Shared Frame Buffer
 # ==========================================
 
-latest_frame = None
-frame_lock = threading.Lock()
+latest_jpeg = None
+frame_version = 0
+frame_condition = threading.Condition()
 
 
 def update_frame(frame):
@@ -23,10 +23,20 @@ def update_frame(frame):
     Receives the latest AI frame from detect_video.py
     """
 
-    global latest_frame
+    global latest_jpeg, frame_version
 
-    with frame_lock:
-        latest_frame = frame.copy()
+    success, buffer = cv2.imencode(
+        ".jpg",
+        frame,
+        [int(cv2.IMWRITE_JPEG_QUALITY), 75],
+    )
+    if not success:
+        return
+
+    with frame_condition:
+        latest_jpeg = buffer.tobytes()
+        frame_version += 1
+        frame_condition.notify_all()
 
 
 # ==========================================
@@ -35,36 +45,19 @@ def update_frame(frame):
 
 def generate_frames():
 
-    global latest_frame
+    global latest_jpeg, frame_version
+    last_version = -1
 
     while True:
-
-        with frame_lock:
-
-            if latest_frame is None:
-
-                frame = np.ones((480, 640, 3), dtype=np.uint8) * 255
-
-                cv2.putText(
-                    frame,
-                    "Waiting for AI...",
-                    (170, 240),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    1,
-                    (0, 0, 0),
-                    2
-                )
-
-            else:
-
-                frame = latest_frame.copy()
-
-        success, buffer = cv2.imencode(".jpg", frame)
-
-        if not success:
-            continue
-
-        frame_bytes = buffer.tobytes()
+        with frame_condition:
+            frame_condition.wait_for(
+                lambda: latest_jpeg is not None and frame_version != last_version,
+                timeout=1,
+            )
+            if latest_jpeg is None or frame_version == last_version:
+                continue
+            frame_bytes = latest_jpeg
+            last_version = frame_version
 
         yield (
             b'--frame\r\n'
@@ -80,11 +73,15 @@ def generate_frames():
 
 @app.route("/video_feed")
 def video_feed():
-
-    return Response(
+    response = Response(
         generate_frames(),
         mimetype="multipart/x-mixed-replace; boundary=frame"
     )
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    response.headers["X-Accel-Buffering"] = "no"
+    return response
 
 
 # ==========================================

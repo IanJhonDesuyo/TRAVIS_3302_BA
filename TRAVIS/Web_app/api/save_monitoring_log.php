@@ -3,6 +3,20 @@ header("Content-Type: application/json");
 
 require_once __DIR__ . "/../Admin/db_connect.php";
 
+$notificationSettings = [
+    "notify_congestion" => 1,
+    "notify_collision" => 1,
+    "alert_cooldown_seconds" => 300,
+];
+$settingsTable = $conn->query("SHOW TABLES LIKE 'system_settings'");
+if ($settingsTable && $settingsTable->num_rows > 0) {
+    $settingsResult = $conn->query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('notify_congestion','notify_collision','alert_cooldown_seconds')");
+    while ($settingsResult && ($settingRow = $settingsResult->fetch_assoc())) {
+        $notificationSettings[(string)$settingRow['setting_key']] = (int)$settingRow['setting_value'];
+    }
+}
+$alertCooldownSeconds = max(0, min(86400, $notificationSettings['alert_cooldown_seconds']));
+
 if ($_SERVER["REQUEST_METHOD"] !== "POST") {
     http_response_code(405);
     echo json_encode([
@@ -179,7 +193,7 @@ if ($stmt->execute()) {
     // Create one congestion notification when the detector confirms a
     // sustained Heavy/Severe state. The cooldown prevents the 30-second
     // monitoring snapshots from generating duplicate alerts.
-    if ($alert_generated === 1 && in_array($congestion_level, ["heavy", "severe"], true)) {
+    if ($notificationSettings['notify_congestion'] === 1 && $alert_generated === 1 && in_array($congestion_level, ["heavy", "severe"], true)) {
         $duplicate_sql = "
             SELECT a.alert_id
             FROM monitoring_alerts a
@@ -187,7 +201,7 @@ if ($stmt->execute()) {
             WHERE l.camera_id = ?
               AND a.alert_type = 'congestion'
               AND a.status IN ('active', 'acknowledged')
-              AND a.generated_at >= DATE_SUB(NOW(), INTERVAL 5 MINUTE)
+              AND a.generated_at >= DATE_SUB(NOW(), INTERVAL {$alertCooldownSeconds} SECOND)
             ORDER BY a.generated_at DESC
             LIMIT 1
         ";
@@ -247,7 +261,7 @@ if ($stmt->execute()) {
     // Collision notifications use the same monitoring log contract. A
     // possible event creates a warning; a later confirmed state upgrades the
     // existing active alert instead of adding a duplicate row.
-    if ($alert_generated === 1 && in_array($potential_collision, ["possible", "confirmed"], true)) {
+    if ($notificationSettings['notify_collision'] === 1 && $alert_generated === 1 && in_array($potential_collision, ["possible", "confirmed"], true)) {
         $collision_alert_id = null;
         $collision_alert_severity = null;
         $existing_collision_stmt = $conn->prepare("
@@ -257,7 +271,7 @@ if ($stmt->execute()) {
             WHERE l.camera_id = ?
               AND a.alert_type = 'collision'
               AND a.status IN ('active', 'acknowledged')
-              AND a.generated_at >= DATE_SUB(NOW(), INTERVAL 5 MINUTE)
+              AND a.generated_at >= DATE_SUB(NOW(), INTERVAL {$alertCooldownSeconds} SECOND)
             ORDER BY a.generated_at DESC
             LIMIT 1
         ");

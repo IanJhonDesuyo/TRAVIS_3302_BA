@@ -1,6 +1,64 @@
 <?php
 require_once __DIR__ . '/layout.php';
 
+$defaults = [
+    'congestion_light_max' => '5',
+    'congestion_heavy_min' => '13',
+    'alert_cooldown_seconds' => '300',
+    'confidence_threshold' => '0.50',
+    'enable_officer_detection' => '1',
+    'enable_collision_detection' => '0',
+    'notify_congestion' => '1',
+    'notify_collision' => '1',
+];
+$settingsMessage = '';
+$settingsError = '';
+
+$conn->query("CREATE TABLE IF NOT EXISTS system_settings (
+    setting_key VARCHAR(100) NOT NULL PRIMARY KEY,
+    setting_value TEXT NOT NULL,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $csrfOk = hash_equals((string)($_SESSION['csrf_token'] ?? ''), (string)($_POST['csrf_token'] ?? ''));
+    if (!$csrfOk) {
+        $settingsError = 'Your session token expired. Refresh the page and try again.';
+    } else {
+        $values = [
+            'congestion_light_max' => max(0, min(100, (int)($_POST['congestion_light_max'] ?? 5))),
+            'congestion_heavy_min' => max(1, min(200, (int)($_POST['congestion_heavy_min'] ?? 13))),
+            'alert_cooldown_seconds' => max(0, min(86400, (int)($_POST['alert_cooldown_seconds'] ?? 300))),
+            'confidence_threshold' => max(0.10, min(1.00, (float)($_POST['confidence_threshold'] ?? .5))),
+            'enable_officer_detection' => isset($_POST['enable_officer_detection']) ? 1 : 0,
+            'enable_collision_detection' => isset($_POST['enable_collision_detection']) ? 1 : 0,
+            'notify_congestion' => isset($_POST['notify_congestion']) ? 1 : 0,
+            'notify_collision' => isset($_POST['notify_collision']) ? 1 : 0,
+        ];
+
+        if ($values['congestion_heavy_min'] <= $values['congestion_light_max']) {
+            $settingsError = 'Heavy congestion must start above the light congestion maximum.';
+        } else {
+            $stmt = $conn->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)");
+            foreach ($values as $key => $value) {
+                $stringValue = (string)$value;
+                $stmt->bind_param('ss', $key, $stringValue);
+                $stmt->execute();
+            }
+            $stmt->close();
+            $settingsMessage = 'Settings saved. Computer-vision changes apply the next time analysis starts.';
+        }
+    }
+}
+
+$settings = $defaults;
+$result = $conn->query("SELECT setting_key, setting_value FROM system_settings");
+while ($result && ($row = $result->fetch_assoc())) {
+    if (array_key_exists($row['setting_key'], $settings)) {
+        $settings[$row['setting_key']] = (string)$row['setting_value'];
+    }
+}
+
 page_start('Settings', 'settings', 'Search settings...');
 ?>
 
@@ -226,6 +284,15 @@ header.topbar,
 
 .border-bottom{border-color:var(--border-glass) !important}
 .alert-light{background:rgba(255,255,255,.03) !important;border:1px solid var(--border-glass) !important;color:var(--text-soft) !important}
+.alert-success{background:rgba(52,211,153,.12) !important;border:1px solid rgba(52,211,153,.3) !important;color:#34d399 !important}
+.alert-danger{background:rgba(248,113,113,.12) !important;border:1px solid rgba(248,113,113,.3) !important;color:#f87171 !important}
+
+.mini-metric{
+    background:rgba(255,255,255,.03) !important;
+    border:1px solid var(--border-glass) !important;
+    color:#fff !important;
+}
+.mini-metric small{color:var(--text-soft) !important;}
 
 a{color:var(--cyan-glow)}
 a:hover{color:#fff}
@@ -282,7 +349,7 @@ a:hover{color:#fff}
     background:rgba(255,255,255,.06);
     border:1px solid var(--border-glass);
     border-radius:999px;
-    cursor:not-allowed;
+    cursor:pointer;
     flex-shrink:0;
 }
 .form-check-input:checked{
@@ -296,7 +363,7 @@ a:hover{color:#fff}
 .form-check-label{
     color:#fff;
     font-size:.85rem;
-    cursor:not-allowed;
+    cursor:pointer;
 }
 
 /* ==== Catch-all: any remaining white cards ==== */
@@ -362,16 +429,22 @@ div[style*="border-radius: 999px"]:not(.tag){
 }
 </style>
 
+<form method="post" id="settingsForm">
+<input type="hidden" name="csrf_token" value="<?= esc(csrf_token()) ?>">
+
 <div class="d-flex justify-content-between flex-wrap mb-4 gap-2">
   <div>
     <span class="dashboard-eyebrow">TRAVIS SETTINGS</span>
     <h3 class="page-title">System Settings</h3>
-    <p class="page-sub">Prepared configuration screen for computer vision thresholds, notifications, duty schedule, and security</p>
+    <p class="page-sub">Configure live detection thresholds and notification preferences</p>
   </div>
-  <button class="btn btn-primary" disabled>
+  <button class="btn btn-primary" type="submit">
     <i class="bi bi-check2 me-1"></i>Save Changes
   </button>
 </div>
+
+<?php if ($settingsMessage): ?><div class="alert alert-success"><?= esc($settingsMessage) ?></div><?php endif; ?>
+<?php if ($settingsError): ?><div class="alert alert-danger"><?= esc($settingsError) ?></div><?php endif; ?>
 
 <div class="row g-3">
   <!-- Traffic Thresholds -->
@@ -379,27 +452,22 @@ div[style*="border-radius: 999px"]:not(.tag){
     <div class="section-card h-100">
       <div class="section-head">
         <h6>Traffic Thresholds</h6>
-        <span class="tag tag-info">Placeholder</span>
+        <span class="tag tag-success">Active</span>
       </div>
 
       <div class="mb-3">
-        <label class="form-label small fw-semibold">Congestion Trigger (vehicles/hr)</label>
-        <input type="number" class="form-control" value="1500" disabled>
+        <label class="form-label small fw-semibold">Light Congestion Maximum (visible vehicles)</label>
+        <input type="number" min="0" max="100" name="congestion_light_max" class="form-control" value="<?= esc($settings['congestion_light_max']) ?>" required>
       </div>
 
       <div class="mb-3">
-        <label class="form-label small fw-semibold">Alert Cooldown (minutes)</label>
-        <input type="number" class="form-control" value="15" disabled>
+        <label class="form-label small fw-semibold">Heavy Congestion Starts At (visible vehicles)</label>
+        <input type="number" min="1" max="200" name="congestion_heavy_min" class="form-control" value="<?= esc($settings['congestion_heavy_min']) ?>" required>
       </div>
 
       <div class="mb-3">
-        <label class="form-label small fw-semibold">Officer Absence Threshold (minutes)</label>
-        <input type="number" class="form-control" value="30" disabled>
-      </div>
-
-      <div class="mb-3">
-        <label class="form-label small fw-semibold">Potential Collision Stationary Threshold (seconds)</label>
-        <input type="number" class="form-control" value="10" disabled>
+        <label class="form-label small fw-semibold">Alert Cooldown (seconds)</label>
+        <input type="number" min="0" max="86400" name="alert_cooldown_seconds" class="form-control" value="<?= esc($settings['alert_cooldown_seconds']) ?>" required>
       </div>
     </div>
   </div>
@@ -409,30 +477,25 @@ div[style*="border-radius: 999px"]:not(.tag){
     <div class="section-card h-100">
       <div class="section-head">
         <h6>Computer Vision Integration</h6>
-        <span class="tag tag-info">Placeholder</span>
-      </div>
-
-      <div class="mb-3">
-        <label class="form-label small fw-semibold">Flask API URL</label>
-        <input class="form-control" value="http://localhost:5000" disabled>
-      </div>
-
-      <div class="mb-3">
-        <label class="form-label small fw-semibold">RTSP Camera Source</label>
-        <input class="form-control" value="rtsp://username:password@camera-ip:554/stream1" disabled>
+        <span class="tag tag-success">Applied on next start</span>
       </div>
 
       <div class="mb-3">
         <label class="form-label small fw-semibold">Confidence Threshold</label>
-        <input class="form-control" value="0.65" disabled>
+        <input type="number" min="0.10" max="1" step="0.05" name="confidence_threshold" class="form-control" value="<?= esc($settings['confidence_threshold']) ?>" required>
       </div>
 
-      <div class="mb-3">
-        <label class="form-label small fw-semibold">Model Path</label>
-        <input class="form-control" value="computer_vision/models/yolov8n.pt" disabled>
+      <div class="form-check form-switch mb-2">
+        <input class="form-check-input" name="enable_officer_detection" type="checkbox" <?= $settings['enable_officer_detection'] === '1' ? 'checked' : '' ?>>
+        <label class="form-check-label">Officer presence detection</label>
       </div>
 
-      <small class="text-muted">These fields are placeholders for later integration with Tapo C210, YOLOv8, and OpenCV.</small>
+      <div class="form-check form-switch mb-2">
+        <input class="form-check-input" name="enable_collision_detection" type="checkbox" <?= $settings['enable_collision_detection'] === '1' ? 'checked' : '' ?>>
+        <label class="form-check-label">Potential collision detection</label>
+      </div>
+
+      <small class="text-muted">Camera address and stream quality remain configurable from Live Monitoring.</small>
     </div>
   </div>
 
@@ -441,71 +504,45 @@ div[style*="border-radius: 999px"]:not(.tag){
     <div class="section-card h-100">
       <div class="section-head">
         <h6>Notifications</h6>
-        <span class="tag tag-info">Placeholder</span>
+        <span class="tag tag-success">Saved</span>
       </div>
 
       <div class="form-check form-switch mb-2">
-        <input class="form-check-input" type="checkbox" checked disabled>
+        <input class="form-check-input" name="notify_congestion" type="checkbox" <?= $settings['notify_congestion'] === '1' ? 'checked' : '' ?>>
         <label class="form-check-label">Critical congestion alerts</label>
       </div>
 
       <div class="form-check form-switch mb-2">
-        <input class="form-check-input" type="checkbox" checked disabled>
-        <label class="form-check-label">Officer absence alerts</label>
-      </div>
-
-      <div class="form-check form-switch mb-2">
-        <input class="form-check-input" type="checkbox" checked disabled>
+        <input class="form-check-input" name="notify_collision" type="checkbox" <?= $settings['notify_collision'] === '1' ? 'checked' : '' ?>>
         <label class="form-check-label">Potential collision alerts</label>
       </div>
 
-      <div class="form-check form-switch mb-2">
-        <input class="form-check-input" type="checkbox" disabled>
-        <label class="form-check-label">System maintenance notices</label>
-      </div>
-
-      <div class="form-check form-switch mb-2">
-        <input class="form-check-input" type="checkbox" checked disabled>
-        <label class="form-check-label">Daily summary reports</label>
-      </div>
     </div>
   </div>
 
-  <!-- Security -->
+  <!-- Runtime information -->
   <div class="col-lg-6">
     <div class="section-card h-100">
       <div class="section-head">
-        <h6>Security</h6>
-        <span class="tag tag-info">Placeholder</span>
+        <h6>Runtime Information</h6>
+        <span class="tag tag-info">Local services</span>
       </div>
 
-      <div class="mb-3">
-        <label class="form-label small fw-semibold">Session Timeout (minutes)</label>
-        <input type="number" class="form-control" value="30" disabled>
+      <div class="mini-metric mb-2">
+        <small>Live Stream</small>
+        <strong>Port 5000</strong>
       </div>
-
-      <div class="mb-3">
-        <label class="form-label small fw-semibold">Password Policy</label>
-        <select class="form-select" disabled>
-          <option>Strong (12+ chars)</option>
-          <option>Standard (8+ chars)</option>
-        </select>
+      <div class="mini-metric mb-2">
+        <small>Detection Model</small>
+        <strong>YOLOv8n</strong>
       </div>
-
-      <div class="mb-3">
-        <label class="form-label small fw-semibold">Max Login Attempts</label>
-        <input type="number" class="form-control" value="5" disabled>
-      </div>
-
-      <div class="mb-3">
-        <label class="form-label small fw-semibold">Two-Factor Authentication</label>
-        <select class="form-select" disabled>
-          <option>Disabled</option>
-          <option>Enabled</option>
-        </select>
+      <div class="mini-metric">
+        <small>Settings Storage</small>
+        <strong>Database</strong>
       </div>
     </div>
   </div>
 </div>
+</form>
 
 <?php page_end(); ?>

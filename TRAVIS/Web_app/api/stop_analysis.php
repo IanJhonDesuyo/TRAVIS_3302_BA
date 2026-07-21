@@ -8,7 +8,7 @@ $statusFile = __DIR__ . "/analysis_status.json";
     Kill ONLY detect_video.py
 */
 
-$command = 'powershell -Command "Get-CimInstance Win32_Process | Where-Object {$_.CommandLine -like \'*detect_video.py*\'} | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"';
+$command = 'powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { ($_.Name -eq \'python.exe\' -or $_.Name -eq \'pythonw.exe\') -and $_.CommandLine -like \'*detect_video.py*\' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"';
 
 exec($command, $output, $result);
 

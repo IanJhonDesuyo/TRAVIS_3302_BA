@@ -3,6 +3,23 @@ TRAVIS Configuration File
 Centralized settings for the whole AI engine.
 """
 
+import json
+from pathlib import Path
+from urllib.parse import quote
+
+
+def _load_camera_config():
+    path = Path(__file__).resolve().parent / "camera_config.json"
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+_camera_config = _load_camera_config()
+
 # ==========================================
 # YOLO
 # ==========================================
@@ -23,8 +40,23 @@ VIDEO_PATH = "uploads/videos/test.mp4"
 # Laptop Webcam
 CAMERA_INDEX = 0
 
-# Future Tapo Camera RTSP
-TAPO_RTSP = ""
+# Tapo camera credentials are written by the local web app to the ignored
+# camera_config.json file. URL encoding keeps special characters valid in RTSP.
+TAPO_HOST = str(_camera_config.get("host", "")).strip()
+TAPO_USERNAME = str(_camera_config.get("username", "")).strip()
+TAPO_PASSWORD = str(_camera_config.get("password", ""))
+TAPO_STREAM = str(_camera_config.get("stream", "stream2"))
+TAPO_RTSP = (
+    f"rtsp://{quote(TAPO_USERNAME, safe='')}:{quote(TAPO_PASSWORD, safe='')}"
+    f"@{TAPO_HOST}:554/{TAPO_STREAM}"
+    if TAPO_HOST and TAPO_USERNAME and TAPO_PASSWORD
+    else ""
+)
+
+# Live-camera latency controls. Intermediate RTSP frames are discarded so
+# detection stays close to real time even when inference is slower than FPS.
+TAPO_FRAMES_TO_GRAB = 2
+LIVE_INFERENCE_SIZE = 320
 
 # ==========================================
 # Output
@@ -38,6 +70,7 @@ OUTPUT_VIDEO = "processed_video.mp4"
 CAMERA_ID = 1
 STATUS_API_URL = "http://localhost/TRAVIS/Web_app/api/update_status.php"
 MONITORING_LOG_API_URL = "http://localhost/TRAVIS/Web_app/api/save_monitoring_log.php"
+CV_SETTINGS_API_URL = "http://localhost/TRAVIS/Web_app/api/get_cv_settings.php"
 
 # ==========================================
 # Detection Classes

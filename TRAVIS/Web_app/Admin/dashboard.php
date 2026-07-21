@@ -1484,7 +1484,7 @@ async function loadMonthlyPrediction() {
 document.getElementById('refreshPredictionBtn')?.addEventListener(
   'click',
   loadMonthlyPrediction
-);
+);  
 
 loadMonthlyPrediction();
 setInterval(loadMonthlyPrediction, 60000);

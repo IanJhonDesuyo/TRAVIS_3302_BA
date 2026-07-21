@@ -23,6 +23,19 @@ if (file_exists($analysis_status_file)) {
     }
 }
 
+// A failed background launch can leave "Starting" saved indefinitely. Treat it
+// as an error when the AI has not published a live update within 30 seconds.
+$analysis_updated_at = intval($analysis_status["updated_at_epoch"] ?? 0);
+if (
+    strtolower((string) ($analysis_status["analysis_status"] ?? "")) === "starting"
+    && $analysis_updated_at > 0
+    && time() - $analysis_updated_at > 30
+) {
+    $analysis_status["analysis_status"] = "Error";
+    $analysis_status["ai_status"] = "Offline";
+    $analysis_status["message"] = "The previous start attempt did not connect. Check the camera details and try again.";
+}
+
 $sql = "
 SELECT *
 FROM camera_monitoring_logs
@@ -50,6 +63,12 @@ if(!$result || $result->num_rows==0){
 
     $has_live_status = !empty($latest_status["updated_at_epoch"]) && time() - intval($latest_status["updated_at_epoch"]) <= 6;
 
+    if ($has_live_status && strtolower((string)($analysis_status["analysis_status"] ?? "")) !== "stopped") {
+        $response["analysis_status"] = "Running";
+        $response["ai_status"] = "Running";
+        $response["message"] = "Live AI analysis is running.";
+    }
+
     if (empty($analysis_status["analysis_status"]) && !$has_live_status) {
         $response["ai_status"] = "Offline";
     }
@@ -67,6 +86,12 @@ if(!$result || $result->num_rows==0){
 $row = $result->fetch_assoc();
 $response = array_merge($row, $latest_status, $analysis_status);
 $has_live_status = !empty($latest_status["updated_at_epoch"]) && time() - intval($latest_status["updated_at_epoch"]) <= 6;
+
+if ($has_live_status && strtolower((string)($analysis_status["analysis_status"] ?? "")) !== "stopped") {
+    $response["analysis_status"] = "Running";
+    $response["ai_status"] = "Running";
+    $response["message"] = "Live AI analysis is running.";
+}
 
 if (empty($analysis_status["analysis_status"]) && !empty($latest_status["updated_at_epoch"]) && !$has_live_status) {
     $response["ai_status"] = "Offline";
