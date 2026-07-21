@@ -138,7 +138,6 @@ if (!empty($_SESSION['user']['id'])) {
     exit;
 }
 
-
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -149,71 +148,222 @@ if (!empty($_SESSION['user']['id'])) {
 
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <link href="css/style.css" rel="stylesheet">
 
 <style>
-html,body{height:100%;margin:0;font-family:Inter,sans-serif}
-body{
-background:
-linear-gradient(rgba(7,24,45,.38),rgba(7,24,45,.52)),
-url('../uploads/image/image.png') center/cover no-repeat fixed;
-overflow:hidden;
+:root{
+  --navy-950:#060f1e;
+  --navy-900:#0a1a30;
+  --navy-800:#0f2544;
+  --navy-700:#15315c;
+  --blue-accent:#38bdf8;
+  --blue-accent-2:#2563eb;
+  --cyan-glow:#4fc3f7;
+  --text-soft:#c9d8ea;
+  --border-glass:rgba(255,255,255,.10);
 }
+
+*{box-sizing:border-box}
+
+html,body{height:100%;margin:0;font-family:'Poppins',sans-serif}
+
+body{
+  color:#fff;
+  background:
+    radial-gradient(circle at 12% 15%, rgba(56,189,248,.14), transparent 32%),
+    radial-gradient(circle at 85% 75%, rgba(37,99,235,.16), transparent 35%),
+    linear-gradient(160deg, var(--navy-950) 0%, var(--navy-900) 45%, var(--navy-800) 100%);
+  overflow:hidden;
+}
+
 .bg-glow{
-position:fixed;inset:0;pointer-events:none;
-background:
-radial-gradient(circle at 15% 20%,rgba(79,195,247,.22),transparent 25%),
-radial-gradient(circle at 80% 70%,rgba(0,184,169,.16),transparent 30%);
-animation:floatGlow 8s ease-in-out infinite alternate;
+  position:fixed;inset:0;pointer-events:none;
+  background:
+    radial-gradient(circle at 18% 22%, rgba(79,195,247,.18), transparent 28%),
+    radial-gradient(circle at 82% 68%, rgba(37,99,235,.16), transparent 32%);
+  animation:floatGlow 8s ease-in-out infinite alternate;
 }
 @keyframes floatGlow{from{transform:translateY(-10px)}to{transform:translateY(10px)}}
+
+.traffic-fx{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:0}
+
+.vision-grid{
+  position:absolute;inset:0;
+  background-image:
+    linear-gradient(rgba(56,189,248,.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(56,189,248,.08) 1px, transparent 1px);
+  background-size:52px 52px;
+}
+
+.login-wrapper{position:relative;z-index:1}
+
 .login-wrapper{min-height:100vh;display:flex;align-items:center}
-.info-side{color:#fff;padding:4rem}
-.info-panel{
-max-width:720px;
-padding:38px;
-background:rgba(7,24,45,.38);
-backdrop-filter:blur(18px);
--webkit-backdrop-filter:blur(18px);
-border:1px solid rgba(255,255,255,.22);
-border-radius:24px;
-box-shadow:0 25px 60px rgba(0,0,0,.3);
+
+.info-side{padding:4rem 2.5rem 4rem 5.5rem}
+
+.badge-pill{
+  display:inline-flex !important;align-items:center;gap:8px;
+  padding:8px 16px;border-radius:999px;
+  background:rgba(56,189,248,.12);
+  border:1px solid rgba(56,189,248,.28);
+  color:var(--cyan-glow);
+  font-size:.8rem;font-weight:600;letter-spacing:.02em;
+  margin-bottom:.6rem !important;
+  width:fit-content !important;
+  clear:both;
 }
-.info-side h1{font-size:3rem;font-weight:800}
-.info-side p{max-width:620px;color:#d9e6f4}
-.kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:15px;margin-top:30px}
+
+.info-side h1{
+  font-family:'Poppins',sans-serif;
+  font-size:3.1rem;
+  font-weight:800;
+  letter-spacing:.01em;
+  line-height:1.05;
+  margin-bottom:.5rem;
+  margin-top:0;
+  display:block !important;
+  width:fit-content !important;
+  clear:both;
+  background:linear-gradient(90deg,#ffffff 0%,#cfe4ff 40%,#38bdf8 75%,#2563eb 100%);
+  -webkit-background-clip:text;
+  background-clip:text;
+  -webkit-text-fill-color:transparent;
+  color:transparent;
+}
+
+.info-side h4{
+  font-weight:600;color:var(--text-soft);margin-bottom:1.5rem;
+}
+
+.info-side p.lead-copy{
+  max-width:600px;color:var(--text-soft);font-size:1.02rem;line-height:1.65;
+}
+
+.kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:2rem;max-width:600px}
 .kpi .glass{
-padding:18px;text-align:center;
-background:rgba(255,255,255,.1);
-border:1px solid rgba(255,255,255,.16);
-border-radius:16px;
+  padding:18px 14px;text-align:center;
+  background:rgba(255,255,255,.04);
+  border:1px solid var(--border-glass);
+  border-radius:16px;
 }
+.kpi .glass h2{
+  font-size:1.6rem;font-weight:800;margin:0 0 4px;
+  color:var(--cyan-glow);
+}
+.kpi .glass small{color:var(--text-soft);font-size:.72rem;letter-spacing:.03em;text-transform:uppercase}
+
+.footer-strip{
+  margin-top:2.5rem;color:var(--text-soft);opacity:.7;font-size:.85rem;
+}
+
+/* login card, styled like the dashboard panel from the reference */
 .login-card{
-background:rgba(255,255,255,.14);
-backdrop-filter:blur(22px);
-border:1px solid rgba(255,255,255,.22);
-border-radius:24px;
-padding:38px;
-color:#fff;
-box-shadow:0 25px 60px rgba(0,0,0,.35);
+  background:rgba(15,37,68,.55);
+  backdrop-filter:blur(22px);
+  -webkit-backdrop-filter:blur(22px);
+  border:1px solid var(--border-glass);
+  border-radius:22px;
+  padding:0;
+  box-shadow:0 30px 70px rgba(0,0,0,.45);
+  overflow:hidden;
 }
-.login-card .form-control{
-background:rgba(255,255,255,.12);
-border-color:rgba(255,255,255,.22);
-color:#fff;
+
+.login-card-header{
+  display:flex;align-items:center;gap:8px;
+  padding:16px 22px;
+  background:rgba(255,255,255,.03);
+  border-bottom:1px solid var(--border-glass);
 }
-.login-card .form-control::placeholder{color:#d7e7f7}
-.logo-holder{display:flex;justify-content:center;gap:20px;margin-bottom:15px}
+.dot{width:10px;height:10px;border-radius:50%}
+.dot.red{background:#ff5f57}
+.dot.yellow{background:#febc2e}
+.dot.green{background:#28c840}
+.login-card-header .live{
+  margin-left:auto;font-size:.7rem;letter-spacing:.08em;
+  color:var(--text-soft);opacity:.75;text-transform:uppercase;
+}
+
+.login-card-body{padding:42px 44px 38px}
+
+.logo-holder{display:flex;justify-content:center;gap:18px;margin-bottom:22px}
 .logo-circle{
-width:70px;height:70px;border-radius:50%;
-background:rgba(255,255,255,.15);
-display:flex;align-items:center;justify-content:center;
-font-weight:700
+  width:68px;height:68px;border-radius:50%;
+  background:linear-gradient(135deg, rgba(56,189,248,.22), rgba(37,99,235,.22));
+  border:1px solid rgba(255,255,255,.12);
+  display:flex;align-items:center;justify-content:center;
+  font-weight:800;font-size:.88rem;color:var(--cyan-glow);
 }
+
+.login-card h2{font-weight:800}
+.login-card p.subtitle{color:var(--text-soft);opacity:.8}
+
+.form-label{color:var(--cyan-glow);font-size:.72rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px;display:block}
+
+.login-card .form-control{
+  background:rgba(255,255,255,.05);
+  border:1px solid var(--border-glass);
+  color:var(--text-soft);
+  border-radius:12px;
+  padding:.8rem 1rem .8rem 2.7rem;
+  font-size:.98rem;
+}
+.login-card .form-control::placeholder{color:rgba(201,216,234,.55)}
+.login-card .form-control:focus{
+  background:rgba(255,255,255,.07);
+  border-color:var(--blue-accent);
+  box-shadow:0 0 0 3px rgba(56,189,248,.18);
+  color:var(--text-soft);
+}
+
+.input-icon-group{position:relative}
+.input-icon-group i.field-icon{
+  position:absolute;left:16px;top:50%;transform:translateY(-50%);
+  color:var(--text-soft);opacity:.55;font-size:1rem;pointer-events:none;
+}
+.input-icon-group .toggle-visibility{
+  position:absolute;right:16px;top:50%;transform:translateY(-50%);
+  background:none;border:none;padding:0;color:var(--text-soft);opacity:.6;
+  font-size:1rem;cursor:pointer;line-height:1;
+}
+.input-icon-group .toggle-visibility:hover{opacity:1;color:var(--cyan-glow)}
+.input-icon-group .form-control:focus ~ i.field-icon{color:var(--blue-accent);opacity:.9}
+.input-icon-group input[type="password"],.input-icon-group input[type="text"].pw-field{padding-right:2.6rem}
+
+.form-check-input{background-color:rgba(255,255,255,.08);border-color:var(--border-glass)}
+.form-check-input:checked{background-color:var(--blue-accent-2);border-color:var(--blue-accent-2)}
+
+a.forgot-link{color:var(--cyan-glow);text-decoration:none;font-size:.85rem}
+a.forgot-link:hover{text-decoration:underline}
+
+.btn-signin{
+  background:linear-gradient(90deg,var(--blue-accent-2),var(--cyan-glow));
+  border:none;color:#fff;font-weight:700;
+  border-radius:12px;padding:.7rem 1rem;
+  box-shadow:0 12px 28px rgba(37,99,235,.35);
+  transition:transform .15s ease, box-shadow .15s ease;
+}
+.btn-signin:hover{
+  transform:translateY(-1px);
+  box-shadow:0 16px 32px rgba(56,189,248,.4);
+  color:#fff;
+}
+
+hr{border-color:var(--border-glass);opacity:1}
+
+.small-footer{color:var(--text-soft);opacity:.65;font-size:.78rem}
+
+.alert-danger{
+  background:rgba(220,53,69,.14);
+  border:1px solid rgba(220,53,69,.35);
+  color:#ffb3bd;
+  border-radius:12px;
+}
+
 @media(max-width:991px){
-body{overflow:auto}
-.info-side{display:none}
-.login-card{margin:30px 0}
+  body{overflow:auto}
+  .info-side{display:none}
+  .login-card{margin:30px 0}
 }
 </style>
 </head>
@@ -221,94 +371,109 @@ body{overflow:auto}
 
 <div class="bg-glow"></div>
 
+<div class="traffic-fx" aria-hidden="true">
+  <div class="vision-grid"></div>
+</div>
+
 <div class="container-fluid login-wrapper">
 <div class="row w-100 align-items-center">
 
-<div class="col-lg-7 info-side">
-<div class="info-panel">
-<span class="badge bg-info text-dark mb-3">AI Smart Traffic Command Center</span>
-<h1>TRAVIS</h1>
-<h4 class="mb-4">Traffic Violation Recognition and AI Surveillance</h4>
+<div class="col-lg-6 col-xl-7 info-side">
+  <span class="badge-pill"><i class="bi bi-stars"></i> AI Smart Traffic Command Center</span>
+  <h1>TRAVIS</h1>
+  <h4>An AI, Computer Vision, and IoT-Based Traffic Monitoring and Decision Support System</h4>
 
-<p>
-An AI-powered intelligent traffic monitoring platform designed to assist Local Government Units
-in monitoring traffic violations, congestion, collisions, and road conditions using
-Computer Vision and Machine Learning.
-</p>
+  <p class="lead-copy">
+    An AI-powered intelligent traffic monitoring platform designed to assist Local Government Units
+    in monitoring traffic violations, congestion, collisions, and road conditions using
+    Computer Vision and Machine Learning.
+  </p>
 
-<div class="kpi">
-<div class="glass">
-<h2>24</h2>
-<small>Active Cameras</small>
+  <div class="kpi">
+    <div class="glass">
+      <h2>1</h2>
+      <small>Active Camera</small>
+    </div>
+    <div class="glass">
+      <h2>AI</h2>
+      <small>Monitoring Online</small>
+    </div>
+    <div class="glass">
+      <h2><i class="bi bi-diagram-3-fill"></i></h2>
+      <small>Decision Support</small>
+    </div>
+  </div>
+
+  <div class="footer-strip">
+    <i class="bi bi-shield-check me-2"></i>
+    Municipality of Nasugbu &bull; Batangas State University &bull; TRAVIS v1.0
+  </div>
 </div>
 
-<div class="glass">
-<h2>AI</h2>
-<small>Monitoring Online</small>
-</div>
-
-<div class="glass">
-<h2>24/7</h2>
-<small>Traffic Surveillance</small>
-</div>
-</div>
-
-<div class="mt-5 text-light opacity-75">
-<i class="bi bi-shield-check me-2"></i>
-Municipality of Nasugbu &bull; Batangas State University &bull; TRAVIS v1.0
-</div>
-</div>
-
-</div>
-
-<div class="col-lg-5">
-<div class="mx-auto" style="max-width:470px">
+<div class="col-lg-6 col-xl-5">
+<div class="mx-auto" style="max-width:540px">
 <div class="login-card">
 
-<div class="logo-holder">
-<div class="logo-circle">LGU</div>
-<div class="logo-circle">BSU</div>
-</div>
+  <div class="login-card-header">
+    <span class="dot red"></span>
+    <span class="dot yellow"></span>
+    <span class="dot green"></span>
+    <span class="live">Live &middot; Nasugbu</span>
+  </div>
 
-<h2 class="text-center fw-bold">Welcome Back</h2>
-<p class="text-center text-light opacity-75 mb-4">
-Authorized Personnel Only
-</p>
+  <div class="login-card-body">
+    <div class="logo-holder">
+      <div class="logo-circle">LGU</div>
+      <div class="logo-circle">BSU</div>
+    </div>
 
-<?php if(!empty($error)): ?>
-<div class="alert alert-danger"><?= htmlspecialchars($error) ?></div>
-<?php endif; ?>
+    <h2 class="text-center mb-2">Welcome Back</h2>
+    <p class="text-center subtitle mb-4">Authorized Personnel Only</p>
 
-<form method="post" action="">
-<div class="mb-3">
-<label class="form-label">Email / Username</label>
-<input class="form-control" type="email" name="identifier" placeholder="Enter email address" required>
-</div>
+    <?php if(!empty($error)): ?>
+    <div class="alert alert-danger"><?= htmlspecialchars($error) ?></div>
+    <?php endif; ?>
 
-<div class="mb-3">
-<label class="form-label">Password</label>
-<input class="form-control" type="password" name="password" placeholder="Enter password" required>
-</div>
+    <form method="post" action="">
+      <div class="mb-4">
+        <label class="form-label">Email / Username</label>
+        <div class="input-icon-group">
+          <i class="bi bi-envelope field-icon"></i>
+          <input class="form-control" type="email" name="identifier" placeholder="Enter email address" required>
+        </div>
+      </div>
 
-<div class="d-flex justify-content-between align-items-center mb-4">
-<div class="form-check">
-<input class="form-check-input" type="checkbox" id="remember" name="remember">
-<label class="form-check-label" for="remember">Remember me</label>
-</div>
-<a href="#" class="text-info text-decoration-none">Forgot Password?</a>
-</div>
+      <div class="mb-4">
+        <label class="form-label">Password</label>
+        <div class="input-icon-group">
+          <i class="bi bi-lock field-icon"></i>
+          <input class="form-control" type="password" name="password" id="passwordField" placeholder="Enter password" required>
+          <button type="button" class="toggle-visibility" id="togglePassword" aria-label="Show password">
+            <i class="bi bi-eye"></i>
+          </button>
+        </div>
+      </div>
 
-<button class="btn btn-primary w-100 py-2">
-<i class="bi bi-box-arrow-in-right me-2"></i>Sign In
-</button>
-</form>
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="remember" name="remember">
+          <label class="form-check-label" for="remember" style="color:var(--text-soft);font-size:.85rem">Remember me</label>
+        </div>
+        <a href="#" class="forgot-link">Forgot Password?</a>
+      </div>
 
-<hr class="border-light opacity-25">
+      <button class="btn btn-signin w-100 py-2">
+        <i class="bi bi-box-arrow-in-right me-2"></i>Sign In
+      </button>
+    </form>
 
-<div class="text-center small text-light opacity-75">
-Traffic Violation Recognition and AI Surveillance<br>
-Powered by Artificial Intelligence
-</div>
+    <hr>
+
+    <div class="text-center small-footer">
+      Traffic Violation Recognition and AI Surveillance<br>
+      Powered by Artificial Intelligence
+    </div>
+  </div>
 
 </div>
 </div>
@@ -318,4 +483,15 @@ Powered by Artificial Intelligence
 </div>
 
 </body>
+<script>
+document.getElementById('togglePassword').addEventListener('click', function () {
+  var field = document.getElementById('passwordField');
+  var icon = this.querySelector('i');
+  var isPassword = field.getAttribute('type') === 'password';
+  field.setAttribute('type', isPassword ? 'text' : 'password');
+  icon.classList.toggle('bi-eye');
+  icon.classList.toggle('bi-eye-slash');
+  this.setAttribute('aria-label', isPassword ? 'Hide password' : 'Show password');
+});
+</script>
 </html>

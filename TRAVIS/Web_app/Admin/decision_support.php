@@ -102,720 +102,927 @@ page_start(
 
 <style>
 /* ============================================================
-   TRAVIS DECISION SUPPORT — INTERNAL PAGE STYLES
+   TRAVIS DECISION SUPPORT — NAVY GLASS THEME
    ============================================================ */
 
-.ds-page {
-  --ds-blue: #1d4ed8;
-  --ds-navy: #173b63;
-  --ds-teal: #0f766e;
-  --ds-green: #15803d;
-  --ds-amber: #d97706;
-  --ds-red: #c62828;
-  --ds-purple: #6d28d9;
-  --ds-border: #dfe7ef;
-  --ds-muted: #6b7f91;
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800;900&display=swap');
+
+:root{
+    --navy-950:#060f1e;
+    --navy-900:#0a1a30;
+    --navy-800:#0f2544;
+    --border-glass:rgba(255,255,255,.10);
+    --blue-accent:#38bdf8;
+    --blue-accent-2:#2563eb;
+    --cyan-glow:#4fc3f7;
+    --text-soft:#c9d8ea;
 }
 
-.ds-heading {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 1.4rem;
-  flex-wrap: wrap;
+body{
+    font-family:'Poppins', sans-serif !important;
+    background:
+        radial-gradient(circle at 10% 10%, rgba(56,189,248,.08), transparent 30%),
+        radial-gradient(circle at 90% 80%, rgba(37,99,235,.08), transparent 35%),
+        linear-gradient(160deg, var(--navy-950) 0%, var(--navy-900) 45%, var(--navy-800) 100%) !important;
+    color:#fff !important;
 }
 
-.ds-eyebrow {
-  display: block;
-  margin-bottom: .35rem;
-  color: var(--ds-blue);
-  font-size: .7rem;
-  font-weight: 800;
-  letter-spacing: .13em;
+/* ==== Topbar alignment to navy theme ==== */
+.topbar,
+.app-topbar,
+.top-header,
+.dashboard-topbar,
+header.topbar,
+.navbar-top{
+    background:var(--navy-900) !important;
+    border-bottom:1px solid var(--border-glass) !important;
+    box-shadow:none !important;
 }
 
-.ds-status {
-  display: inline-flex;
-  align-items: center;
-  gap: .5rem;
-  padding: .48rem .72rem;
-  border: 1px solid rgba(21,128,61,.18);
-  border-radius: 999px;
-  background: rgba(21,128,61,.08);
-  color: #126c35;
-  font-size: .78rem;
-  font-weight: 700;
+.topbar input,
+.app-topbar input,
+.top-header input,
+.dashboard-topbar input,
+.navbar-top input{
+    background:rgba(255,255,255,.06) !important;
+    border:1px solid var(--border-glass) !important;
+    color:#fff !important;
+    box-shadow:none !important;
 }
 
-.ds-status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #22c55e;
-  box-shadow: 0 0 0 5px rgba(34,197,94,.12);
+.topbar input::placeholder,
+.app-topbar input::placeholder,
+.top-header input::placeholder,
+.dashboard-topbar input::placeholder,
+.navbar-top input::placeholder{
+    color:var(--text-soft) !important;
 }
 
-.ds-card {
-  height: 100%;
-  padding: 1.25rem;
-  border: 1px solid var(--ds-border);
-  border-radius: 18px;
-  background: rgba(255,255,255,.80);
-  box-shadow: 0 12px 30px rgba(15,45,75,.065);
-  backdrop-filter: blur(14px) saturate(115%);
-  transition: transform .34s cubic-bezier(.22,1,.36,1), box-shadow .34s ease, border-color .34s ease;
-  animation: ds-card-enter .55s cubic-bezier(.22,1,.36,1) both;
+.topbar .bi-search,
+.app-topbar .bi-search,
+.top-header .bi-search,
+.dashboard-topbar .bi-search,
+.navbar-top .bi-search{
+    color:var(--text-soft) !important;
 }
 
-.ds-card:hover {
-  transform: translateY(-3px);
-  border-color: rgba(29,78,216,.20);
-  box-shadow: 0 18px 38px rgba(15,45,75,.10);
+.topbar .bi-bell,
+.app-topbar .bi-bell,
+.top-header .bi-bell,
+.dashboard-topbar .bi-bell,
+.navbar-top .bi-bell,
+.topbar .notif-icon,
+.app-topbar .notif-icon{
+    color:var(--text-soft) !important;
 }
 
-.ds-card-head {
-  display: flex;
-  align-items: center;
-  gap: .8rem;
-  margin-bottom: 1rem;
+.topbar .btn-icon,
+.app-topbar .btn-icon,
+.top-header .btn-icon,
+.dashboard-topbar .btn-icon{
+    background:rgba(255,255,255,.06) !important;
+    border:1px solid var(--border-glass) !important;
 }
 
-.ds-icon {
-  display: grid;
-  place-items: center;
-  flex: 0 0 44px;
-  width: 44px;
-  height: 44px;
-  border-radius: 13px;
-  font-size: 1.1rem;
+.topbar .datetime,
+.app-topbar .datetime,
+.top-header .datetime,
+.dashboard-topbar .datetime{
+    color:var(--text-soft) !important;
 }
 
-.ds-icon-blue { color: #1d4ed8; background: #eaf2ff; }
-.ds-icon-teal { color: #0f766e; background: #e8f8f5; }
-.ds-icon-purple { color: #6d28d9; background: #f1ebff; }
-.ds-icon-amber { color: #a85d00; background: #fff3d6; }
-
-.ds-card-head h6 {
-  margin: 0;
-  color: var(--ds-navy);
-  font-weight: 800;
+.topbar .user-avatar,
+.app-topbar .user-avatar,
+.top-header .user-avatar,
+.dashboard-topbar .user-avatar{
+    background:var(--blue-accent-2) !important;
+    color:#fff !important;
 }
 
-.ds-card-head small {
-  color: var(--ds-muted);
+.topbar .user-name,
+.app-topbar .user-name,
+.top-header .user-name,
+.dashboard-topbar .user-name{
+    color:#fff !important;
 }
 
-.ds-hero {
-  position: relative;
-  overflow: hidden;
-  background:
-    radial-gradient(circle at top right, rgba(59,130,246,.16), transparent 35%),
-    linear-gradient(145deg,rgba(255,255,255,.90),rgba(232,240,250,.82));
+/* ==== Reports / Open Monitoring buttons: exact size fit ==== */
+.btn-light,
+.btn-primary{
+    display:inline-flex !important;
+    align-items:center !important;
+    justify-content:center !important;
+    gap:4px;
+    width:auto !important;
+    height:32px !important;
+    min-width:0 !important;
+    padding:0 12px !important;
+    font-size:.75rem !important;
+    font-weight:600 !important;
+    line-height:1 !important;
+    white-space:nowrap !important;
+    border-radius:6px !important;
 }
 
+.btn-light i,
+.btn-primary i{
+    font-size:.80rem;
+    margin:0 !important;
+    line-height:1;
+    display:inline-flex;
+    align-items:center;
+}
+
+/* ==== System Online Badge - exact size for dot ==== */
+.system-online-badge{
+    display:inline-flex !important;
+    align-items:center !important;
+    justify-content:center !important;
+    gap:8px !important;
+    background:rgba(52,211,153,.12) !important;
+    border:1px solid rgba(52,211,153,.3) !important;
+    color:#34d399 !important;
+    padding:6px 14px !important;
+    border-radius:999px !important;
+    font-size:.75rem !important;
+    font-weight:600 !important;
+    white-space:nowrap !important;
+    height:32px !important;
+}
+
+.system-online-dot{
+    width:8px !important;
+    height:8px !important;
+    min-width:8px !important;
+    min-height:8px !important;
+    border-radius:50% !important;
+    display:inline-block !important;
+    flex-shrink:0 !important;
+}
+
+.system-online-dot.online{
+    background:#34d399 !important;
+    box-shadow:0 0 0 3px rgba(52,211,153,.25) !important;
+}
+
+.system-online-dot.offline{
+    background:#f87171 !important;
+    box-shadow:0 0 0 3px rgba(248,113,113,.25) !important;
+}
+
+.dashboard-title-row{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px;margin-bottom:4px}
+.dashboard-eyebrow{
+    display:inline-block;color:var(--cyan-glow) !important;font-weight:700;
+    letter-spacing:.06em;font-size:.72rem;text-transform:uppercase;margin-bottom:8px;
+}
+.page-title{color:#fff !important;font-weight:800 !important;margin-bottom:6px}
+.page-sub{color:var(--text-soft) !important;margin-bottom:0}
+
+.btn-light{background:rgba(255,255,255,.06) !important;border:1px solid var(--border-glass) !important;color:#fff !important;}
+.btn-light:hover{background:rgba(255,255,255,.14) !important;color:#fff !important}
+.btn-primary{
+    background:linear-gradient(90deg,var(--blue-accent-2),var(--cyan-glow)) !important;
+    border:none !important;color:#fff !important;
+    box-shadow:0 12px 26px rgba(37,99,235,.32) !important;
+}
+.btn-primary:hover{filter:brightness(1.08)}
+
+.stat-card,.dashboard-stat-card{
+    background:rgba(255,255,255,.03) !important;
+    border:1px solid var(--border-glass) !important;
+    border-radius:18px !important;
+    padding:20px !important;
+    box-shadow:0 14px 30px rgba(0,0,0,.28) !important;
+    color:#fff !important;
+}
+.stat-icon{
+    width:44px;height:44px;border-radius:12px;
+    display:flex;align-items:center;justify-content:center;
+    margin-bottom:14px;font-size:18px;
+}
+.stat-icon.tone-primary{background:rgba(56,189,248,.14) !important;color:var(--cyan-glow) !important}
+.stat-icon.tone-warning{background:rgba(251,191,36,.14) !important;color:#fbbf24 !important}
+.stat-icon.tone-success{background:rgba(52,211,153,.14) !important;color:#34d399 !important}
+.stat-icon.tone-danger{background:rgba(248,113,113,.14) !important;color:#f87171 !important}
+.stat-label{color:var(--text-soft) !important;font-size:.8rem;margin-bottom:4px}
+.stat-value{color:#fff !important;font-size:1.7rem;font-weight:800;line-height:1.2}
+
+.section-card{
+    background:rgba(255,255,255,.03) !important;
+    border:1px solid var(--border-glass) !important;
+    border-radius:18px !important;
+    padding:20px !important;
+    box-shadow:0 14px 30px rgba(0,0,0,.28) !important;
+    color:#fff !important;
+}
+.section-head{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;margin-bottom:16px}
+.section-head h6{color:#fff !important;font-weight:700;margin:0}
+.section-card small,.section-card .text-muted{color:var(--text-soft) !important}
+.section-head a{color:var(--cyan-glow) !important}
+
+.mini-metric{
+    background:rgba(255,255,255,.03);
+    border:1px solid var(--border-glass);
+    border-radius:12px;padding:12px 14px;
+}
+.mini-metric small{color:var(--text-soft);display:block;font-size:.72rem;text-transform:uppercase;letter-spacing:.03em;margin-bottom:4px}
+.mini-metric strong{color:#fff}
+
+.tag{
+    display:inline-block;padding:4px 12px;border-radius:999px;
+    font-size:.72rem;font-weight:700;text-transform:capitalize;
+    background:rgba(255,255,255,.08);color:var(--text-soft);
+    border:1px solid var(--border-glass);
+}
+.tag-success,.tag-online,.tag-paid,.tag-completed,.tag-active,.tag-low{
+    background:rgba(52,211,153,.14) !important;color:#34d399 !important;border-color:rgba(52,211,153,.3) !important;
+}
+.tag-danger,.tag-offline,.tag-overdue,.tag-high,.tag-critical{
+    background:rgba(248,113,113,.14) !important;color:#f87171 !important;border-color:rgba(248,113,113,.3) !important;
+}
+.tag-warning,.tag-pending,.tag-unpaid,.tag-medium{
+    background:rgba(251,191,36,.14) !important;color:#fbbf24 !important;border-color:rgba(251,191,36,.3) !important;
+}
+.tag-info{
+    background:rgba(56,189,248,.14) !important;color:var(--cyan-glow) !important;border-color:rgba(56,189,248,.3) !important;
+}
+.tag-muted{
+    background:rgba(255,255,255,.06) !important;color:var(--text-soft) !important;
+}
+
+.empty-state{
+    background:rgba(255,255,255,.03) !important;
+    border:1px solid var(--border-glass) !important;
+    border-radius:14px;
+    color:var(--text-soft) !important;
+    text-align:center;
+    padding:26px 10px;
+    font-size:.9rem;
+}
+.empty-state i,.empty-state svg{color:var(--text-soft) !important;fill:var(--text-soft) !important;opacity:.7}
+
+.border-bottom{border-color:var(--border-glass) !important}
+.alert-light{background:rgba(255,255,255,.03) !important;border:1px solid var(--border-glass) !important;color:var(--text-soft) !important}
+.alert-success{background:rgba(52,211,153,.12) !important;border:1px solid rgba(52,211,153,.3) !important;color:#34d399 !important}
+.alert-warning{background:rgba(251,191,36,.12) !important;border:1px solid rgba(251,191,36,.3) !important;color:#fbbf24 !important}
+
+a{color:var(--cyan-glow)}
+a:hover{color:#fff}
+
+.table{color:#fff !important}
+.table thead th{color:var(--text-soft) !important;font-size:.72rem;text-transform:uppercase;letter-spacing:.03em;border-color:var(--border-glass) !important;font-weight:600}
+.table td,.table th{border-color:var(--border-glass) !important;vertical-align:middle}
+.table-responsive{border-radius:12px}
+
+.form-control{
+    background:rgba(255,255,255,.06) !important;
+    border:1px solid var(--border-glass) !important;
+    color:#fff !important;
+}
+.form-control:focus{
+    background:rgba(255,255,255,.09) !important;
+    border-color:var(--blue-accent) !important;
+    color:#fff !important;
+    box-shadow:0 0 0 .2rem rgba(56,189,248,.18) !important;
+}
+
+/* ==== Custom DS Components ==== */
 .ds-risk-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 165px;
-  padding: .75rem 1.15rem;
-  border-radius: 999px;
-  font-size: 1.3rem;
-  font-weight: 800;
-  letter-spacing: .04em;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 165px;
+    padding: .75rem 1.15rem;
+    border-radius: 999px;
+    font-size: 1.3rem;
+    font-weight: 800;
+    letter-spacing: .04em;
 }
 
-.ds-risk-low { background: rgba(22,163,74,.12); color: #137a38; }
-.ds-risk-medium { background: rgba(245,158,11,.15); color: #a75b00; }
-.ds-risk-high { background: rgba(220,38,38,.12); color: #b42336; }
+.ds-risk-low { background: rgba(52,211,153,.15); color: #34d399; border: 1px solid rgba(52,211,153,.3); }
+.ds-risk-medium { background: rgba(251,191,36,.15); color: #fbbf24; border: 1px solid rgba(251,191,36,.3); }
+.ds-risk-high { background: rgba(248,113,113,.15); color: #f87171; border: 1px solid rgba(248,113,113,.3); }
 
 .ds-confidence {
-  margin-top: 1rem;
-  padding: .9rem;
-  border: 1px solid #e3eaf2;
-  border-radius: 13px;
-  background: #f8fafc;
+    margin-top: 1rem;
+    padding: .9rem;
+    border: 1px solid var(--border-glass);
+    border-radius: 13px;
+    background: rgba(255,255,255,.04);
 }
 
 .ds-progress {
-  height: 8px;
-  margin-top: .45rem;
-  border-radius: 999px;
-  background: #e8eef5;
+    height: 8px;
+    margin-top: .45rem;
+    border-radius: 999px;
+    background: rgba(255,255,255,.08);
 }
 
 .ds-progress .progress-bar {
-  border-radius: 999px;
+    border-radius: 999px;
 }
 
 .ds-kpi-grid {
-  display: grid;
-  grid-template-columns: repeat(2,minmax(0,1fr));
-  gap: .8rem;
+    display: grid;
+    grid-template-columns: repeat(2,minmax(0,1fr));
+    gap: .8rem;
 }
 
 .ds-kpi {
-  padding: 1rem;
-  border: 1px solid #e7edf3;
-  border-radius: 14px;
-  background: #f9fbfd;
+    padding: 1rem;
+    border: 1px solid var(--border-glass);
+    border-radius: 14px;
+    background: rgba(255,255,255,.03);
 }
 
 .ds-kpi small {
-  color: var(--ds-muted);
+    color: var(--text-soft);
 }
 
 .ds-kpi strong {
-  display: block;
-  margin-top: .25rem;
-  color: var(--ds-navy);
-  font-size: 1.05rem;
+    display: block;
+    margin-top: .25rem;
+    color: #fff;
+    font-size: 1.05rem;
 }
 
 .ds-section-title {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 1rem;
-  margin: 1.6rem 0 .9rem;
-  flex-wrap: wrap;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 1rem;
+    margin: 1.6rem 0 .9rem;
+    flex-wrap: wrap;
 }
 
 .ds-section-title h5 {
-  margin: 0;
-  color: var(--ds-navy);
-  font-weight: 800;
+    margin: 0;
+    color: #fff;
+    font-weight: 800;
 }
 
 .ds-section-title small {
-  color: var(--ds-muted);
+    color: var(--text-soft);
 }
 
 .ds-hotspot-card {
-  height: 310px;
-  display: flex;
-  flex-direction: column;
-  padding: 1.1rem;
-  border: 1px solid var(--ds-border);
-  border-radius: 18px;
-  background: rgba(255,255,255,.80);
-  box-shadow: 0 10px 24px rgba(15,45,75,.05);
-  backdrop-filter: blur(14px) saturate(115%);
-  transition: transform .34s cubic-bezier(.22,1,.36,1), box-shadow .34s ease, border-color .34s ease;
-  animation: ds-card-enter .6s cubic-bezier(.22,1,.36,1) both;
+    height: 310px;
+    display: flex;
+    flex-direction: column;
+    padding: 1.1rem;
+    border: 1px solid var(--border-glass);
+    border-radius: 18px;
+    background: rgba(255,255,255,.03);
+    box-shadow: 0 10px 24px rgba(0,0,0,.15);
+    backdrop-filter: blur(14px) saturate(115%);
+    transition: transform .34s cubic-bezier(.22,1,.36,1), box-shadow .34s ease, border-color .34s ease;
+    animation: ds-card-enter .6s cubic-bezier(.22,1,.36,1) both;
 }
 
 .ds-hotspot-card:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 18px 36px rgba(15,45,75,.10);
+    transform: translateY(-3px);
+    box-shadow: 0 18px 36px rgba(0,0,0,.25);
 }
 
 @keyframes ds-card-enter {
-  from { opacity: 0; transform: translateY(12px); }
-  to { opacity: 1; transform: translateY(0); }
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
-.ds-hotspot-card.high { border-top: 6px solid var(--ds-red); }
-.ds-hotspot-card.medium { border-top: 6px solid var(--ds-amber); }
-.ds-hotspot-card.low { border-top: 6px solid var(--ds-green); }
+.ds-hotspot-card.high { border-top: 6px solid #f87171; }
+.ds-hotspot-card.medium { border-top: 6px solid #fbbf24; }
+.ds-hotspot-card.low { border-top: 6px solid #34d399; }
 
 .ds-hotspot-card.active {
-  border-color: rgba(29,78,216,.45);
-  box-shadow: 0 0 0 3px rgba(29,78,216,.10), 0 16px 34px rgba(15,45,75,.11);
+    border-color: var(--blue-accent);
+    box-shadow: 0 0 0 3px rgba(56,189,248,.10), 0 16px 34px rgba(0,0,0,.20);
 }
 
 .ds-hotspot-head {
-  display: flex;
-  align-items: center;
-  gap: .75rem;
-  padding-bottom: .85rem;
-  border-bottom: 1px solid #edf2f7;
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    padding-bottom: .85rem;
+    border-bottom: 1px solid var(--border-glass);
 }
 
 .ds-hotspot-head strong {
-  color: var(--ds-navy);
-  font-size: 1.55rem;
+    color: #fff;
+    font-size: 1.55rem;
 }
 
 .ds-hotspot-list {
-  flex: 1;
-  margin: .85rem 0 0;
-  padding: 0 .25rem 0 0;
-  overflow-y: auto;
-  list-style: none;
+    flex: 1;
+    margin: .85rem 0 0;
+    padding: 0 .25rem 0 0;
+    overflow-y: auto;
+    list-style: none;
 }
 
 .ds-hotspot-list li {
-  display: flex;
-  gap: .65rem;
-  margin-bottom: .6rem;
-  padding: .65rem;
-  border: 1px solid #edf1f5;
-  border-radius: 11px;
-  background: #fafcff;
+    display: flex;
+    gap: .65rem;
+    margin-bottom: .6rem;
+    padding: .65rem;
+    border: 1px solid var(--border-glass);
+    border-radius: 11px;
+    background: rgba(255,255,255,.04);
 }
 
 .ds-rank {
-  display: grid;
-  place-items: center;
-  flex: 0 0 25px;
-  width: 25px;
-  height: 25px;
-  border-radius: 8px;
-  background: #eef4fb;
-  color: #275a8d;
-  font-size: .72rem;
-  font-weight: 800;
+    display: grid;
+    place-items: center;
+    flex: 0 0 25px;
+    width: 25px;
+    height: 25px;
+    border-radius: 8px;
+    background: rgba(56,189,248,.15);
+    color: var(--cyan-glow);
+    font-size: .72rem;
+    font-weight: 800;
 }
 
 .ds-location-copy {
-  display: grid;
+    display: grid;
 }
 
 .ds-location-copy strong {
-  color: #29445d;
-  font-size: .8rem;
-  line-height: 1.3;
+    color: #fff;
+    font-size: .8rem;
+    line-height: 1.3;
 }
 
 .ds-location-copy small {
-  color: #788da0;
-  font-size: .69rem;
+    color: var(--text-soft);
+    font-size: .69rem;
 }
 
 .ds-hotspot-list::-webkit-scrollbar {
-  width: 7px;
+    width: 7px;
 }
 
 .ds-hotspot-list::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: #a4b8cb;
+    border-radius: 999px;
+    background: rgba(56,189,248,.35);
 }
 
 .ds-analysis-grid {
-  display: grid;
-  grid-template-columns: repeat(4,minmax(0,1fr));
-  gap: .85rem;
+    display: grid;
+    grid-template-columns: repeat(4,minmax(0,1fr));
+    gap: .85rem;
 }
 
 .ds-analysis-kpi {
-  padding: 1rem;
-  border: 1px solid #e6edf3;
-  border-radius: 14px;
-  background: #fff;
+    padding: 1rem;
+    border: 1px solid var(--border-glass);
+    border-radius: 14px;
+    background: rgba(255,255,255,.03);
 }
 
 .ds-analysis-kpi small {
-  color: var(--ds-muted);
+    color: var(--text-soft);
 }
 
 .ds-analysis-kpi strong {
-  display: block;
-  margin-top: .3rem;
-  color: var(--ds-navy);
-  font-size: 1.12rem;
+    display: block;
+    margin-top: .3rem;
+    color: #fff;
+    font-size: 1.12rem;
 }
 
 .ds-interpretation {
-  min-height: 190px;
-  padding: 1.1rem;
-  border-left: 5px solid var(--ds-blue);
-  border-radius: 14px;
-  background: #f5f8ff;
-  color: #38556d;
-  line-height: 1.65;
+    min-height: 190px;
+    padding: 1.1rem;
+    border-left: 5px solid var(--cyan-glow);
+    border-radius: 14px;
+    background: rgba(255,255,255,.03);
+    color: var(--text-soft);
+    line-height: 1.65;
 }
 
 .ds-recommendation-list {
-  display: grid;
-  gap: .7rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+    display: grid;
+    gap: .7rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
 }
 
 .ds-recommendation-list li {
-  display: flex;
-  gap: .65rem;
-  padding: .8rem;
-  border: 1px solid #e7edf3;
-  border-radius: 12px;
-  background: #f9fbfd;
-  color: #435e73;
+    display: flex;
+    gap: .65rem;
+    padding: .8rem;
+    border: 1px solid var(--border-glass);
+    border-radius: 12px;
+    background: rgba(255,255,255,.03);
+    color: var(--text-soft);
 }
 
 .ds-recommendation-list i {
-  color: var(--ds-teal);
+    color: var(--cyan-glow);
 }
 
 .ds-deployment-table {
-  display: grid;
-  gap: .7rem;
+    display: grid;
+    gap: .7rem;
 }
 
 .ds-deployment-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: .8rem;
-  border-bottom: 1px solid #edf2f7;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: .8rem;
+    border-bottom: 1px solid var(--border-glass);
 }
 
 .ds-deployment-row:last-child {
-  border-bottom: 0;
+    border-bottom: 0;
 }
 
 .ds-deployment-row span {
-  color: var(--ds-muted);
+    color: var(--text-soft);
 }
 
 .ds-deployment-row strong {
-  color: var(--ds-navy);
-  text-align: right;
+    color: #fff;
+    text-align: right;
 }
 
 .ds-chart-card canvas {
-  max-height: 300px;
+    max-height: 300px;
+}
+
+/* ==== Catch-all: any remaining white cards ==== */
+.card,
+.badge,
+.rounded-pill,
+.bg-white,
+.bg-light,
+[class*="card"]{
+    background-color:rgba(255,255,255,.03) !important;
+    color:#fff !important;
+    border-color:var(--border-glass) !important;
+}
+
+.card *:not(.tag):not(.system-online-dot),
+[class*="card"] *:not(.tag):not(.system-online-dot){
+    color:inherit;
+}
+
+.card small,
+[class*="card"] small,
+.card .text-muted,
+[class*="card"] .text-muted{
+    color:var(--text-soft) !important;
+}
+
+.rounded-pill:not(.tag):not(.system-online-badge),
+span[style*="border-radius:999px"]:not(.tag):not(.system-online-badge),
+span[style*="border-radius: 999px"]:not(.tag):not(.system-online-badge),
+div[style*="border-radius:999px"]:not(.tag):not(.system-online-badge),
+div[style*="border-radius: 999px"]:not(.tag):not(.system-online-badge){
+    background:rgba(255,255,255,.05) !important;
+    border:1px solid var(--border-glass) !important;
+    color:#fff !important;
+}
+
+.progress{
+    background:rgba(255,255,255,.08) !important;
+}
+
+.dropdown-menu,
+.popover,
+.tooltip-inner{
+    background:var(--navy-800) !important;
+    color:#fff !important;
+    border:1px solid var(--border-glass) !important;
+}
+
+.dropdown-item{
+    color:var(--text-soft) !important;
+}
+
+.dropdown-item:hover,
+.dropdown-item:focus{
+    background:rgba(255,255,255,.06) !important;
+    color:#fff !important;
+}
+
+.modal-content{
+    background:var(--navy-900) !important;
+    color:#fff !important;
+    border:1px solid var(--border-glass) !important;
 }
 
 @media (max-width: 991.98px) {
-  .ds-analysis-grid {
-    grid-template-columns: repeat(2,minmax(0,1fr));
-  }
+    .ds-analysis-grid {
+        grid-template-columns: repeat(2,minmax(0,1fr));
+    }
 }
 
 @media (max-width: 767.98px) {
-  .ds-kpi-grid,
-  .ds-analysis-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .ds-hotspot-card {
-    height: 275px;
-  }
+    .ds-kpi-grid,
+    .ds-analysis-grid {
+        grid-template-columns: 1fr;
+    }
+    .ds-hotspot-card {
+        height: 275px;
+    }
 }
 </style>
 
-<div class="ds-page">
-  <div class="ds-heading">
+<div class="d-flex justify-content-between flex-wrap mb-4 gap-2">
+  <div class="dashboard-title-row">
     <div>
-      <span class="ds-eyebrow">TRAVIS INTELLIGENCE MODULE</span>
+      <span class="dashboard-eyebrow">TRAVIS INTELLIGENCE MODULE</span>
       <h3 class="page-title">Decision Support</h3>
-      <p class="page-sub">
-        Machine-learning predictions, historical patterns, database analytics, and operational recommendations.
-      </p>
+      <p class="page-sub">Machine-learning predictions, historical patterns, database analytics, and operational recommendations.</p>
     </div>
+  </div>
 
-    <span class="ds-status">
-      <span class="ds-status-dot"></span>
+  <div class="d-flex gap-2">
+    <span class="system-online-badge">
+      <span class="system-online-dot online"></span>
       AI services connected
     </span>
   </div>
+</div>
 
-  <div id="dsLoading" class="alert alert-light border">
-    <div class="spinner-border spinner-border-sm me-2" role="status"></div>
-    Loading decision-support information...
+<div id="dsLoading" class="alert alert-light border">
+  <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+  Loading decision-support information...
+</div>
+
+<div id="dsError" class="alert alert-danger d-none"></div>
+
+<div id="dsContent" class="d-none">
+  <div class="row g-3">
+    <div class="col-lg-7">
+      <div class="section-card">
+        <div class="section-head">
+          <div>
+            <h6>Monthly Risk Prediction</h6>
+            <small class="text-muted">Random Forest classifier</small>
+          </div>
+        </div>
+
+        <div class="ds-risk-badge" id="dsRiskBadge">—</div>
+        <h5 class="mt-3 mb-1" id="dsPredictionPeriod">—</h5>
+        <small class="text-muted">Predicted traffic-violation risk level</small>
+
+        <div class="ds-confidence">
+          <div class="d-flex justify-content-between">
+            <span>Prediction confidence</span>
+            <strong id="dsConfidenceText">—</strong>
+          </div>
+          <div class="progress ds-progress">
+            <div class="progress-bar" id="dsConfidenceBar" style="width:0%"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-5">
+      <div class="section-card">
+        <div class="section-head">
+          <div>
+            <h6>Deployment Guidance</h6>
+            <small class="text-muted">Business-rule recommendation</small>
+          </div>
+        </div>
+
+        <div class="ds-kpi-grid">
+          <div class="ds-kpi">
+            <small>Priority</small>
+            <strong id="dsDeploymentPriority">—</strong>
+          </div>
+
+          <div class="ds-kpi">
+            <small>Personnel</small>
+            <strong id="dsPersonnel">—</strong>
+          </div>
+
+          <div class="ds-kpi">
+            <small>Monitoring</small>
+            <strong id="dsMonitoring">—</strong>
+          </div>
+
+          <div class="ds-kpi">
+            <small>Focus Area</small>
+            <strong id="dsFocusArea">—</strong>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
-  <div id="dsError" class="alert alert-danger d-none"></div>
+  <div class="ds-section-title">
+    <div>
+      <h5>Historical Hotspot Classification</h5>
+      <small>K-Means clustering of historical TMO records</small>
+    </div>
 
-  <div id="dsContent" class="d-none">
-    <div class="row g-3">
-      <div class="col-lg-7">
-        <div class="ds-card ds-hero">
-          <div class="ds-card-head">
-            <span class="ds-icon ds-icon-blue">
-              <i class="bi bi-graph-up-arrow"></i>
-            </span>
-            <div>
-              <h6>Monthly Risk Prediction</h6>
-              <small>Random Forest classifier</small>
-            </div>
-          </div>
+    <span class="badge text-bg-light border">
+      Forecast emphasis: <strong id="dsForecastEmphasis">—</strong>
+    </span>
+  </div>
 
-          <div class="ds-risk-badge" id="dsRiskBadge">—</div>
-          <h5 class="mt-3 mb-1" id="dsPredictionPeriod">—</h5>
-          <small class="text-muted">Predicted traffic-violation risk level</small>
-
-          <div class="ds-confidence">
-            <div class="d-flex justify-content-between">
-              <span>Prediction confidence</span>
-              <strong id="dsConfidenceText">—</strong>
-            </div>
-            <div class="progress ds-progress">
-              <div class="progress-bar" id="dsConfidenceBar" style="width:0%"></div>
-            </div>
+  <div class="row g-3">
+    <div class="col-lg-4">
+      <div class="ds-hotspot-card high" id="dsHighCard">
+        <div class="ds-hotspot-head">
+          <span class="stat-icon tone-danger" style="width:36px;height:36px;border-radius:10px;font-size:.9rem;margin:0;">
+            <i class="bi bi-exclamation-triangle"></i>
+          </span>
+          <div>
+            <div class="small text-uppercase fw-bold text-muted" style="color:var(--text-soft)!important;">High Risk</div>
+            <strong id="dsHighCount">0</strong>
+            <small class="text-muted"> locations</small>
           </div>
         </div>
+
+        <ul class="ds-hotspot-list" id="dsHighList"></ul>
       </div>
+    </div>
 
-      <div class="col-lg-5">
-        <div class="ds-card">
-          <div class="ds-card-head">
-            <span class="ds-icon ds-icon-teal">
-              <i class="bi bi-people"></i>
-            </span>
-            <div>
-              <h6>Deployment Guidance</h6>
-              <small>Business-rule recommendation</small>
-            </div>
+    <div class="col-lg-4">
+      <div class="ds-hotspot-card medium" id="dsMediumCard">
+        <div class="ds-hotspot-head">
+          <span class="stat-icon tone-warning" style="width:36px;height:36px;border-radius:10px;font-size:.9rem;margin:0;">
+            <i class="bi bi-exclamation-circle"></i>
+          </span>
+          <div>
+            <div class="small text-uppercase fw-bold text-muted" style="color:var(--text-soft)!important;">Medium Risk</div>
+            <strong id="dsMediumCount">0</strong>
+            <small class="text-muted"> locations</small>
           </div>
+        </div>
 
-          <div class="ds-kpi-grid">
-            <div class="ds-kpi">
-              <small>Priority</small>
-              <strong id="dsDeploymentPriority">—</strong>
-            </div>
+        <ul class="ds-hotspot-list" id="dsMediumList"></ul>
+      </div>
+    </div>
 
-            <div class="ds-kpi">
-              <small>Personnel</small>
-              <strong id="dsPersonnel">—</strong>
-            </div>
-
-            <div class="ds-kpi">
-              <small>Monitoring</small>
-              <strong id="dsMonitoring">—</strong>
-            </div>
-
-            <div class="ds-kpi">
-              <small>Focus Area</small>
-              <strong id="dsFocusArea">—</strong>
-            </div>
+    <div class="col-lg-4">
+      <div class="ds-hotspot-card low" id="dsLowCard">
+        <div class="ds-hotspot-head">
+          <span class="stat-icon tone-success" style="width:36px;height:36px;border-radius:10px;font-size:.9rem;margin:0;">
+            <i class="bi bi-check-circle"></i>
+          </span>
+          <div>
+            <div class="small text-uppercase fw-bold text-muted" style="color:var(--text-soft)!important;">Low Risk</div>
+            <strong id="dsLowCount">0</strong>
+            <small class="text-muted"> locations</small>
           </div>
+        </div>
+
+        <ul class="ds-hotspot-list" id="dsLowList"></ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="ds-section-title">
+    <div>
+      <h5>Database Analytics</h5>
+      <small>Operational indicators generated directly from MySQL records</small>
+    </div>
+  </div>
+
+  <div class="ds-analysis-grid mb-3">
+    <div class="ds-analysis-kpi">
+      <small>Violations Today</small>
+      <strong><?= num($violationsToday) ?></strong>
+    </div>
+
+    <div class="ds-analysis-kpi">
+      <small>Estimated Penalties Today</small>
+      <strong><?= peso($penaltiesToday) ?></strong>
+    </div>
+
+    <div class="ds-analysis-kpi">
+      <small>Affected Locations Today</small>
+      <strong><?= num($affectedLocations) ?></strong>
+    </div>
+
+    <div class="ds-analysis-kpi">
+      <small>Peak Recording Hour</small>
+      <strong><?= esc($peakHourValue) ?></strong>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-lg-6">
+      <div class="section-card">
+        <div class="section-head">
+          <div>
+            <h6>Leading Violation</h6>
+            <small class="text-muted">Current-year database result</small>
+          </div>
+        </div>
+
+        <h5><?= esc($topViolationName) ?></h5>
+        <p class="text-muted mb-0"><?= num($topViolationCount) ?> recorded cases</p>
+      </div>
+    </div>
+
+    <div class="col-lg-6">
+      <div class="section-card">
+        <div class="section-head">
+          <div>
+            <h6>Leading Database Location</h6>
+            <small class="text-muted">Current-year violation concentration</small>
+          </div>
+        </div>
+
+        <h5><?= esc($topLocationName) ?></h5>
+        <p class="text-muted mb-0"><?= num($topLocationCount) ?> recorded cases</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-lg-7">
+      <div class="section-card ds-chart-card">
+        <div class="section-head">
+          <div>
+            <h6>Monthly Violation Trend</h6>
+            <small class="text-muted">Database records for the current year</small>
+          </div>
+        </div>
+        <canvas id="dsTrendChart"></canvas>
+      </div>
+    </div>
+
+    <div class="col-lg-5">
+      <div class="section-card ds-chart-card">
+        <div class="section-head">
+          <div>
+            <h6>Top Violation Types</h6>
+            <small class="text-muted">Most frequently recorded categories</small>
+          </div>
+        </div>
+        <canvas id="dsViolationChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-lg-7">
+      <div class="section-card">
+        <div class="section-head">
+          <div>
+            <h6>Interpretation</h6>
+            <small class="text-muted">Plain-language explanation of the combined results</small>
+          </div>
+        </div>
+
+        <div class="ds-interpretation" id="dsInterpretation">
+          Waiting for prediction and hotspot results...
         </div>
       </div>
     </div>
 
-    <div class="ds-section-title">
+    <div class="col-lg-5">
+      <div class="section-card">
+        <div class="section-head">
+          <div>
+            <h6>Recommendations</h6>
+            <small class="text-muted">Suggested operational actions</small>
+          </div>
+        </div>
+
+        <ul class="ds-recommendation-list" id="dsRecommendations"></ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-card mt-3">
+    <div class="section-head">
       <div>
-        <h5>Historical Hotspot Classification</h5>
-        <small>K-Means clustering of historical TMO records</small>
-      </div>
-
-      <span class="badge text-bg-light border">
-        Forecast emphasis: <strong id="dsForecastEmphasis">—</strong>
-      </span>
-    </div>
-
-    <div class="row g-3">
-      <div class="col-lg-4">
-        <div class="ds-hotspot-card high" id="dsHighCard">
-          <div class="ds-hotspot-head">
-            <span class="ds-icon" style="color:#b91c1c;background:#feecef">
-              <i class="bi bi-exclamation-triangle"></i>
-            </span>
-            <div>
-              <div class="small text-uppercase fw-bold text-muted">High Risk</div>
-              <strong id="dsHighCount">0</strong>
-              <small class="text-muted"> locations</small>
-            </div>
-          </div>
-
-          <ul class="ds-hotspot-list" id="dsHighList"></ul>
-        </div>
-      </div>
-
-      <div class="col-lg-4">
-        <div class="ds-hotspot-card medium" id="dsMediumCard">
-          <div class="ds-hotspot-head">
-            <span class="ds-icon" style="color:#a75b00;background:#fff4d8">
-              <i class="bi bi-exclamation-circle"></i>
-            </span>
-            <div>
-              <div class="small text-uppercase fw-bold text-muted">Medium Risk</div>
-              <strong id="dsMediumCount">0</strong>
-              <small class="text-muted"> locations</small>
-            </div>
-          </div>
-
-          <ul class="ds-hotspot-list" id="dsMediumList"></ul>
-        </div>
-      </div>
-
-      <div class="col-lg-4">
-        <div class="ds-hotspot-card low" id="dsLowCard">
-          <div class="ds-hotspot-head">
-            <span class="ds-icon" style="color:#137a38;background:#e9f8ee">
-              <i class="bi bi-check-circle"></i>
-            </span>
-            <div>
-              <div class="small text-uppercase fw-bold text-muted">Low Risk</div>
-              <strong id="dsLowCount">0</strong>
-              <small class="text-muted"> locations</small>
-            </div>
-          </div>
-
-          <ul class="ds-hotspot-list" id="dsLowList"></ul>
-        </div>
+        <h6>Deployment Plan</h6>
+        <small class="text-muted">Summary for TMO operational planning</small>
       </div>
     </div>
 
-    <div class="ds-section-title">
-      <div>
-        <h5>Database Analytics</h5>
-        <small>Operational indicators generated directly from MySQL records</small>
-      </div>
-    </div>
-
-    <div class="ds-analysis-grid mb-3">
-      <div class="ds-analysis-kpi">
-        <small>Violations Today</small>
-        <strong><?= num($violationsToday) ?></strong>
+    <div class="ds-deployment-table">
+      <div class="ds-deployment-row">
+        <span>Monthly risk</span>
+        <strong id="dsPlanRisk">—</strong>
       </div>
 
-      <div class="ds-analysis-kpi">
-        <small>Estimated Penalties Today</small>
-        <strong><?= peso($penaltiesToday) ?></strong>
+      <div class="ds-deployment-row">
+        <span>Suggested personnel</span>
+        <strong id="dsPlanPersonnel">—</strong>
       </div>
 
-      <div class="ds-analysis-kpi">
-        <small>Affected Locations Today</small>
-        <strong><?= num($affectedLocations) ?></strong>
+      <div class="ds-deployment-row">
+        <span>Primary focus</span>
+        <strong id="dsPlanFocus">—</strong>
       </div>
 
-      <div class="ds-analysis-kpi">
-        <small>Peak Recording Hour</small>
-        <strong><?= esc($peakHourValue) ?></strong>
-      </div>
-    </div>
-
-    <div class="row g-3 mb-3">
-      <div class="col-lg-6">
-        <div class="ds-card">
-          <div class="ds-card-head">
-            <span class="ds-icon ds-icon-purple">
-              <i class="bi bi-bar-chart"></i>
-            </span>
-            <div>
-              <h6>Leading Violation</h6>
-              <small>Current-year database result</small>
-            </div>
-          </div>
-
-          <h5><?= esc($topViolationName) ?></h5>
-          <p class="text-muted mb-0"><?= num($topViolationCount) ?> recorded cases</p>
-        </div>
-      </div>
-
-      <div class="col-lg-6">
-        <div class="ds-card">
-          <div class="ds-card-head">
-            <span class="ds-icon ds-icon-amber">
-              <i class="bi bi-geo-alt"></i>
-            </span>
-            <div>
-              <h6>Leading Database Location</h6>
-              <small>Current-year violation concentration</small>
-            </div>
-          </div>
-
-          <h5><?= esc($topLocationName) ?></h5>
-          <p class="text-muted mb-0"><?= num($topLocationCount) ?> recorded cases</p>
-        </div>
-      </div>
-    </div>
-
-    <div class="row g-3 mb-3">
-      <div class="col-lg-7">
-        <div class="ds-card ds-chart-card">
-          <div class="ds-card-head">
-            <span class="ds-icon ds-icon-blue">
-              <i class="bi bi-activity"></i>
-            </span>
-            <div>
-              <h6>Monthly Violation Trend</h6>
-              <small>Database records for the current year</small>
-            </div>
-          </div>
-          <canvas id="dsTrendChart"></canvas>
-        </div>
-      </div>
-
-      <div class="col-lg-5">
-        <div class="ds-card ds-chart-card">
-          <div class="ds-card-head">
-            <span class="ds-icon ds-icon-purple">
-              <i class="bi bi-diagram-3"></i>
-            </span>
-            <div>
-              <h6>Top Violation Types</h6>
-              <small>Most frequently recorded categories</small>
-            </div>
-          </div>
-          <canvas id="dsViolationChart"></canvas>
-        </div>
-      </div>
-    </div>
-
-    <div class="row g-3">
-      <div class="col-lg-7">
-        <div class="ds-card">
-          <div class="ds-card-head">
-            <span class="ds-icon ds-icon-blue">
-              <i class="bi bi-chat-square-text"></i>
-            </span>
-            <div>
-              <h6>Interpretation</h6>
-              <small>Plain-language explanation of the combined results</small>
-            </div>
-          </div>
-
-          <div class="ds-interpretation" id="dsInterpretation">
-            Waiting for prediction and hotspot results...
-          </div>
-        </div>
-      </div>
-
-      <div class="col-lg-5">
-        <div class="ds-card">
-          <div class="ds-card-head">
-            <span class="ds-icon ds-icon-amber">
-              <i class="bi bi-lightbulb"></i>
-            </span>
-            <div>
-              <h6>Recommendations</h6>
-              <small>Suggested operational actions</small>
-            </div>
-          </div>
-
-          <ul class="ds-recommendation-list" id="dsRecommendations"></ul>
-        </div>
-      </div>
-    </div>
-
-    <div class="ds-card mt-3">
-      <div class="ds-card-head">
-        <span class="ds-icon ds-icon-teal">
-          <i class="bi bi-sign-turn-right"></i>
-        </span>
-        <div>
-          <h6>Deployment Plan</h6>
-          <small>Summary for TMO operational planning</small>
-        </div>
-      </div>
-
-      <div class="ds-deployment-table">
-        <div class="ds-deployment-row">
-          <span>Monthly risk</span>
-          <strong id="dsPlanRisk">—</strong>
-        </div>
-
-        <div class="ds-deployment-row">
-          <span>Suggested personnel</span>
-          <strong id="dsPlanPersonnel">—</strong>
-        </div>
-
-        <div class="ds-deployment-row">
-          <span>Primary focus</span>
-          <strong id="dsPlanFocus">—</strong>
-        </div>
-
-        <div class="ds-deployment-row">
-          <span>Monitoring approach</span>
-          <strong id="dsPlanMonitoring">—</strong>
-        </div>
+      <div class="ds-deployment-row">
+        <span>Monitoring approach</span>
+        <strong id="dsPlanMonitoring">—</strong>
       </div>
     </div>
   </div>
@@ -1159,12 +1366,14 @@ new Chart(document.getElementById('dsTrendChart'), {
     datasets: [{
       label: 'Violations',
       data: dsMonthlyTrend,
-      borderColor: '#1d4ed8',
-      backgroundColor: 'rgba(59,130,246,.15)',
+      borderColor: '#38bdf8',
+      backgroundColor: 'rgba(56,189,248,.15)',
       fill: true,
       tension: .4,
       borderWidth: 3,
-      pointRadius: 3
+      pointRadius: 3,
+      pointBackgroundColor: '#2563eb',
+      pointBorderColor: '#fff'
     }]
   },
   options: {
@@ -1173,9 +1382,14 @@ new Chart(document.getElementById('dsTrendChart'), {
       legend: { display: false }
     },
     scales: {
+      x: {
+        grid: { display: false },
+        ticks: { color: '#c9d8ea' }
+      },
       y: {
         beginAtZero: true,
-        ticks: { precision: 0 }
+        grid: { color: 'rgba(56,189,248,.08)' },
+        ticks: { precision: 0, color: '#c9d8ea' }
       }
     }
   }
@@ -1188,7 +1402,7 @@ new Chart(document.getElementById('dsViolationChart'), {
     datasets: [{
       label: 'Recorded violations',
       data: dsViolationData,
-      backgroundColor: '#6d28d9',
+      backgroundColor: ['#38bdf8', '#2563eb', '#4fc3f7', '#7dd3fc', '#60a5fa', '#93c5fd', '#3b82f6', '#1d4ed8'],
       borderRadius: 7
     }]
   },
@@ -1201,7 +1415,12 @@ new Chart(document.getElementById('dsViolationChart'), {
     scales: {
       x: {
         beginAtZero: true,
-        ticks: { precision: 0 }
+        grid: { color: 'rgba(56,189,248,.08)' },
+        ticks: { precision: 0, color: '#c9d8ea' }
+      },
+      y: {
+        grid: { display: false },
+        ticks: { color: '#c9d8ea' }
       }
     }
   }

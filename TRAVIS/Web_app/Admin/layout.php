@@ -24,7 +24,7 @@ function sidebar(string $active = ''): void {
         ],
     ];
     echo '<aside class="sidebar" id="sidebar">';
-    echo '<div class="sidebar-brand"><img class="brand-logo" src="' . esc(asset_url('assets/images/travis-logo.jpg')) . '" alt="TRAVIS logo"><div><h5>TRAVIS</h5><small>Traffic Violation Analytics</small></div></div>';
+    echo '<div class="sidebar-brand"><div class="brand-logo-wordmark">TRAVIS</div><small>Traffic Violation Analytics</small></div>';
     foreach ($items as $section => $links) {
         echo '<div class="nav-section">' . esc($section) . '</div><ul class="nav flex-column">';
         foreach ($links as [$href,$label,$icon,$key]) {
@@ -47,11 +47,11 @@ function page_start(string $title, string $active = '', string $search = 'Search
     echo '<meta name="viewport" content="width=device-width,initial-scale=1" />';
     echo '<title>TRAVIS — ' . esc($title) . '</title>';
     echo '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>';
-    echo '<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">';
+    echo '<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">';
     echo '<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />';
     echo '<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />';
     echo '<link href="' . esc(asset_url('css/style.css')) . '?v=' . esc($styleVersion) . '" rel="stylesheet" />';
-    echo '<style>.empty-state{border:1px dashed #d1d5db;border-radius:14px;padding:24px;text-align:center;color:#6b7280;background:#f9fafb}.camera-stage{min-height:420px;background:linear-gradient(135deg,#0f172a,#1e3a8a);border-radius:18px;display:flex;align-items:center;justify-content:center;color:#fff;position:relative;overflow:hidden}.camera-stage video{width:100%;height:100%;max-height:480px;object-fit:contain;background:#000}.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}.mini-metric{background:#fff;border:1px solid #edf2f7;border-radius:14px;padding:14px}.mini-metric small{color:#64748b}.mini-metric strong{display:block;font-size:1.3rem}.nav-link.active{background:rgba(255,255,255,.12);color:#fff}</style>';
+    echo '<style>.empty-state{border:1px dashed #d1d5db;border-radius:14px;padding:24px;text-align:center;color:#6b7280;background:#f9fafb}.camera-stage{min-height:420px;background:linear-gradient(135deg,#0f172a,#1e3a8a);border-radius:18px;display:flex;align-items:center;justify-content:center;color:#fff;position:relative;overflow:hidden}.camera-stage video{width:100%;height:100%;max-height:480px;object-fit:contain;background:#000}.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}.mini-metric{background:#fff;border:1px solid #edf2f7;border-radius:14px;padding:14px}.mini-metric small{color:#64748b}.mini-metric strong{display:block;font-size:1.3rem}.nav-link.active{background:rgba(255,255,255,.12);color:#fff}.sidebar,.sidebar .nav-link,.sidebar .nav-section{font-family:"Poppins",sans-serif}.sidebar-brand{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:4px;height:84px;padding:0 20px;box-sizing:border-box}.topbar{height:84px;box-sizing:border-box;display:flex;align-items:center}.brand-logo-wordmark{font-family:"Poppins",sans-serif;font-weight:800;font-size:1.8rem;letter-spacing:.5px;line-height:1;background:linear-gradient(90deg,#ffffff 0%,#bfdbfe 45%,#3b82f6 100%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent;display:inline-block}.sidebar-brand small{color:#94a3b8;font-family:"Poppins",sans-serif;font-size:.72rem;letter-spacing:.3px}</style>';
     echo '</head><body class="admin-dashboard">';
     sidebar($active);
     echo '<div class="main-wrapper"><header class="topbar"><button class="btn btn-light d-lg-none" id="sidebarToggle"><i class="bi bi-list"></i></button>';
