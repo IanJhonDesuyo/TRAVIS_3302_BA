@@ -14,10 +14,22 @@ const tapoCameraFields = document.getElementById('tapoCameraFields');
 const uploadSourceCard = document.getElementById('uploadSourceCard');
 const uploadVideoForm = document.getElementById('uploadVideoForm');
 const sourceActionTitle = document.getElementById('sourceActionTitle');
+const calibrationProfile = document.getElementById('calibrationProfile');
+const calibrationCanvas = document.getElementById('calibrationCanvas');
+const calibrationEditor = document.getElementById('calibrationEditor');
+const calibrationName = document.getElementById('calibrationName');
+const calibrationInstruction = document.getElementById('calibrationInstruction');
+const newCalibrationBtn = document.getElementById('newCalibrationBtn');
+const saveCalibrationBtn = document.getElementById('saveCalibrationBtn');
+const cancelCalibrationBtn = document.getElementById('cancelCalibrationBtn');
+const addOfficerZoneBtn = document.getElementById('addOfficerZoneBtn');
+const calibrationCsrf = document.getElementById('calibrationCsrf');
 let previousCongestionAlertState = null;
 let previousCollisionState = null;
 let congestionAlertTimer = null;
 let streamRetryTimer = null;
+let currentAnalysisStatus = 'idle';
+let switchingCalibration = false;
 
 function hideCongestionAlert() {
   document.getElementById('congestionLiveAlert')?.classList.remove('show');
@@ -84,6 +96,183 @@ function updateSourceFields() {
 
 monitoringSource?.addEventListener('change', updateSourceFields);
 updateSourceFields();
+
+let calibrationPoints = [];
+let officerZonePoints = [];
+let drawingOfficerZone = false;
+
+function sizeCalibrationCanvas() {
+  if (!calibrationCanvas) return;
+  const rect = calibrationCanvas.getBoundingClientRect();
+  calibrationCanvas.width = Math.max(1, Math.round(rect.width));
+  calibrationCanvas.height = Math.max(1, Math.round(rect.height));
+  drawCalibrationLines();
+}
+
+function drawCalibrationLines() {
+  if (!calibrationCanvas) return;
+  const context = calibrationCanvas.getContext('2d');
+  context.clearRect(0, 0, calibrationCanvas.width, calibrationCanvas.height);
+
+  const drawLine = (points, color, label) => {
+    if (!points.length) return;
+    context.fillStyle = color;
+    context.strokeStyle = color;
+    context.lineWidth = 4;
+    context.beginPath();
+    context.arc(points[0][0] * calibrationCanvas.width, points[0][1] * calibrationCanvas.height, 6, 0, Math.PI * 2);
+    context.fill();
+    if (points.length === 2) {
+      context.beginPath();
+      context.moveTo(points[0][0] * calibrationCanvas.width, points[0][1] * calibrationCanvas.height);
+      context.lineTo(points[1][0] * calibrationCanvas.width, points[1][1] * calibrationCanvas.height);
+      context.stroke();
+      context.font = 'bold 13px sans-serif';
+      context.fillText(label, points[0][0] * calibrationCanvas.width + 8, points[0][1] * calibrationCanvas.height - 8);
+    }
+  };
+
+  drawLine(calibrationPoints.slice(0, 2), '#22c55e', 'INBOUND');
+  drawLine(calibrationPoints.slice(2, 4), '#ef4444', 'OUTBOUND');
+
+  if (officerZonePoints.length) {
+    context.fillStyle = 'rgba(34, 211, 238, .18)';
+    context.strokeStyle = '#22d3ee';
+    context.lineWidth = 3;
+    context.beginPath();
+    officerZonePoints.forEach((point, index) => {
+      const x = point[0] * calibrationCanvas.width;
+      const y = point[1] * calibrationCanvas.height;
+      if (index === 0) context.moveTo(x, y);
+      else context.lineTo(x, y);
+    });
+    if (officerZonePoints.length === 4) context.closePath();
+    context.fill();
+    context.stroke();
+    officerZonePoints.forEach(point => {
+      context.beginPath();
+      context.arc(point[0] * calibrationCanvas.width, point[1] * calibrationCanvas.height, 5, 0, Math.PI * 2);
+      context.fillStyle = '#22d3ee';
+      context.fill();
+    });
+    context.font = 'bold 13px sans-serif';
+    context.fillText(
+      'ENFORCER ZONE',
+      officerZonePoints[0][0] * calibrationCanvas.width + 8,
+      officerZonePoints[0][1] * calibrationCanvas.height - 8
+    );
+  }
+}
+
+function closeCalibrationEditor() {
+  calibrationPoints = [];
+  officerZonePoints = [];
+  drawingOfficerZone = false;
+  calibrationCanvas?.classList.remove('active');
+  calibrationEditor?.classList.add('d-none');
+  if (calibrationName) calibrationName.value = '';
+  if (saveCalibrationBtn) saveCalibrationBtn.disabled = true;
+  if (addOfficerZoneBtn) {
+    addOfficerZoneBtn.disabled = true;
+    addOfficerZoneBtn.textContent = 'Add Enforcer Zone (Optional)';
+  }
+  drawCalibrationLines();
+}
+
+newCalibrationBtn?.addEventListener('click', () => {
+  calibrationPoints = [];
+  officerZonePoints = [];
+  drawingOfficerZone = false;
+  calibrationEditor?.classList.remove('d-none');
+  calibrationCanvas?.classList.add('active');
+  if (calibrationInstruction) calibrationInstruction.textContent = 'Click two points for the green inbound line.';
+  if (saveCalibrationBtn) saveCalibrationBtn.disabled = true;
+  if (addOfficerZoneBtn) addOfficerZoneBtn.disabled = true;
+  sizeCalibrationCanvas();
+});
+
+cancelCalibrationBtn?.addEventListener('click', closeCalibrationEditor);
+window.addEventListener('resize', sizeCalibrationCanvas);
+
+addOfficerZoneBtn?.addEventListener('click', () => {
+  officerZonePoints = [];
+  drawingOfficerZone = true;
+  addOfficerZoneBtn.textContent = 'Drawing Enforcer Zone...';
+  if (saveCalibrationBtn) saveCalibrationBtn.disabled = true;
+  if (calibrationInstruction) {
+    calibrationInstruction.textContent = 'Click four corners around the designated enforcer area, in order.';
+  }
+  drawCalibrationLines();
+});
+
+calibrationCanvas?.addEventListener('click', event => {
+  const rect = calibrationCanvas.getBoundingClientRect();
+  const point = [
+    Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)),
+    Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height))
+  ];
+
+  if (drawingOfficerZone) {
+    if (officerZonePoints.length >= 4) return;
+    officerZonePoints.push(point);
+    if (officerZonePoints.length === 4) {
+      drawingOfficerZone = false;
+      addOfficerZoneBtn.textContent = 'Redraw Enforcer Zone';
+      if (saveCalibrationBtn) saveCalibrationBtn.disabled = false;
+      if (calibrationInstruction) calibrationInstruction.textContent = 'Enforcer zone ready. Enter a name and save.';
+    } else if (calibrationInstruction) {
+      calibrationInstruction.textContent = `Click ${4 - officerZonePoints.length} more enforcer-zone corner${4 - officerZonePoints.length === 1 ? '' : 's'}.`;
+    }
+    drawCalibrationLines();
+    return;
+  }
+
+  if (calibrationPoints.length >= 4) return;
+  calibrationPoints.push(point);
+  drawCalibrationLines();
+
+  if (calibrationInstruction) {
+    if (calibrationPoints.length < 2) calibrationInstruction.textContent = 'Click the second point for the green inbound line.';
+    else if (calibrationPoints.length === 2) calibrationInstruction.textContent = 'Now click two points for the red outbound line.';
+    else if (calibrationPoints.length === 3) calibrationInstruction.textContent = 'Click the second point for the red outbound line.';
+    else calibrationInstruction.textContent = 'Both lines are ready. Optionally add an enforcer zone, or enter a name and save.';
+  }
+  if (calibrationPoints.length === 4 && addOfficerZoneBtn) addOfficerZoneBtn.disabled = false;
+  if (saveCalibrationBtn) saveCalibrationBtn.disabled = calibrationPoints.length !== 4;
+});
+
+saveCalibrationBtn?.addEventListener('click', async () => {
+  const name = calibrationName?.value.trim() ?? '';
+  if (!name || calibrationPoints.length !== 4) {
+    if (calibrationInstruction) calibrationInstruction.textContent = 'Enter a name and draw both lines first.';
+    return;
+  }
+
+  saveCalibrationBtn.disabled = true;
+  try {
+    const response = await fetchJson(apiUrl('calibration_profiles.php'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        csrf_token: calibrationCsrf?.value ?? '',
+        profile_name: name,
+        inbound_line: calibrationPoints.slice(0, 2),
+        outbound_line: calibrationPoints.slice(2, 4),
+        officer_zone: officerZonePoints
+      })
+    });
+    const option = new Option(response.profile.name, response.profile.file, true, true);
+    calibrationProfile?.add(option);
+    closeCalibrationEditor();
+    if (analysisMessage) {
+      analysisMessage.textContent = response.message;
+      analysisMessage.className = 'small mt-2 text-success';
+    }
+  } catch (error) {
+    saveCalibrationBtn.disabled = false;
+    if (calibrationInstruction) calibrationInstruction.textContent = error.message;
+  }
+});
 
 function setText(id, value) {
   const el = document.getElementById(id);
@@ -176,9 +365,15 @@ function setAnalysisControls(status, message) {
 }
 
 function setAnalysisSource(data) {
-  const label = data.source_label ?? 'Uploaded Video';
-  const name = data.source_name ? ` ${data.source_name}` : '';
-  setText('analysisSource', `${label}${name}`);
+  const labels = {
+    tapo_camera: 'Tapo Camera',
+    tapo: 'Tapo Camera',
+    uploaded_video: 'Uploaded Video',
+    video: 'Uploaded Video'
+  };
+  const label = data.source_label ?? labels[data.source_type] ?? 'Video Source';
+  const profile = data.calibration_profile ? ` · ${data.calibration_profile}` : '';
+  setText('analysisSource', `${label}${profile}`);
 }
 
 function setProgress(data) {
@@ -329,6 +524,13 @@ async function refreshMonitoringStatus() {
   try {
     const data = await fetchJson(apiUrl('get_status.php'));
     const analysisStatus = data.analysis_status ?? data.ai_status ?? 'Idle';
+    currentAnalysisStatus = String(analysisStatus).toLowerCase();
+    if (!switchingCalibration && data.calibration_profile && calibrationProfile) {
+      const activeOption = Array.from(calibrationProfile.options).find(
+        option => option.text === data.calibration_profile || option.value === data.calibration_profile
+      );
+      if (activeOption) calibrationProfile.value = activeOption.value;
+    }
 
     setBadge('aiStatus', analysisStatus, 'ai');
     setText('vehicleCount', data.vehicle_count ?? 0);
@@ -468,6 +670,7 @@ async function startAnalysis() {
   try {
     const sourceType = monitoringSource?.value ?? 'uploaded_video';
     const requestBody = { source_type: sourceType };
+    requestBody.calibration_profile = calibrationProfile?.value ?? '';
 
     if (sourceType === 'tapo_camera') {
       requestBody.tapo_host = document.getElementById('tapoHost')?.value.trim() ?? '';
@@ -592,6 +795,32 @@ if (captureSnapshotBtn) {
 }
 if (startAnalysisBtn) startAnalysisBtn.addEventListener('click', startAnalysis);
 if (stopAnalysisBtn) stopAnalysisBtn.addEventListener('click', stopAnalysis);
+
+calibrationProfile?.addEventListener('change', async () => {
+  const selectedName = calibrationProfile.options[calibrationProfile.selectedIndex]?.text ?? 'Selected configuration';
+  if (!['running', 'starting'].includes(currentAnalysisStatus)) {
+    if (analysisMessage) {
+      analysisMessage.textContent = `${selectedName} selected. It will be used when analysis starts.`;
+      analysisMessage.className = 'small mt-2 text-info';
+    }
+    return;
+  }
+
+  if (switchingCalibration) return;
+  switchingCalibration = true;
+  calibrationProfile.disabled = true;
+  if (analysisMessage) {
+    analysisMessage.textContent = `Applying ${selectedName} and restarting analysis...`;
+    analysisMessage.className = 'small mt-2 text-info';
+  }
+
+  await stopAnalysis();
+  await new Promise(resolve => window.setTimeout(resolve, 700));
+  await startAnalysis();
+
+  calibrationProfile.disabled = false;
+  switchingCalibration = false;
+});
 
 function refreshDashboard() {
   refreshMonitoringStatus();

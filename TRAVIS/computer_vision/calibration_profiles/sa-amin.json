@@ -1,0 +1,51 @@
+{
+    "profile_name": "sa amin",
+    "road_roi": [
+        [
+            0,
+            0
+        ],
+        [
+            1,
+            0
+        ],
+        [
+            1,
+            1
+        ],
+        [
+            0,
+            1
+        ]
+    ],
+    "inbound_line": [
+        [
+            0.8107390834747724,
+            0.6487266133684991
+        ],
+        [
+            0.7327264311063107,
+            0.4746558971400313
+        ]
+    ],
+    "outbound_line": [
+        [
+            0.11652522758833514,
+            0.583669881040688
+        ],
+        [
+            0.494738466286067,
+            0.544987499656584
+        ]
+    ],
+    "officer_zone": [],
+    "officer": {
+        "enabled": false,
+        "presence_frames": 3,
+        "absence_frames": 15
+    },
+    "collision": {
+        "enabled": false,
+        "cooldown_seconds": 30
+    }
+}

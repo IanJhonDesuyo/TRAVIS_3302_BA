@@ -46,6 +46,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['cctv_video'])) {
 $camera = fetch_one("SELECT * FROM cameras ORDER BY camera_id ASC LIMIT 1");
 $latest = fetch_one("SELECT * FROM camera_monitoring_logs ORDER BY recorded_at DESC LIMIT 1");
 
+$calibrationProfiles = [];
+$calibrationDirectory = dirname(__DIR__, 2) . '/computer_vision/calibration_profiles';
+foreach (glob($calibrationDirectory . '/*.json') ?: [] as $profilePath) {
+    $profileData = json_decode((string)file_get_contents($profilePath), true);
+    if (!is_array($profileData)) continue;
+    $calibrationProfiles[] = [
+        'file' => basename($profilePath),
+        'name' => (string)($profileData['profile_name'] ?? pathinfo($profilePath, PATHINFO_FILENAME)),
+    ];
+}
+usort($calibrationProfiles, fn($a, $b) => strcasecmp($a['name'], $b['name']));
+
 $logs = fetch_all("
     SELECT l.*, c.camera_name, c.location 
     FROM camera_monitoring_logs l 
@@ -457,6 +469,17 @@ a:hover{color:#fff}
     justify-content:center;
     color:var(--text-soft);
 }
+#calibrationCanvas{
+    position:absolute;
+    inset:0;
+    width:100%;
+    height:100%;
+    z-index:5;
+    display:none;
+    cursor:crosshair;
+    touch-action:none;
+}
+#calibrationCanvas.active{display:block;}
 </style>
 
 <div class="d-flex justify-content-between flex-wrap mb-4 gap-2">
@@ -516,6 +539,7 @@ a:hover{color:#fff}
         </div>
 
         <canvas id="snapshotCanvas" style="display:none;"></canvas>
+        <canvas id="calibrationCanvas" aria-label="Line configuration editor"></canvas>
       </div>
 
       <div class="d-flex flex-wrap gap-2">
@@ -546,6 +570,30 @@ a:hover{color:#fff}
         <option value="uploaded_video">Uploaded CCTV video</option>
         <option value="tapo_camera">Tapo camera (RTSP)</option>
       </select>
+
+      <label class="form-label small fw-semibold" for="calibrationProfile">Intersection Configuration</label>
+      <select class="form-select mb-2" id="calibrationProfile">
+        <?php foreach ($calibrationProfiles as $profile): ?>
+          <option value="<?= esc($profile['file']) ?>"><?= esc($profile['name']) ?></option>
+        <?php endforeach; ?>
+      </select>
+      <button class="btn btn-light w-100 mb-3" type="button" id="newCalibrationBtn">
+        <i class="bi bi-bezier2 me-1"></i>New Line Configuration
+      </button>
+
+      <div id="calibrationEditor" class="d-none mb-3">
+        <label class="form-label small fw-semibold" for="calibrationName">Configuration Name</label>
+        <input class="form-control mb-2" id="calibrationName" maxlength="100" placeholder="Example: City Hall - North View">
+        <div class="small text-info mb-2" id="calibrationInstruction">Click two points for the inbound line.</div>
+        <button class="btn btn-light w-100 mb-2" type="button" id="addOfficerZoneBtn" disabled>
+          <i class="bi bi-person-bounding-box me-1"></i>Add Enforcer Zone (Optional)
+        </button>
+        <div class="d-flex gap-2">
+          <button class="btn btn-primary flex-fill" type="button" id="saveCalibrationBtn" disabled>Save Lines</button>
+          <button class="btn btn-light flex-fill" type="button" id="cancelCalibrationBtn">Cancel</button>
+        </div>
+        <input type="hidden" id="calibrationCsrf" value="<?= esc(csrf_token()) ?>">
+      </div>
 
       <div id="tapoCameraFields" class="d-none">
         <label class="form-label small fw-semibold" for="tapoHost">Camera IP address</label>

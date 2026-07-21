@@ -155,8 +155,8 @@ POINT_RADIUS = max(3, width // 350)
 
 DASHBOARD_X = int(width * 0.01)
 DASHBOARD_Y = int(height * 0.02)
-DASHBOARD_W = int(width * 0.34)
-DASHBOARD_H = int(height * 0.50)
+DASHBOARD_W = int(width * 0.32)
+DASHBOARD_H = int(height * 0.29)
 
 print("Inbound Line:", INBOUND_LINE)
 print("Outbound Line:", OUTBOUND_LINE)
@@ -382,105 +382,35 @@ while True:
     -1
 )
 
+    overlay_padding = max(8, int(width * 0.008))
+    overlay_left = DASHBOARD_X + overlay_padding
+    overlay_right = DASHBOARD_X + int(DASHBOARD_W * 0.52)
+    overlay_row = max(20, DASHBOARD_H // 5)
+    overlay_text_scale = max(0.34, width / 3000)
+    overlay_title_scale = max(0.42, width / 2600)
+    overlay_thickness = max(1, width // 900)
+
+    overlay_items = [
+        (f"Vehicles: {visible_vehicle_count}", f"Persons: {visible_person_count}", (0, 255, 0), (255, 255, 0)),
+        (f"Inbound: {inbound_count}", f"Outbound: {outbound_count}", (0, 255, 0), (0, 0, 255)),
+        (f"Traffic: {congestion_level}", f"Alert: {alert_status}", (255, 255, 255), (0, 165, 255)),
+        (f"Collision: {potential_collision.upper()}", f"Officer: {officer_presence.upper()}", (255, 255, 255), (255, 165, 0)),
+    ]
+
     cv2.putText(
         annotated_frame,
-        "TRAVIS AI MONITOR",
-        (20, 35),
+        "TRAVIS AI",
+        (overlay_left, DASHBOARD_Y + overlay_row - 4),
         cv2.FONT_HERSHEY_SIMPLEX,
-        0.7,
+        overlay_title_scale,
         (0, 255, 255),
-        2
+        overlay_thickness + 1,
     )
 
-    cv2.putText(
-        annotated_frame,
-        f"Visible Vehicles : {visible_vehicle_count}",
-        (20, 70),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.6,
-        (0, 255, 0),
-        2
-    )
-
-    cv2.putText(
-        annotated_frame,
-        f"Inbound          : {inbound_count}",
-        (20, 105),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.6,
-        (0, 255, 0),
-        2
-    )
-
-    cv2.putText(
-        annotated_frame,
-        f"Outbound         : {outbound_count}",
-        (20, 140),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.6,
-        (0, 0, 255),
-        2
-    )
-
-    cv2.putText(
-        annotated_frame,
-        f"Visible Persons  : {visible_person_count}",
-        (20, 175),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.6,
-        (255, 255, 0),
-        2
-    )
-
-    cv2.putText(
-        annotated_frame,
-        f"Congestion : {congestion_level}",
-        (20, 205),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.6,
-        (255, 255, 255),
-        2
-    )
-
-    cv2.putText(
-        annotated_frame,
-        f"Alert Status : {alert_status}",
-        (20, 235),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.6,
-        (0, 165, 255),
-        2
-    )
-
-    cv2.putText(
-        annotated_frame,
-        f"Collision : {potential_collision.upper()}",
-        (20, 265),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.6,
-        (255, 255, 255),
-        2
-    )
-
-    cv2.putText(
-        annotated_frame,
-        "Tracking : ByteTrack",
-        (20, 295),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.6,
-        (255, 255, 255),
-        2
-    )
-
-    cv2.putText(
-        annotated_frame,
-        f"Officer Zone : {officer_presence.upper()}",
-        (20, 325),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.6,
-        (255, 165, 0),
-        2
-    )
+    for index, (left_text, right_text, left_color, right_color) in enumerate(overlay_items, start=1):
+        y = DASHBOARD_Y + overlay_row * (index + 1) - 6
+        cv2.putText(annotated_frame, left_text, (overlay_left, y), cv2.FONT_HERSHEY_SIMPLEX, overlay_text_scale, left_color, overlay_thickness)
+        cv2.putText(annotated_frame, right_text, (overlay_right, y), cv2.FONT_HERSHEY_SIMPLEX, overlay_text_scale, right_color, overlay_thickness)
 
     # Send status to PHP every second
     if time.time() - last_api_update >= 1:
@@ -498,6 +428,7 @@ while True:
             "potential_collision": potential_collision,
             "ai_status": "Running",
             "source_type": selected_source.source_type or ("uploaded_video" if config.VIDEO_SOURCE == "video" else config.VIDEO_SOURCE),
+            "calibration_profile": calibration.name,
             "current_frame": current_frame,
             "total_frames": total_frames,
             "progress_percent": progress_percent,

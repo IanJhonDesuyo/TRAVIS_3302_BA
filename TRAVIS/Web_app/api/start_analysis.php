@@ -8,6 +8,7 @@ $cvDir = $projectRoot . "\\computer_vision";
 $detectScript = $cvDir . "\\detect_video.py";
 $videoPath = $cvDir . "\\uploads\\videos\\test.mp4";
 $cameraConfigPath = $cvDir . "\\camera_config.json";
+$calibrationDir = $cvDir . "\\calibration_profiles";
 
 $statusFile = __DIR__ . "\\analysis_status.json";
 $logDir = $projectRoot . "\\Web_app\\uploads\\logs";
@@ -24,11 +25,22 @@ if ($_SERVER["REQUEST_METHOD"] !== "POST") {
 
 $payload = json_decode(file_get_contents("php://input"), true);
 $sourceType = is_array($payload) ? ($payload["source_type"] ?? "uploaded_video") : "uploaded_video";
+$calibrationFile = basename((string)($payload["calibration_profile"] ?? ""));
+$calibrationArg = "";
 
 if (!in_array($sourceType, ["uploaded_video", "tapo_camera"], true)) {
     http_response_code(422);
     echo json_encode(["success" => false, "message" => "Invalid video source."]);
     exit;
+}
+
+if ($calibrationFile !== "") {
+    if (!preg_match('/^[a-zA-Z0-9_-]+\.json$/', $calibrationFile) || !is_file($calibrationDir . "\\" . $calibrationFile)) {
+        http_response_code(422);
+        echo json_encode(["success" => false, "message" => "The selected intersection configuration is invalid."]);
+        exit;
+    }
+    $calibrationArg = ' --calibration-profile "calibration_profiles\\' . $calibrationFile . '"';
 }
 
 if ($sourceType === "uploaded_video" && !file_exists($videoPath)) {
@@ -41,10 +53,22 @@ if ($sourceType === "uploaded_video" && !file_exists($videoPath)) {
 }
 
 if ($sourceType === "tapo_camera") {
-    $host = trim((string) ($payload["tapo_host"] ?? ""));
-    $username = trim((string) ($payload["tapo_username"] ?? ""));
+    $savedCameraConfig = [];
+    if (is_file($cameraConfigPath)) {
+        $decodedCameraConfig = json_decode((string)file_get_contents($cameraConfigPath), true);
+        if (is_array($decodedCameraConfig)) $savedCameraConfig = $decodedCameraConfig;
+    }
+
+    $submittedHost = trim((string)($payload["tapo_host"] ?? ""));
+    $submittedUsername = trim((string)($payload["tapo_username"] ?? ""));
+    $host = $submittedHost !== "" ? $submittedHost : trim((string)($savedCameraConfig["host"] ?? ""));
+    $username = $submittedUsername !== "" ? $submittedUsername : trim((string)($savedCameraConfig["username"] ?? ""));
     $password = (string) ($payload["tapo_password"] ?? "");
-    $stream = ($payload["tapo_stream"] ?? "stream2") === "stream1" ? "stream1" : "stream2";
+    if ($password === "" && $host === ($savedCameraConfig["host"] ?? null) && $username === ($savedCameraConfig["username"] ?? null)) {
+        $password = (string)($savedCameraConfig["password"] ?? "");
+    }
+    $streamValue = $payload["tapo_stream"] ?? $savedCameraConfig["stream"] ?? "stream2";
+    $stream = $streamValue === "stream1" ? "stream1" : "stream2";
 
     if (!filter_var($host, FILTER_VALIDATE_IP) || $username === "" || $password === "") {
         http_response_code(422);
@@ -98,7 +122,7 @@ file_put_contents($statusFile, json_encode([
 
 $command =
     'cd /d "' . $cvDir . '" && ' .
-    '"' . $pythonExe . '" "' . $detectScript . '" --source-type ' . $sourceType . ' ' .
+    '"' . $pythonExe . '" "' . $detectScript . '" --source-type ' . $sourceType . $calibrationArg . ' ' .
     '> "' . $logFile . '" 2>&1';
 
 $psexec = 'start "" /B cmd.exe /C "' . $command . '"';
