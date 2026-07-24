@@ -16,17 +16,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import LoginSuccessModal from '../../components/LoginSuccessModal';
-// ^ Adjust the relative path kung saan mo ilalagay ang LoginSuccessModal.tsx.
-// Kung gagawa ka ng /components folder sa root (kasabay ng /app), tama na ito.
+import api from '../../api/axiosConfig';
 
 type OrgType = 'LGU' | 'BSU';
-
-interface LoginPayload {
-  org: OrgType;
-  email: string;
-  password: string;
-  rememberMe: boolean;
-}
 
 interface StatItemProps {
   value: string;
@@ -53,32 +45,41 @@ export default function LoginScreen() {
   const [rememberMe, setRememberMe] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string>('');
-
-  // Bago: state para sa success modal
   const [successVisible, setSuccessVisible] = useState<boolean>(false);
   const [loggedInName, setLoggedInName] = useState<string>('');
 
-  const handleSignIn = (): void => {
-  if (!email || !password) {
-    setErrorMsg("Please enter both email/username and password.");
-    return;
-  }
+  const handleSignIn = async (): Promise<void> => {
+    if (!email || !password) {
+      setErrorMsg("Please enter both email/username and password.");
+      return;
+    }
 
-  setErrorMsg("");
-  setIsLoading(true);
+    setErrorMsg("");
+    setIsLoading(true);
 
-  setTimeout(() => {
-    setIsLoading(false);
-    setModalVisible(false);
+    try {
+      const response = await api.post('login.php', { email, password });
 
+      if (response.data.success) {
+        const user = response.data.user;
+        setLoggedInName(user.full_name);
+        setModalVisible(false);
+        setSuccessVisible(true);
+      } else {
+        setErrorMsg(response.data.error || 'Invalid credentials');
+      }
+    } catch (error: any) {
+      console.error('Login error:', error);
+      setErrorMsg(error.response?.data?.error || 'Network error. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleContinueToDashboard = (): void => {
+    setSuccessVisible(false);
     router.replace("/(drawer)/dashboard");
-  }, 1000);
-};
-
-const handleContinueToDashboard = (): void => {
-  setSuccessVisible(false);
-  router.replace("/(drawer)/dashboard");
-};
+  };
 
   return (
     <LinearGradient

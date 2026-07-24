@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   SafeAreaView,
   ScrollView,
@@ -17,9 +17,10 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
+import api from '../../api/axiosConfig';
 
 // ========== COLOR TOKENS ==========
-// Same tokens as the rest of TRAVIS (light hybrid theme) for consistency.
 const COLORS = {
   bg: '#F8FAFC',
   header: '#0F172A',
@@ -68,90 +69,6 @@ interface Payment {
 }
 
 type PaymentMethod = 'cash' | 'gcash' | 'bank_transfer' | 'other';
-
-// ========== MOCK DATA ==========
-const mockPendingViolations: Violation[] = [
-  {
-    violation_id: 1,
-    ticket_number: 'TRV-20260716-001',
-    driver_name: 'Juan Dela Cruz',
-    license_number: 'N12-34-567890',
-    plate_number: 'ABC-1234',
-    vehicle_type: 'Car',
-    violation_type: 'Speeding',
-    violation_location: 'EDSA Ayala',
-    violation_date: '2026-07-16',
-    violation_time: '10:30',
-    penalty_amount: 1200,
-    status: 'pending',
-    created_at: '2026-07-16 10:35:00',
-  },
-  {
-    violation_id: 2,
-    ticket_number: 'TRV-20260715-003',
-    driver_name: 'Pedro Reyes',
-    license_number: 'P11-22-334455',
-    plate_number: 'DEF-9012',
-    vehicle_type: 'Motorcycle',
-    violation_type: 'Disregarded Signal',
-    violation_location: 'Commonwealth Ave',
-    violation_date: '2026-07-15',
-    violation_time: '17:45',
-    penalty_amount: 600,
-    status: 'overdue',
-    created_at: '2026-07-15 17:50:00',
-  },
-  {
-    violation_id: 3,
-    ticket_number: 'TRV-20260715-004',
-    driver_name: 'Ana Reyes',
-    license_number: 'A55-66-778899',
-    plate_number: 'GHI-3456',
-    vehicle_type: 'Van',
-    violation_type: 'Overloading',
-    violation_location: 'C5',
-    violation_date: '2026-07-15',
-    violation_time: '14:20',
-    penalty_amount: 1500,
-    status: 'pending',
-    created_at: '2026-07-15 14:25:00',
-  },
-];
-
-const mockPayments: Payment[] = [
-  {
-    payment_id: 1,
-    ticket_number: 'TRV-20260716-002',
-    driver_name: 'Maria Santos',
-    plate_number: 'XYZ-5678',
-    violation_type: 'Illegal Parking',
-    amount_paid: 800,
-    payment_method: 'cash',
-    payment_status: 'completed',
-    payment_date: '2026-07-16 11:00:00',
-    received_by_name: 'Cashier',
-  },
-  {
-    payment_id: 2,
-    ticket_number: 'TRV-20260714-005',
-    driver_name: 'Carlos Gomez',
-    plate_number: 'JKL-7890',
-    violation_type: 'No Helmet',
-    amount_paid: 300,
-    payment_method: 'gcash',
-    payment_status: 'completed',
-    payment_date: '2026-07-14 08:15:00',
-    received_by_name: 'Admin',
-  },
-];
-
-const mockStats = {
-  collectedToday: 124500,
-  thisWeek: 356000,
-  thisMonth: 1245000,
-  pendingAmount: 450000,
-  pendingCount: 3,
-};
 
 // ========== HELPERS ==========
 const formatCurrency = (amount: number): string => `\u20b1${amount.toLocaleString()}`;
@@ -207,43 +124,91 @@ const METHOD_OPTIONS: { label: string; value: PaymentMethod }[] = [
 export default function PaymentsScreen() {
   const router = useRouter();
 
-  // State for data
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [pendingViolations, setPendingViolations] = useState<Violation[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
-  const [stats, setStats] = useState(mockStats);
-
-  // Filter states
+  const [stats, setStats] = useState({ collectedToday: 0, pendingCount: 0, pendingAmount: 0 });
   const [pendingSearch, setPendingSearch] = useState('');
   const [paymentSearch, setPaymentSearch] = useState('');
   const [methodFilter, setMethodFilter] = useState<PaymentMethod | ''>('');
-
-  // Selected violation for payment processing
   const [selectedViolation, setSelectedViolation] = useState<Violation | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [processing, setProcessing] = useState(false);
 
-  useEffect(() => {
-    fetchData();
-  }, []);
-
+  // ===== FETCH DATA =====
   const fetchData = async () => {
-    // Replace with actual API calls
-    await new Promise(resolve => setTimeout(resolve, 800));
-    setPendingViolations(mockPendingViolations);
-    setPayments(mockPayments);
-    setStats(mockStats);
-    setLoading(false);
-    setRefreshing(false);
+    try {
+      setLoading(true);
+
+      const pendingRes = await api.get('get_violations.php', {
+        params: { status: 'pending,overdue', limit: 100 },
+      });
+      if (pendingRes.data.success) {
+        setPendingViolations(pendingRes.data.data);
+      }
+
+      const paymentsRes = await api.get('get_payments.php');
+      if (paymentsRes.data.success) {
+        setPayments(paymentsRes.data.data);
+      }
+
+      const statsRes = await api.get('get_dashboard_stats.php');
+      if (statsRes.data.success) {
+        const d = statsRes.data.data;
+        setStats({
+          collectedToday: d.collected_today || 0,
+          pendingCount: d.pending_violations || 0,
+          pendingAmount: d.pending_amount || 0,
+        });
+      }
+    } catch (error) {
+      console.error('Payments fetch error:', error);
+      Alert.alert('Error', 'Failed to load payment data.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   };
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchData();
+    }, [])
+  );
 
   const onRefresh = () => {
     setRefreshing(true);
     fetchData();
   };
 
+  // ===== PROCESS PAYMENT =====
+  const handlePaymentConfirm = async () => {
+    if (!selectedViolation) return;
+    setProcessing(true);
+    try {
+      const response = await api.post('process_payment.php', {
+        violation_id: selectedViolation.violation_id,
+        amount_paid: selectedViolation.penalty_amount,
+        payment_method: paymentMethod,
+      });
+      if (response.data.success) {
+        Alert.alert('Success', `Payment for ${selectedViolation.ticket_number} recorded.`);
+        setModalVisible(false);
+        setSelectedViolation(null);
+        fetchData();
+      } else {
+        Alert.alert('Error', response.data.error || 'Payment failed.');
+      }
+    } catch (error: any) {
+      Alert.alert('Error', error.response?.data?.error || 'Network error.');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  // ===== FILTERS =====
   const filteredPending = pendingViolations.filter(v => {
     const search = pendingSearch.toLowerCase();
     return (
@@ -265,22 +230,7 @@ export default function PaymentsScreen() {
     return matchSearch && matchMethod;
   });
 
-  const handlePaymentConfirm = async () => {
-    if (!selectedViolation) return;
-    setProcessing(true);
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    Alert.alert(
-      'Payment Recorded',
-      `Payment for ${selectedViolation.ticket_number} has been successfully recorded.`
-    );
-    setProcessing(false);
-    setModalVisible(false);
-    setSelectedViolation(null);
-    fetchData();
-  };
-
-  // ---------- RENDER HELPERS ----------
+  // ========== RENDER HELPERS ==========
   const renderSummaryCell = (icon: React.ReactNode, label: string, value: string, isLast: boolean) => (
     <View style={[styles.summaryCell, !isLast && styles.summaryCellDivider]}>
       {icon}
@@ -383,8 +333,8 @@ export default function PaymentsScreen() {
         {/* Summary panel */}
         <View style={styles.summaryPanel}>
           {renderSummaryCell(<Ionicons name="cash-outline" size={16} color={COLORS.success} />, 'Collected Today', shortCurrency(stats.collectedToday), false)}
-          {renderSummaryCell(<Ionicons name="calendar-outline" size={16} color={COLORS.primary} />, 'This Week', shortCurrency(stats.thisWeek), false)}
-          {renderSummaryCell(<Ionicons name="stats-chart-outline" size={16} color={COLORS.primary} />, 'This Month', shortCurrency(stats.thisMonth), false)}
+          {renderSummaryCell(<Ionicons name="calendar-outline" size={16} color={COLORS.primary} />, 'This Week', '—', false)}
+          {renderSummaryCell(<Ionicons name="stats-chart-outline" size={16} color={COLORS.primary} />, 'This Month', '—', false)}
           {renderSummaryCell(<Ionicons name="alert-circle-outline" size={16} color={COLORS.warning} />, `${stats.pendingCount} Unpaid`, shortCurrency(stats.pendingAmount), true)}
         </View>
 
@@ -592,7 +542,6 @@ const styles = StyleSheet.create({
   pageTitle: { fontSize: 26, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 6, letterSpacing: -0.3 },
   pageSub: { fontSize: 13, color: COLORS.textSecondary, lineHeight: 18 },
 
-  // Summary panel
   summaryPanel: {
     flexDirection: 'row', backgroundColor: COLORS.surface, borderRadius: 18,
     borderWidth: 1, borderColor: COLORS.border, paddingVertical: 16, marginBottom: 18, ...softShadow,
@@ -602,7 +551,6 @@ const styles = StyleSheet.create({
   summaryValue: { fontSize: 15, fontWeight: '700', color: COLORS.textPrimary, fontFamily: mono, marginTop: 6, marginBottom: 3 },
   summaryLabel: { fontSize: 9, color: COLORS.textTertiary, textAlign: 'center' },
 
-  // Section card
   sectionCard: {
     backgroundColor: COLORS.surface, borderRadius: 18, padding: 16, marginBottom: 18,
     borderWidth: 1, borderColor: COLORS.border, ...softShadow,
@@ -611,7 +559,6 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 16, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 2 },
   sectionSub: { fontSize: 12, color: COLORS.textTertiary },
 
-  // Search
   searchWrap: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.bg,
     borderRadius: 10, borderWidth: 1, borderColor: COLORS.border,
@@ -620,7 +567,6 @@ const styles = StyleSheet.create({
   searchIcon: { marginRight: 8 },
   searchInput: { flex: 1, fontSize: 14, color: COLORS.textPrimary },
 
-  // Method filter chips
   methodFilterRow: { marginBottom: 14 },
   filterChip: {
     backgroundColor: COLORS.bg, borderWidth: 1, borderColor: COLORS.border,
@@ -630,7 +576,6 @@ const styles = StyleSheet.create({
   filterChipText: { fontSize: 12, fontWeight: '600', color: COLORS.textSecondary },
   filterChipTextActive: { color: '#FFFFFF' },
 
-  // Pending violation item
   pendingItem: {
     backgroundColor: COLORS.bg, borderRadius: 14, padding: 14,
     borderWidth: 1, borderColor: COLORS.border,
@@ -650,7 +595,6 @@ const styles = StyleSheet.create({
   processButton: { backgroundColor: COLORS.primary, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 20 },
   processButtonText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
 
-  // Payment item
   paymentItem: {
     backgroundColor: COLORS.bg, borderRadius: 14, padding: 14,
     borderWidth: 1, borderColor: COLORS.border,
@@ -665,11 +609,9 @@ const styles = StyleSheet.create({
   paymentAmount: { fontSize: 15, fontWeight: '700', color: COLORS.textPrimary, fontFamily: mono },
   paymentMeta: { fontSize: 11, color: COLORS.textTertiary, marginTop: 8 },
 
-  // Empty state
   emptyState: { alignItems: 'center', paddingVertical: 30 },
   emptyText: { fontSize: 13, color: COLORS.textSecondary, textAlign: 'center', marginTop: 8, lineHeight: 18 },
 
-  // Modal
   modalOverlay: { flex: 1, backgroundColor: 'rgba(15,23,42,0.5)', justifyContent: 'center', alignItems: 'center' },
   modalContent: { backgroundColor: COLORS.surface, borderRadius: 20, width: '92%', maxHeight: '85%' },
   modalHeader: {

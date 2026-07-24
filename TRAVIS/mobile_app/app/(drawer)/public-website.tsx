@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   SafeAreaView,
   ScrollView,
@@ -15,12 +15,42 @@ import {
   FlatList,
   Image,
   Dimensions,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Picker } from '@react-native-picker/picker';
 import * as ImagePicker from 'expo-image-picker';
+import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
+import api from '../../api/axiosConfig';
 
 const { width } = Dimensions.get('window');
+
+// ========== COLOR TOKENS ==========
+const COLORS = {
+  bg: '#F8FAFC',
+  header: '#0F172A',
+  headerAccent: '#1E293B',
+  surface: '#FFFFFF',
+  border: '#E2E8F0',
+  textPrimary: '#0F172A',
+  textSecondary: '#64748B',
+  textTertiary: '#94A3B8',
+  primary: '#2563EB',
+  success: '#10B981',
+  warning: '#F59E0B',
+  danger: '#EF4444',
+  neutral: '#94A3B8',
+};
+
+const mono = Platform.select({ ios: 'Courier', android: 'monospace', default: 'monospace' });
+const softShadow = {
+  shadowColor: '#0F172A',
+  shadowOffset: { width: 0, height: 4 },
+  shadowOpacity: 0.08,
+  shadowRadius: 16,
+  elevation: 4,
+};
 
 // ========== TYPES ==========
 interface Announcement {
@@ -36,58 +66,6 @@ interface Announcement {
   updated_at: string;
 }
 
-// ========== MOCK DATA ==========
-const mockAnnouncements: Announcement[] = [
-  {
-    announcement_id: 1,
-    title: 'Road Closure on EDSA',
-    announcement_type: 'road closure',
-    content: 'EDSA will be closed for repairs from July 20 to July 25. Please take alternate routes.',
-    image_path: null,
-    publish_date: '2026-07-20 00:00:00',
-    status: 'published',
-    created_by_name: 'Admin',
-    created_at: '2026-07-16 10:00:00',
-    updated_at: '2026-07-16 10:00:00',
-  },
-  {
-    announcement_id: 2,
-    title: 'TMO Activity: Traffic Summit',
-    announcement_type: 'tmo activity',
-    content: 'Join the Traffic Management Summit on July 30 at the City Hall. Registration is free.',
-    image_path: null,
-    publish_date: '2026-07-30 09:00:00',
-    status: 'draft',
-    created_by_name: 'Zeth Ramzy Pagcaliwagan',
-    created_at: '2026-07-16 11:30:00',
-    updated_at: '2026-07-16 11:30:00',
-  },
-  {
-    announcement_id: 3,
-    title: 'New Traffic Scheme in BGC',
-    announcement_type: 'traffic advisory',
-    content: 'Effective August 1, new traffic scheme will be implemented in BGC. Please check the map.',
-    image_path: null,
-    publish_date: '2026-08-01 06:00:00',
-    status: 'published',
-    created_by_name: 'Admin',
-    created_at: '2026-07-15 14:20:00',
-    updated_at: '2026-07-15 14:20:00',
-  },
-  {
-    announcement_id: 4,
-    title: 'Emergency Notice: Power Interruption',
-    announcement_type: 'emergency notice',
-    content: 'Power interruption on July 18 from 8am to 5pm. Traffic lights may be affected.',
-    image_path: null,
-    publish_date: '2026-07-18 08:00:00',
-    status: 'archived',
-    created_by_name: 'Maria Santos',
-    created_at: '2026-07-14 09:00:00',
-    updated_at: '2026-07-14 09:00:00',
-  },
-];
-
 // ========== HELPERS ==========
 const announcementTypes = [
   'traffic advisory',
@@ -98,13 +76,11 @@ const announcementTypes = [
   'emergency notice',
 ];
 
-const statusOptions = ['draft', 'published', 'archived'];
-
 const statusColor = (status: string): string => {
-  if (status === 'published') return '#16a34a';
-  if (status === 'draft') return '#f59e0b';
-  if (status === 'archived') return '#6b7280';
-  return '#6b7280';
+  if (status === 'published') return COLORS.success;
+  if (status === 'draft') return COLORS.warning;
+  if (status === 'archived') return COLORS.neutral;
+  return COLORS.neutral;
 };
 
 const getStatusLabel = (status: string): string => {
@@ -124,68 +100,60 @@ const formatDate = (dateStr: string): string => {
 export default function PublicWebsiteScreen() {
   const router = useRouter();
 
-  // State
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [stats, setStats] = useState({ published: 0, drafts: 0, scheduled: 0, archived: 0 });
-
-  // Filters
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-
-  // Modal states
   const [createModalVisible, setCreateModalVisible] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [viewModalVisible, setViewModalVisible] = useState(false);
   const [selectedAnnouncement, setSelectedAnnouncement] = useState<Announcement | null>(null);
 
-  // Form states
   const [formTitle, setFormTitle] = useState('');
   const [formType, setFormType] = useState('');
   const [formContent, setFormContent] = useState('');
   const [formPublishDate, setFormPublishDate] = useState(new Date().toISOString().slice(0, 16));
   const [formStatus, setFormStatus] = useState<'draft' | 'published' | 'archived'>('draft');
   const [formImage, setFormImage] = useState<string | null>(null);
-  const [removeImage, setRemoveImage] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  // Load data
-  useEffect(() => {
-    fetchData();
-  }, []);
-
+  // ===== FETCH ANNOUNCEMENTS =====
   const fetchData = async () => {
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 800));
-    setAnnouncements(mockAnnouncements);
-    // Compute stats
-    const published = mockAnnouncements.filter(a => a.status === 'published').length;
-    const drafts = mockAnnouncements.filter(a => a.status === 'draft').length;
-    const archived = mockAnnouncements.filter(a => a.status === 'archived').length;
-    const scheduled = mockAnnouncements.filter(a => a.status === 'published' && new Date(a.publish_date) > new Date()).length;
-    setStats({ published, drafts, scheduled, archived });
-    setLoading(false);
-    setRefreshing(false);
+    try {
+      setLoading(true);
+      const res = await api.get('get_announcements.php');
+      if (res.data.success) {
+        const data = res.data.data;
+        setAnnouncements(data);
+        const published = data.filter((a: any) => a.status === 'published').length;
+        const drafts = data.filter((a: any) => a.status === 'draft').length;
+        const archived = data.filter((a: any) => a.status === 'archived').length;
+        const scheduled = data.filter((a: any) => a.status === 'published' && new Date(a.publish_date) > new Date()).length;
+        setStats({ published, drafts, scheduled, archived });
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to load announcements.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   };
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchData();
+    }, [])
+  );
 
   const onRefresh = () => {
     setRefreshing(true);
     fetchData();
   };
 
-  // Filter announcements
-  const filteredAnnouncements = announcements.filter(item => {
-    const matchSearch = search === '' ||
-      item.title.toLowerCase().includes(search.toLowerCase()) ||
-      item.content.toLowerCase().includes(search.toLowerCase());
-    const matchType = typeFilter === '' || item.announcement_type === typeFilter;
-    const matchStatus = statusFilter === '' || item.status === statusFilter;
-    return matchSearch && matchType && matchStatus;
-  });
-
-  // Image picker
+  // ===== IMAGE PICKER =====
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
@@ -202,23 +170,38 @@ export default function PublicWebsiteScreen() {
     }
   };
 
-  // Create announcement
+  // ===== CREATE =====
   const handleCreate = async () => {
     if (!formTitle || !formType || !formContent || !formPublishDate) {
       Alert.alert('Error', 'Please fill in all required fields.');
       return;
     }
     setSubmitting(true);
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    Alert.alert('Success', 'Announcement created successfully.');
-    setSubmitting(false);
-    setCreateModalVisible(false);
-    resetForm();
-    fetchData();
+    try {
+      const payload = {
+        title: formTitle,
+        announcement_type: formType,
+        content: formContent,
+        publish_date: formPublishDate,
+        status: formStatus,
+      };
+      const res = await api.post('add_announcement.php', payload);
+      if (res.data.success) {
+        Alert.alert('Success', 'Announcement created.');
+        setCreateModalVisible(false);
+        resetForm();
+        fetchData();
+      } else {
+        Alert.alert('Error', res.data.error || 'Failed to create.');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Network error.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  // Update announcement
+  // ===== UPDATE =====
   const handleUpdate = async () => {
     if (!selectedAnnouncement) return;
     if (!formTitle || !formType || !formContent || !formPublishDate) {
@@ -226,40 +209,55 @@ export default function PublicWebsiteScreen() {
       return;
     }
     setSubmitting(true);
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    Alert.alert('Success', 'Announcement updated successfully.');
-    setSubmitting(false);
-    setEditModalVisible(false);
-    setSelectedAnnouncement(null);
-    resetForm();
-    fetchData();
+    try {
+      const payload = {
+        announcement_id: selectedAnnouncement.announcement_id,
+        title: formTitle,
+        announcement_type: formType,
+        content: formContent,
+        publish_date: formPublishDate,
+        status: formStatus,
+      };
+      const res = await api.post('update_announcement.php', payload);
+      if (res.data.success) {
+        Alert.alert('Success', 'Announcement updated.');
+        setEditModalVisible(false);
+        resetForm();
+        fetchData();
+      } else {
+        Alert.alert('Error', res.data.error || 'Failed to update.');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Network error.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  // Change status
+  // ===== STATUS CHANGE =====
   const handleStatusChange = async (id: number, newStatus: string) => {
-    const announcement = announcements.find(a => a.announcement_id === id);
-    if (!announcement) return;
     Alert.alert(
-      'Confirm Status Change',
-      `Change status of "${announcement.title}" to ${newStatus.toUpperCase()}?`,
+      'Confirm',
+      `Change status to ${newStatus.toUpperCase()}?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Confirm',
           onPress: async () => {
-            // Simulate API
-            await new Promise(resolve => setTimeout(resolve, 500));
-            const updated = announcements.map(a =>
-              a.announcement_id === id ? { ...a, status: newStatus as any } : a
-            );
-            setAnnouncements(updated);
-            // Recalculate stats
-            const published = updated.filter(a => a.status === 'published').length;
-            const drafts = updated.filter(a => a.status === 'draft').length;
-            const archived = updated.filter(a => a.status === 'archived').length;
-            const scheduled = updated.filter(a => a.status === 'published' && new Date(a.publish_date) > new Date()).length;
-            setStats({ published, drafts, scheduled, archived });
-            Alert.alert('Success', 'Status updated.');
+            try {
+              const res = await api.post('update_announcement.php', {
+                announcement_id: id,
+                status: newStatus,
+              });
+              if (res.data.success) {
+                Alert.alert('Success', 'Status updated.');
+                fetchData();
+              } else {
+                Alert.alert('Error', res.data.error || 'Failed to update status.');
+              }
+            } catch (error) {
+              Alert.alert('Error', 'Network error.');
+            }
           },
         },
       ]
@@ -273,7 +271,6 @@ export default function PublicWebsiteScreen() {
     setFormPublishDate(new Date().toISOString().slice(0, 16));
     setFormStatus('draft');
     setFormImage(null);
-    setRemoveImage(false);
   };
 
   const openEditModal = (item: Announcement) => {
@@ -284,7 +281,6 @@ export default function PublicWebsiteScreen() {
     setFormPublishDate(item.publish_date.slice(0, 16));
     setFormStatus(item.status);
     setFormImage(null);
-    setRemoveImage(false);
     setEditModalVisible(true);
   };
 
@@ -293,23 +289,34 @@ export default function PublicWebsiteScreen() {
     setViewModalVisible(true);
   };
 
-  // Render stats cards
+  // ===== FILTER =====
+  const filteredAnnouncements = announcements.filter(item => {
+    const matchSearch = search === '' ||
+      item.title.toLowerCase().includes(search.toLowerCase()) ||
+      item.content.toLowerCase().includes(search.toLowerCase());
+    const matchType = typeFilter === '' || item.announcement_type === typeFilter;
+    const matchStatus = statusFilter === '' || item.status === statusFilter;
+    return matchSearch && matchType && matchStatus;
+  });
+
+  // ========== RENDER HELPERS ==========
   const renderStatCard = (label: string, value: number, color: string) => (
-    <View style={[styles.statCard, { borderLeftColor: color }]}>
-      <Text style={styles.statLabel}>{label}</Text>
-      <Text style={[styles.statValue, { color }]}>{value}</Text>
+    <View style={styles.statCard}>
+      <View style={[styles.statAccentDot, { backgroundColor: color }]} />
+      <Text style={styles.statLabel}>{label.toUpperCase()}</Text>
+      <Text style={styles.statValue}>{value}</Text>
     </View>
   );
 
-  // Render announcement item
   const renderAnnouncementItem = ({ item }: { item: Announcement }) => (
     <View style={styles.announcementItem}>
       <View style={styles.announcementHeader}>
         <View style={styles.announcementTitleContainer}>
           <Text style={styles.announcementTitle}>{item.title}</Text>
-          <View style={[styles.statusBadge, { backgroundColor: statusColor(item.status) + '20' }]}>
+          <View style={[styles.statusBadge, { backgroundColor: statusColor(item.status) + '1A' }]}>
+            <View style={[styles.statusBadgeDot, { backgroundColor: statusColor(item.status) }]} />
             <Text style={[styles.statusText, { color: statusColor(item.status) }]}>
-              {getStatusLabel(item.status)}
+              {getStatusLabel(item.status).toUpperCase()}
             </Text>
           </View>
         </View>
@@ -322,28 +329,33 @@ export default function PublicWebsiteScreen() {
 
       <View style={styles.announcementFooter}>
         <Text style={styles.announcementDate}>{formatDate(item.publish_date)}</Text>
-        <Text style={styles.announcementAuthor}>by {item.created_by_name || 'Unknown'}</Text>
+        <Text style={styles.announcementAuthor}>BY {(item.created_by_name || 'Unknown').toUpperCase()}</Text>
       </View>
 
       <View style={styles.actionRow}>
-        <TouchableOpacity style={styles.actionButton} onPress={() => openViewModal(item)}>
-          <Text style={styles.actionText}>👁️ View</Text>
+        <TouchableOpacity style={styles.actionButton} onPress={() => openViewModal(item)} activeOpacity={0.7}>
+          <Ionicons name="eye-outline" size={13} color={COLORS.textPrimary} />
+          <Text style={styles.actionText}>View</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.actionButton} onPress={() => openEditModal(item)}>
-          <Text style={styles.actionText}>✏️ Edit</Text>
+        <TouchableOpacity style={styles.actionButton} onPress={() => openEditModal(item)} activeOpacity={0.7}>
+          <Ionicons name="create-outline" size={13} color={COLORS.textPrimary} />
+          <Text style={styles.actionText}>Edit</Text>
         </TouchableOpacity>
         {item.status !== 'published' ? (
-          <TouchableOpacity style={[styles.actionButton, styles.publishButton]} onPress={() => handleStatusChange(item.announcement_id, 'published')}>
-            <Text style={[styles.actionText, { color: '#16a34a' }]}>📤 Publish</Text>
+          <TouchableOpacity style={[styles.actionButton, { backgroundColor: COLORS.success + '1A' }]} onPress={() => handleStatusChange(item.announcement_id, 'published')} activeOpacity={0.7}>
+            <Ionicons name="send-outline" size={13} color={COLORS.success} />
+            <Text style={[styles.actionText, { color: COLORS.success }]}>Publish</Text>
           </TouchableOpacity>
         ) : (
-          <TouchableOpacity style={[styles.actionButton, styles.draftButton]} onPress={() => handleStatusChange(item.announcement_id, 'draft')}>
-            <Text style={[styles.actionText, { color: '#f59e0b' }]}>↩️ Draft</Text>
+          <TouchableOpacity style={[styles.actionButton, { backgroundColor: COLORS.warning + '1A' }]} onPress={() => handleStatusChange(item.announcement_id, 'draft')} activeOpacity={0.7}>
+            <Ionicons name="arrow-undo-outline" size={13} color={COLORS.warning} />
+            <Text style={[styles.actionText, { color: COLORS.warning }]}>Draft</Text>
           </TouchableOpacity>
         )}
         {item.status !== 'archived' && (
-          <TouchableOpacity style={[styles.actionButton, styles.archiveButton]} onPress={() => handleStatusChange(item.announcement_id, 'archived')}>
-            <Text style={[styles.actionText, { color: '#6b7280' }]}>📦 Archive</Text>
+          <TouchableOpacity style={[styles.actionButton, { backgroundColor: COLORS.bg }]} onPress={() => handleStatusChange(item.announcement_id, 'archived')} activeOpacity={0.7}>
+            <Ionicons name="archive-outline" size={13} color={COLORS.textSecondary} />
+            <Text style={[styles.actionText, { color: COLORS.textSecondary }]}>Archive</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -353,57 +365,65 @@ export default function PublicWebsiteScreen() {
   if (loading) {
     return (
       <SafeAreaView style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#2563eb" />
-        <Text style={styles.loadingText}>Loading announcements...</Text>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={styles.loadingText}>LOADING ANNOUNCEMENTS…</Text>
       </SafeAreaView>
     );
   }
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor="#f8fafc" />
+      <StatusBar barStyle="light-content" backgroundColor={COLORS.header} />
       <ScrollView
         style={styles.container}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.pageTitle}>Public Website CMS</Text>
-          <Text style={styles.pageSub}>
-            Create, upload, publish, edit, and archive announcements for the public TRAVIS website.
-          </Text>
+        {/* Hero */}
+        <View style={styles.heroCard}>
+          <View style={styles.brandRow}>
+            <View style={styles.brandBadge}>
+              <Ionicons name="globe-outline" size={16} color="#7DB4FF" />
+            </View>
+            <View>
+              <Text style={styles.brandName}>PUBLIC WEBSITE CMS</Text>
+              <Text style={styles.brandSubtitle}>Create, publish, edit, and archive public announcements</Text>
+            </View>
+          </View>
         </View>
 
         {/* Stats */}
         <View style={styles.statsRow}>
-          {renderStatCard('Published', stats.published, '#16a34a')}
-          {renderStatCard('Drafts', stats.drafts, '#f59e0b')}
-          {renderStatCard('Scheduled', stats.scheduled, '#2563eb')}
-          {renderStatCard('Archived', stats.archived, '#6b7280')}
+          {renderStatCard('Published', stats.published, COLORS.success)}
+          {renderStatCard('Drafts', stats.drafts, COLORS.warning)}
+          {renderStatCard('Scheduled', stats.scheduled, COLORS.primary)}
+          {renderStatCard('Archived', stats.archived, COLORS.neutral)}
         </View>
 
         {/* Announcements List */}
-        <View style={styles.sectionCard}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Announcements</Text>
-            <Text style={styles.sectionSub}>Published posts will be displayed by the separate public website.</Text>
-          </View>
+        <Text style={styles.sectionLabel}>ANNOUNCEMENTS</Text>
+        <View style={styles.panel}>
+          <Text style={styles.panelSub}>Published posts will be displayed by the separate public website.</Text>
 
           {/* Search and Filters */}
           <View style={styles.filterContainer}>
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search title or content..."
-              value={search}
-              onChangeText={setSearch}
-            />
+            <View style={styles.searchWrap}>
+              <Ionicons name="search-outline" size={15} color={COLORS.textTertiary} style={{ marginRight: 8 }} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search title or content..."
+                placeholderTextColor={COLORS.textTertiary}
+                value={search}
+                onChangeText={setSearch}
+              />
+            </View>
             <View style={styles.pickerWrapper}>
               <Picker
                 selectedValue={typeFilter}
                 onValueChange={setTypeFilter}
                 style={styles.picker}
-                dropdownIconColor="#0b3d78"
+                dropdownIconColor={COLORS.primary}
               >
                 <Picker.Item label="All Types" value="" />
                 {announcementTypes.map(type => (
@@ -411,12 +431,12 @@ export default function PublicWebsiteScreen() {
                 ))}
               </Picker>
             </View>
-            <View style={[styles.pickerWrapper, { flex: 1 }]}>
+            <View style={styles.pickerWrapper}>
               <Picker
                 selectedValue={statusFilter}
                 onValueChange={setStatusFilter}
                 style={styles.picker}
-                dropdownIconColor="#0b3d78"
+                dropdownIconColor={COLORS.primary}
               >
                 <Picker.Item label="All Statuses" value="" />
                 <Picker.Item label="Published" value="published" />
@@ -427,33 +447,40 @@ export default function PublicWebsiteScreen() {
             <TouchableOpacity
               style={styles.clearButton}
               onPress={() => { setSearch(''); setTypeFilter(''); setStatusFilter(''); }}
+              activeOpacity={0.7}
             >
-              <Text style={styles.clearText}>Clear</Text>
+              <Text style={styles.clearText}>Clear Filters</Text>
             </TouchableOpacity>
           </View>
 
           {/* Add Button */}
-          <TouchableOpacity style={styles.addButton} onPress={() => { resetForm(); setCreateModalVisible(true); }}>
-            <Text style={styles.addButtonText}>+ New Announcement</Text>
+          <TouchableOpacity style={styles.addButton} onPress={() => { resetForm(); setCreateModalVisible(true); }} activeOpacity={0.85}>
+            <Ionicons name="add" size={17} color="#fff" />
+            <Text style={styles.addButtonText}>New Announcement</Text>
           </TouchableOpacity>
 
           {/* List */}
           {filteredAnnouncements.length === 0 ? (
             <View style={styles.emptyState}>
+              <Ionicons name="megaphone-outline" size={16} color={COLORS.textTertiary} />
               <Text style={styles.emptyText}>No announcements matched the current filters.</Text>
             </View>
           ) : (
-            <FlatList
-              data={filteredAnnouncements}
-              renderItem={renderAnnouncementItem}
-              keyExtractor={item => item.announcement_id.toString()}
-              scrollEnabled={false}
-            />
+            <>
+              <View style={styles.panelDivider} />
+              <FlatList
+                data={filteredAnnouncements}
+                renderItem={renderAnnouncementItem}
+                keyExtractor={item => item.announcement_id.toString()}
+                scrollEnabled={false}
+                ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
+              />
+            </>
           )}
         </View>
       </ScrollView>
 
-      {/* ===== CREATE MODAL ===== */}
+      {/* Create Modal */}
       <Modal
         animationType="slide"
         transparent={true}
@@ -467,21 +494,33 @@ export default function PublicWebsiteScreen() {
                 <Text style={styles.modalTitle}>Create Announcement</Text>
                 <Text style={styles.modalSub}>Add content and an optional cover image.</Text>
               </View>
-              <TouchableOpacity onPress={() => setCreateModalVisible(false)}>
-                <Text style={styles.modalClose}>✕</Text>
+              <TouchableOpacity onPress={() => setCreateModalVisible(false)} style={styles.modalCloseButton}>
+                <Ionicons name="close" size={18} color={COLORS.textSecondary} />
               </TouchableOpacity>
             </View>
 
             <ScrollView style={styles.modalBody}>
               <View style={styles.formGroup}>
                 <Text style={styles.label}>Title</Text>
-                <TextInput style={styles.input} value={formTitle} onChangeText={setFormTitle} placeholder="Announcement title" maxLength={255} />
+                <TextInput
+                  style={styles.input}
+                  value={formTitle}
+                  onChangeText={setFormTitle}
+                  placeholder="Announcement title"
+                  placeholderTextColor={COLORS.textTertiary}
+                  maxLength={255}
+                />
               </View>
 
               <View style={styles.formGroup}>
                 <Text style={styles.label}>Type</Text>
                 <View style={styles.pickerWrapper}>
-                  <Picker selectedValue={formType} onValueChange={setFormType} style={styles.picker} dropdownIconColor="#0b3d78">
+                  <Picker
+                    selectedValue={formType}
+                    onValueChange={setFormType}
+                    style={styles.picker}
+                    dropdownIconColor={COLORS.primary}
+                  >
                     <Picker.Item label="Select type" value="" />
                     {announcementTypes.map(type => (
                       <Picker.Item key={type} label={getTypeLabel(type)} value={type} />
@@ -493,10 +532,11 @@ export default function PublicWebsiteScreen() {
               <View style={styles.formGroup}>
                 <Text style={styles.label}>Content</Text>
                 <TextInput
-                  style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
+                  style={[styles.input, { height: 100, textAlignVertical: 'top', paddingTop: 10 }]}
                   value={formContent}
                   onChangeText={setFormContent}
                   placeholder="Announcement content"
+                  placeholderTextColor={COLORS.textTertiary}
                   multiline
                   numberOfLines={4}
                 />
@@ -504,8 +544,11 @@ export default function PublicWebsiteScreen() {
 
               <View style={styles.formGroup}>
                 <Text style={styles.label}>Cover Image</Text>
-                <TouchableOpacity style={styles.imagePickerButton} onPress={pickImage}>
-                  <Text style={styles.imagePickerText}>{formImage ? 'Image selected' : 'Choose image (JPG, PNG, WebP, max 5MB)'}</Text>
+                <TouchableOpacity style={styles.imagePickerButton} onPress={pickImage} activeOpacity={0.7}>
+                  <Ionicons name="image-outline" size={15} color={COLORS.primary} style={{ marginRight: 8 }} />
+                  <Text style={styles.imagePickerText}>
+                    {formImage ? 'Image selected' : 'Choose image (JPG, PNG, WebP, max 5MB)'}
+                  </Text>
                 </TouchableOpacity>
                 {formImage && (
                   <Image source={{ uri: formImage }} style={styles.previewImage} />
@@ -519,13 +562,19 @@ export default function PublicWebsiteScreen() {
                   value={formPublishDate}
                   onChangeText={setFormPublishDate}
                   placeholder="YYYY-MM-DDTHH:mm"
+                  placeholderTextColor={COLORS.textTertiary}
                 />
               </View>
 
               <View style={[styles.formGroup, { marginBottom: 0 }]}>
                 <Text style={styles.label}>Status</Text>
                 <View style={styles.pickerWrapper}>
-                  <Picker selectedValue={formStatus} onValueChange={setFormStatus} style={styles.picker} dropdownIconColor="#0b3d78">
+                  <Picker
+                    selectedValue={formStatus}
+                    onValueChange={setFormStatus}
+                    style={styles.picker}
+                    dropdownIconColor={COLORS.primary}
+                  >
                     <Picker.Item label="Draft" value="draft" />
                     <Picker.Item label="Published" value="published" />
                     <Picker.Item label="Archived" value="archived" />
@@ -534,11 +583,25 @@ export default function PublicWebsiteScreen() {
               </View>
 
               <View style={styles.modalActions}>
-                <TouchableOpacity style={[styles.modalButton, styles.cancelButton]} onPress={() => setCreateModalVisible(false)} disabled={submitting}>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.cancelButton]}
+                  onPress={() => setCreateModalVisible(false)}
+                  disabled={submitting}
+                  activeOpacity={0.7}
+                >
                   <Text style={styles.cancelButtonText}>Cancel</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.modalButton, styles.confirmButton]} onPress={handleCreate} disabled={submitting}>
-                  {submitting ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.confirmButtonText}>Save Announcement</Text>}
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.confirmButton]}
+                  onPress={handleCreate}
+                  disabled={submitting}
+                  activeOpacity={0.85}
+                >
+                  {submitting ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.confirmButtonText}>Save Announcement</Text>
+                  )}
                 </TouchableOpacity>
               </View>
             </ScrollView>
@@ -546,7 +609,7 @@ export default function PublicWebsiteScreen() {
         </View>
       </Modal>
 
-      {/* ===== EDIT MODAL ===== */}
+      {/* Edit Modal */}
       <Modal
         animationType="slide"
         transparent={true}
@@ -560,21 +623,33 @@ export default function PublicWebsiteScreen() {
                 <Text style={styles.modalTitle}>Edit Announcement</Text>
                 <Text style={styles.modalSub}>{selectedAnnouncement?.title}</Text>
               </View>
-              <TouchableOpacity onPress={() => setEditModalVisible(false)}>
-                <Text style={styles.modalClose}>✕</Text>
+              <TouchableOpacity onPress={() => setEditModalVisible(false)} style={styles.modalCloseButton}>
+                <Ionicons name="close" size={18} color={COLORS.textSecondary} />
               </TouchableOpacity>
             </View>
 
             <ScrollView style={styles.modalBody}>
               <View style={styles.formGroup}>
                 <Text style={styles.label}>Title</Text>
-                <TextInput style={styles.input} value={formTitle} onChangeText={setFormTitle} placeholder="Title" maxLength={255} />
+                <TextInput
+                  style={styles.input}
+                  value={formTitle}
+                  onChangeText={setFormTitle}
+                  placeholder="Title"
+                  placeholderTextColor={COLORS.textTertiary}
+                  maxLength={255}
+                />
               </View>
 
               <View style={styles.formGroup}>
                 <Text style={styles.label}>Type</Text>
                 <View style={styles.pickerWrapper}>
-                  <Picker selectedValue={formType} onValueChange={setFormType} style={styles.picker} dropdownIconColor="#0b3d78">
+                  <Picker
+                    selectedValue={formType}
+                    onValueChange={setFormType}
+                    style={styles.picker}
+                    dropdownIconColor={COLORS.primary}
+                  >
                     {announcementTypes.map(type => (
                       <Picker.Item key={type} label={getTypeLabel(type)} value={type} />
                     ))}
@@ -585,10 +660,11 @@ export default function PublicWebsiteScreen() {
               <View style={styles.formGroup}>
                 <Text style={styles.label}>Content</Text>
                 <TextInput
-                  style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
+                  style={[styles.input, { height: 100, textAlignVertical: 'top', paddingTop: 10 }]}
                   value={formContent}
                   onChangeText={setFormContent}
                   placeholder="Content"
+                  placeholderTextColor={COLORS.textTertiary}
                   multiline
                   numberOfLines={4}
                 />
@@ -596,29 +672,35 @@ export default function PublicWebsiteScreen() {
 
               <View style={styles.formGroup}>
                 <Text style={styles.label}>Replace Image</Text>
-                <TouchableOpacity style={styles.imagePickerButton} onPress={pickImage}>
-                  <Text style={styles.imagePickerText}>{formImage ? 'Image selected' : 'Choose new image'}</Text>
+                <TouchableOpacity style={styles.imagePickerButton} onPress={pickImage} activeOpacity={0.7}>
+                  <Ionicons name="image-outline" size={15} color={COLORS.primary} style={{ marginRight: 8 }} />
+                  <Text style={styles.imagePickerText}>
+                    {formImage ? 'Image selected' : 'Choose new image'}
+                  </Text>
                 </TouchableOpacity>
-                {selectedAnnouncement?.image_path && !formImage && (
-                  <View style={styles.imageInfo}>
-                    <Text style={styles.imageInfoText}>Current image exists</Text>
-                    <TouchableOpacity onPress={() => setRemoveImage(true)}>
-                      <Text style={styles.removeImageText}>Remove current image</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
                 {formImage && <Image source={{ uri: formImage }} style={styles.previewImage} />}
               </View>
 
               <View style={styles.formGroup}>
                 <Text style={styles.label}>Publish Date</Text>
-                <TextInput style={styles.input} value={formPublishDate} onChangeText={setFormPublishDate} placeholder="YYYY-MM-DDTHH:mm" />
+                <TextInput
+                  style={styles.input}
+                  value={formPublishDate}
+                  onChangeText={setFormPublishDate}
+                  placeholder="YYYY-MM-DDTHH:mm"
+                  placeholderTextColor={COLORS.textTertiary}
+                />
               </View>
 
               <View style={[styles.formGroup, { marginBottom: 0 }]}>
                 <Text style={styles.label}>Status</Text>
                 <View style={styles.pickerWrapper}>
-                  <Picker selectedValue={formStatus} onValueChange={setFormStatus} style={styles.picker} dropdownIconColor="#0b3d78">
+                  <Picker
+                    selectedValue={formStatus}
+                    onValueChange={setFormStatus}
+                    style={styles.picker}
+                    dropdownIconColor={COLORS.primary}
+                  >
                     <Picker.Item label="Draft" value="draft" />
                     <Picker.Item label="Published" value="published" />
                     <Picker.Item label="Archived" value="archived" />
@@ -627,11 +709,25 @@ export default function PublicWebsiteScreen() {
               </View>
 
               <View style={styles.modalActions}>
-                <TouchableOpacity style={[styles.modalButton, styles.cancelButton]} onPress={() => setEditModalVisible(false)} disabled={submitting}>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.cancelButton]}
+                  onPress={() => setEditModalVisible(false)}
+                  disabled={submitting}
+                  activeOpacity={0.7}
+                >
                   <Text style={styles.cancelButtonText}>Cancel</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.modalButton, styles.confirmButton]} onPress={handleUpdate} disabled={submitting}>
-                  {submitting ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.confirmButtonText}>Save Changes</Text>}
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.confirmButton]}
+                  onPress={handleUpdate}
+                  disabled={submitting}
+                  activeOpacity={0.85}
+                >
+                  {submitting ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.confirmButtonText}>Save Changes</Text>
+                  )}
                 </TouchableOpacity>
               </View>
             </ScrollView>
@@ -639,7 +735,7 @@ export default function PublicWebsiteScreen() {
         </View>
       </Modal>
 
-      {/* ===== VIEW MODAL ===== */}
+      {/* View Modal */}
       <Modal
         animationType="slide"
         transparent={true}
@@ -653,16 +749,17 @@ export default function PublicWebsiteScreen() {
                 <Text style={styles.modalTitle}>Announcement Details</Text>
                 {selectedAnnouncement && (
                   <View style={styles.viewStatusRow}>
-                    <View style={[styles.statusBadge, { backgroundColor: statusColor(selectedAnnouncement.status) + '20' }]}>
+                    <View style={[styles.statusBadge, { backgroundColor: statusColor(selectedAnnouncement.status) + '1A' }]}>
+                      <View style={[styles.statusBadgeDot, { backgroundColor: statusColor(selectedAnnouncement.status) }]} />
                       <Text style={[styles.statusText, { color: statusColor(selectedAnnouncement.status) }]}>
-                        {getStatusLabel(selectedAnnouncement.status)}
+                        {getStatusLabel(selectedAnnouncement.status).toUpperCase()}
                       </Text>
                     </View>
                   </View>
                 )}
               </View>
-              <TouchableOpacity onPress={() => setViewModalVisible(false)}>
-                <Text style={styles.modalClose}>✕</Text>
+              <TouchableOpacity onPress={() => setViewModalVisible(false)} style={styles.modalCloseButton}>
+                <Ionicons name="close" size={18} color={COLORS.textSecondary} />
               </TouchableOpacity>
             </View>
 
@@ -673,13 +770,27 @@ export default function PublicWebsiteScreen() {
                   <Image source={{ uri: selectedAnnouncement.image_path }} style={styles.viewImage} />
                 )}
                 <View style={styles.viewMeta}>
-                  <Text style={styles.viewMetaItem}><Text style={styles.viewMetaLabel}>Type:</Text> {getTypeLabel(selectedAnnouncement.announcement_type)}</Text>
-                  <Text style={styles.viewMetaItem}><Text style={styles.viewMetaLabel}>Publish Date:</Text> {formatDate(selectedAnnouncement.publish_date)}</Text>
-                  <Text style={styles.viewMetaItem}><Text style={styles.viewMetaLabel}>Created By:</Text> {selectedAnnouncement.created_by_name || 'Not recorded'}</Text>
+                  <View style={styles.viewMetaRow}>
+                    <Text style={styles.viewMetaLabel}>TYPE</Text>
+                    <Text style={styles.viewMetaValue}>{getTypeLabel(selectedAnnouncement.announcement_type)}</Text>
+                  </View>
+                  <View style={styles.viewMetaRow}>
+                    <Text style={styles.viewMetaLabel}>PUBLISH DATE</Text>
+                    <Text style={styles.viewMetaValue}>{formatDate(selectedAnnouncement.publish_date)}</Text>
+                  </View>
+                  <View style={styles.viewMetaRow}>
+                    <Text style={styles.viewMetaLabel}>CREATED BY</Text>
+                    <Text style={styles.viewMetaValue}>{selectedAnnouncement.created_by_name || 'Not recorded'}</Text>
+                  </View>
                 </View>
+                <View style={styles.panelDivider} />
                 <Text style={styles.viewContent}>{selectedAnnouncement.content}</Text>
                 <View style={styles.modalActions}>
-                  <TouchableOpacity style={[styles.modalButton, styles.cancelButton]} onPress={() => setViewModalVisible(false)}>
+                  <TouchableOpacity
+                    style={[styles.modalButton, styles.cancelButton]}
+                    onPress={() => setViewModalVisible(false)}
+                    activeOpacity={0.7}
+                  >
                     <Text style={styles.cancelButtonText}>Close</Text>
                   </TouchableOpacity>
                 </View>
@@ -694,212 +805,138 @@ export default function PublicWebsiteScreen() {
 
 // ========== STYLES ==========
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#f8fafc' },
-  container: { flex: 1, padding: 16 },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f8fafc' },
-  loadingText: { marginTop: 12, fontSize: 16, color: '#1e293b' },
-  header: { marginBottom: 16 },
-  pageTitle: { fontSize: 24, fontWeight: '700', color: '#0b3d78', marginBottom: 4 },
-  pageSub: { fontSize: 14, color: '#64748b' },
+  safeArea: { flex: 1, backgroundColor: COLORS.bg },
+  container: { flex: 1 },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.bg },
+  loadingText: { marginTop: 14, fontSize: 12, fontWeight: '700', color: COLORS.textSecondary, letterSpacing: 1, fontFamily: mono },
+  scrollContent: { paddingHorizontal: 20, paddingTop: 18, paddingBottom: 20 },
 
-  statsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    marginBottom: 16,
+  heroCard: {
+    backgroundColor: COLORS.header, borderRadius: 22, padding: 20, marginBottom: 16,
+    ...softShadow, shadowOpacity: 0.18,
   },
+  brandRow: { flexDirection: 'row', alignItems: 'center' },
+  brandBadge: {
+    width: 32, height: 32, borderRadius: 10, backgroundColor: COLORS.headerAccent,
+    justifyContent: 'center', alignItems: 'center', marginRight: 10,
+  },
+  brandName: { fontSize: 16, fontWeight: '800', color: '#FFFFFF', letterSpacing: 1 },
+  brandSubtitle: { fontSize: 11, color: '#94A3B8', marginTop: 2, maxWidth: 260 },
+
+  statsRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 4 },
   statCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 14,
-    width: '48%',
-    borderLeftWidth: 4,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 1,
+    backgroundColor: COLORS.surface, borderRadius: 16, padding: 14, width: '48%',
+    marginBottom: 12, borderWidth: 1, borderColor: COLORS.border, ...softShadow,
   },
-  statLabel: { fontSize: 12, color: '#64748b', marginBottom: 2 },
-  statValue: { fontSize: 20, fontWeight: '700' },
+  statAccentDot: { width: 8, height: 8, borderRadius: 4, marginBottom: 8 },
+  statLabel: { fontSize: 10, fontWeight: '700', color: COLORS.textTertiary, letterSpacing: 0.6, marginBottom: 4 },
+  statValue: { fontSize: 20, fontWeight: '700', color: COLORS.textPrimary, fontFamily: mono },
 
-  sectionCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+  sectionLabel: { fontSize: 11, fontWeight: '700', color: COLORS.textSecondary, letterSpacing: 1, marginBottom: 12, marginTop: 4 },
+  panel: {
+    backgroundColor: COLORS.surface, borderRadius: 18, padding: 18, marginBottom: 20,
+    borderWidth: 1, borderColor: COLORS.border, ...softShadow,
   },
-  sectionHeader: { marginBottom: 12 },
-  sectionTitle: { fontSize: 16, fontWeight: '600', color: '#0b3d78' },
-  sectionSub: { fontSize: 12, color: '#64748b' },
+  panelSub: { fontSize: 12, color: COLORS.textTertiary, marginBottom: 16, lineHeight: 17 },
+  panelDivider: { height: 1, backgroundColor: COLORS.border, marginVertical: 14 },
 
-  filterContainer: { marginBottom: 12 },
-  searchInput: {
-    backgroundColor: '#f8fafc',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    padding: 10,
-    fontSize: 14,
-    height: 44,
-    marginBottom: 8,
+  filterContainer: { marginBottom: 4 },
+  searchWrap: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.bg, borderRadius: 12,
+    borderWidth: 1, borderColor: COLORS.border, paddingHorizontal: 12, height: 46, marginBottom: 8,
   },
+  searchInput: { flex: 1, fontSize: 14, color: COLORS.textPrimary, height: 46 },
   pickerWrapper: {
-    backgroundColor: '#f8fafc',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    height: 44,
-    justifyContent: 'center',
-    marginBottom: 8,
+    backgroundColor: COLORS.bg, borderRadius: 12, borderWidth: 1, borderColor: COLORS.border,
+    height: 46, justifyContent: 'center', marginBottom: 8, overflow: 'hidden',
   },
-  picker: { height: 44, width: '100%' },
+  picker: { height: 46, width: '100%', color: COLORS.textPrimary },
   clearButton: {
-    backgroundColor: '#f1f5f9',
-    paddingVertical: 8,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginBottom: 8,
+    backgroundColor: COLORS.bg, borderWidth: 1, borderColor: COLORS.border,
+    paddingVertical: 10, borderRadius: 12, alignItems: 'center', marginBottom: 4,
   },
-  clearText: { fontSize: 14, color: '#0b3d78', fontWeight: '500' },
+  clearText: { fontSize: 13, color: COLORS.primary, fontWeight: '700' },
 
   addButton: {
-    backgroundColor: '#2563eb',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginBottom: 12,
+    flexDirection: 'row', backgroundColor: COLORS.primary, paddingVertical: 13, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 6, ...softShadow, shadowOpacity: 0.15,
   },
-  addButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  addButtonText: { color: '#fff', fontSize: 14, fontWeight: '700', marginLeft: 6 },
 
-  emptyState: { padding: 20, alignItems: 'center' },
-  emptyText: { fontSize: 14, color: '#94a3b8', textAlign: 'center' },
+  emptyState: { flexDirection: 'row', alignItems: 'center', paddingVertical: 20, gap: 8, justifyContent: 'center' },
+  emptyText: { fontSize: 13, color: COLORS.textSecondary, textAlign: 'center' },
 
   announcementItem: {
-    backgroundColor: '#f8fafc',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
+    backgroundColor: COLORS.bg, borderRadius: 14, padding: 14,
+    borderWidth: 1, borderColor: COLORS.border,
   },
   announcementHeader: { marginBottom: 6 },
   announcementTitleContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 2,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4,
   },
-  announcementTitle: { fontSize: 16, fontWeight: '600', color: '#0b3d78', flex: 1 },
-  statusBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12, marginLeft: 6 },
-  statusText: { fontSize: 11, fontWeight: '600' },
-  announcementType: { fontSize: 13, color: '#64748b' },
-  announcementContent: { fontSize: 14, color: '#1e293b', marginBottom: 6 },
-  announcementFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
+  announcementTitle: { fontSize: 15, fontWeight: '700', color: COLORS.textPrimary, flex: 1, marginRight: 8 },
+  statusBadge: {
+    flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8,
   },
-  announcementDate: { fontSize: 12, color: '#94a3b8' },
-  announcementAuthor: { fontSize: 12, color: '#94a3b8' },
+  statusBadgeDot: { width: 5, height: 5, borderRadius: 2.5, marginRight: 5 },
+  statusText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.4, fontFamily: mono },
+  announcementType: { fontSize: 12, color: COLORS.textTertiary },
+  announcementContent: { fontSize: 13, color: COLORS.textSecondary, lineHeight: 18, marginBottom: 8 },
+  announcementFooter: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
+  announcementDate: { fontSize: 11, color: COLORS.textTertiary, fontFamily: mono },
+  announcementAuthor: { fontSize: 10, color: COLORS.textTertiary, letterSpacing: 0.3 },
 
-  actionRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
+  actionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   actionButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-    backgroundColor: '#f1f5f9',
-    marginRight: 4,
-    marginBottom: 4,
+    flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 6,
+    borderRadius: 8, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
   },
-  actionText: { fontSize: 12, fontWeight: '500', color: '#0b3d78' },
-  publishButton: { backgroundColor: '#d1fae5' },
-  draftButton: { backgroundColor: '#fef3c7' },
-  archiveButton: { backgroundColor: '#f1f5f9' },
+  actionText: { fontSize: 11, fontWeight: '700', color: COLORS.textPrimary, marginLeft: 4 },
 
-  // Modal styles
   modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    flex: 1, backgroundColor: 'rgba(15,23,42,0.6)', justifyContent: 'center', alignItems: 'center',
   },
   modalContent: {
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    width: '92%',
-    maxHeight: '85%',
+    backgroundColor: COLORS.surface, borderRadius: 22, width: '92%', maxHeight: '85%',
   },
   modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
+    padding: 20, borderBottomWidth: 1, borderBottomColor: COLORS.border,
   },
-  modalTitle: { fontSize: 18, fontWeight: '700', color: '#0b3d78' },
-  modalSub: { fontSize: 13, color: '#64748b' },
-  modalClose: { fontSize: 22, color: '#94a3b8', padding: 4 },
+  modalTitle: { fontSize: 17, fontWeight: '700', color: COLORS.textPrimary },
+  modalSub: { fontSize: 12, color: COLORS.textTertiary, marginTop: 2, maxWidth: 240 },
+  modalCloseButton: {
+    width: 28, height: 28, borderRadius: 14, backgroundColor: COLORS.bg,
+    justifyContent: 'center', alignItems: 'center',
+  },
   modalBody: { padding: 20 },
 
   formGroup: { marginBottom: 14 },
-  label: { fontSize: 14, fontWeight: '500', color: '#0b3d78', marginBottom: 4 },
+  label: { fontSize: 12, fontWeight: '700', color: COLORS.textSecondary, letterSpacing: 0.3, marginBottom: 6 },
   input: {
-    backgroundColor: '#f8fafc',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    padding: 10,
-    fontSize: 14,
-    height: 44,
+    backgroundColor: COLORS.bg, borderRadius: 12, borderWidth: 1, borderColor: COLORS.border,
+    paddingHorizontal: 12, fontSize: 14, height: 46, color: COLORS.textPrimary,
   },
   imagePickerButton: {
-    backgroundColor: '#f1f5f9',
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: 'center',
+    flexDirection: 'row', backgroundColor: COLORS.bg, borderWidth: 1, borderColor: COLORS.border,
+    paddingVertical: 12, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
   },
-  imagePickerText: { fontSize: 14, color: '#0b3d78' },
-  previewImage: { width: '100%', height: 150, borderRadius: 8, marginTop: 8 },
-  imageInfo: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
-  imageInfoText: { fontSize: 13, color: '#64748b' },
-  removeImageText: { fontSize: 13, color: '#dc2626', fontWeight: '500' },
+  imagePickerText: { fontSize: 13, color: COLORS.primary, fontWeight: '600' },
+  previewImage: { width: '100%', height: 150, borderRadius: 12, marginTop: 8 },
 
-  modalActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 10,
-    marginTop: 16,
-  },
-  modalButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    minWidth: 100,
-    alignItems: 'center',
-  },
-  cancelButton: { backgroundColor: '#f1f5f9' },
-  confirmButton: { backgroundColor: '#2563eb' },
-  cancelButtonText: { fontSize: 14, fontWeight: '600', color: '#0b3d78' },
-  confirmButtonText: { fontSize: 14, fontWeight: '600', color: '#fff' },
+  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 16 },
+  modalButton: { paddingVertical: 12, paddingHorizontal: 20, borderRadius: 12, minWidth: 100, alignItems: 'center' },
+  cancelButton: { backgroundColor: COLORS.bg, borderWidth: 1, borderColor: COLORS.border },
+  confirmButton: { backgroundColor: COLORS.primary, ...softShadow, shadowOpacity: 0.15 },
+  cancelButtonText: { fontSize: 13, fontWeight: '700', color: COLORS.textSecondary },
+  confirmButtonText: { fontSize: 13, fontWeight: '700', color: '#fff' },
 
-  // View modal specific
-  viewStatusRow: { marginTop: 4 },
-  viewTitle: { fontSize: 20, fontWeight: '700', color: '#0b3d78', marginBottom: 10 },
-  viewImage: { width: '100%', height: 200, borderRadius: 8, marginBottom: 12 },
-  viewMeta: { marginBottom: 12 },
-  viewMetaItem: { fontSize: 14, color: '#1e293b', marginBottom: 4 },
-  viewMetaLabel: { fontWeight: '600', color: '#0b3d78' },
-  viewContent: { fontSize: 15, color: '#1e293b', lineHeight: 22 },
+  viewStatusRow: { marginTop: 6 },
+  viewTitle: { fontSize: 19, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 12 },
+  viewImage: { width: '100%', height: 200, borderRadius: 14, marginBottom: 14 },
+  viewMeta: { marginBottom: 4 },
+  viewMetaRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 },
+  viewMetaLabel: { fontSize: 10, fontWeight: '700', color: COLORS.textTertiary, letterSpacing: 0.5 },
+  viewMetaValue: { fontSize: 13, fontWeight: '600', color: COLORS.textPrimary, fontFamily: mono },
+  viewContent: { fontSize: 14, color: COLORS.textSecondary, lineHeight: 21 },
 });

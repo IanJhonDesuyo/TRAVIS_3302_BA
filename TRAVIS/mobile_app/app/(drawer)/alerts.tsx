@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   SafeAreaView,
   ScrollView,
@@ -11,12 +11,14 @@ import {
   RefreshControl,
   TouchableOpacity,
   Platform,
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
+import api from '../../api/axiosConfig';
 
 // ========== COLOR TOKENS ==========
-// Same tokens as the rest of TRAVIS (light hybrid theme) for consistency.
 const COLORS = {
   bg: '#F8FAFC',
   header: '#0F172A',
@@ -35,60 +37,16 @@ const COLORS = {
 const mono = Platform.select({ ios: 'Courier', android: 'monospace', default: 'monospace' });
 
 // ========== TYPES ==========
-interface Alert {
-  id: number;
-  type: string;
+interface AlertItem {
+  alert_id: number;
+  alert_type: string;
+  severity: string;
   message: string;
-  severity: 'critical' | 'warning' | 'info' | 'resolved';
   status: string;
-  generatedAt: string;
+  generated_at: string;
 }
 
 type SeverityFilter = '' | 'critical' | 'warning' | 'info' | 'resolved';
-
-// ========== MOCK DATA (replace with API calls) ==========
-const mockAlerts: Alert[] = [
-  {
-    id: 1,
-    type: 'congestion',
-    message: 'Heavy traffic at EDSA-Ortigas',
-    severity: 'critical',
-    status: 'active',
-    generatedAt: '2026-07-16 11:45:00',
-  },
-  {
-    id: 2,
-    type: 'collision',
-    message: 'Potential collision detected near Taft Ave',
-    severity: 'warning',
-    status: 'active',
-    generatedAt: '2026-07-16 10:30:00',
-  },
-  {
-    id: 3,
-    type: 'officer',
-    message: 'Officer presence needed at Roxas Blvd',
-    severity: 'info',
-    status: 'acknowledged',
-    generatedAt: '2026-07-16 09:15:00',
-  },
-  {
-    id: 4,
-    type: 'weather',
-    message: 'Heavy rain expected, reduce speed',
-    severity: 'warning',
-    status: 'resolved',
-    generatedAt: '2026-07-16 08:00:00',
-  },
-  {
-    id: 5,
-    type: 'system',
-    message: 'Camera offline: Main Intersection',
-    severity: 'critical',
-    status: 'active',
-    generatedAt: '2026-07-16 07:20:00',
-  },
-];
 
 // ========== HELPERS ==========
 const severityColor = (severity: string): string => {
@@ -132,40 +90,73 @@ const SEVERITY_FILTERS: { label: string; value: SeverityFilter }[] = [
 export default function AlertsScreen() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('');
 
-  // Mock summary counts
-  const counts = {
-    critical: 2,
-    warning: 2,
-    info: 1,
-    resolved: 1,
-  };
-
-  useEffect(() => {
-    fetchAlerts();
-  }, []);
-
+  // ===== FETCH ALERTS =====
   const fetchAlerts = async () => {
-    // Replace with actual API call: fetch('/api/alerts')
-    await new Promise(resolve => setTimeout(resolve, 800));
-    setAlerts(mockAlerts);
-    setLoading(false);
-    setRefreshing(false);
+    try {
+      setLoading(true);
+      const params: any = { limit: 100 };
+      if (severityFilter === 'resolved') {
+        params.status = 'resolved';
+      } else {
+        params.status = 'active,acknowledged';
+      }
+      const response = await api.get('get_alerts.php', { params });
+      if (response.data.success) {
+        setAlerts(response.data.data);
+      }
+    } catch (error) {
+      console.error('Fetch alerts error:', error);
+      Alert.alert('Error', 'Failed to load alerts.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   };
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchAlerts();
+    }, [severityFilter])
+  );
 
   const onRefresh = () => {
     setRefreshing(true);
     fetchAlerts();
   };
 
+  // ===== ACKNOWLEDGE ALERT =====
+  const acknowledgeAlert = async (alertId: number) => {
+    try {
+      const response = await api.post('acknowledge_alert.php', { alert_id: alertId });
+      if (response.data.success) {
+        Alert.alert('Success', 'Alert acknowledged.');
+        fetchAlerts();
+      } else {
+        Alert.alert('Error', response.data.error || 'Failed to acknowledge.');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Network error.');
+    }
+  };
+
+  // ===== FILTER =====
   const filteredAlerts = severityFilter
     ? alerts.filter(a => a.severity === severityFilter)
     : alerts;
 
-  // ---------- RENDER HELPERS ----------
+  // ===== COUNTS =====
+  const counts = {
+    critical: alerts.filter(a => a.severity === 'critical').length,
+    warning: alerts.filter(a => a.severity === 'warning').length,
+    info: alerts.filter(a => a.severity === 'info').length,
+    resolved: alerts.filter(a => a.status === 'resolved').length,
+  };
+
+  // ========== RENDER HELPERS ==========
   const renderSummaryCell = (icon: React.ReactNode, label: string, value: number, isLast: boolean) => (
     <View style={[styles.summaryCell, !isLast && styles.summaryCellDivider]}>
       {icon}
@@ -174,12 +165,12 @@ export default function AlertsScreen() {
     </View>
   );
 
-  const renderAlertItem = ({ item }: { item: Alert }) => (
+  const renderAlertItem = ({ item }: { item: AlertItem }) => (
     <View style={[styles.alertItem, { backgroundColor: severityColor(item.severity) + '0D', borderColor: severityColor(item.severity) + '33' }]}>
       <View style={styles.alertRow}>
         <View style={styles.alertTypeRow}>
-          <Ionicons name={alertTypeIcon(item.type)} size={15} color={severityColor(item.severity)} />
-          <Text style={styles.alertType}>{item.type.toUpperCase()}</Text>
+          <Ionicons name={alertTypeIcon(item.alert_type)} size={15} color={severityColor(item.severity)} />
+          <Text style={styles.alertType}>{item.alert_type.toUpperCase()}</Text>
         </View>
         <View style={[styles.severityBadge, { backgroundColor: severityColor(item.severity) }]}>
           <Text style={styles.severityText}>{item.severity.toUpperCase()}</Text>
@@ -192,8 +183,14 @@ export default function AlertsScreen() {
         <View style={[styles.statusBadge, { backgroundColor: statusColor(item.status) + '1A' }]}>
           <Text style={[styles.statusText, { color: statusColor(item.status) }]}>{item.status}</Text>
         </View>
-        <Text style={styles.alertTime}>{item.generatedAt}</Text>
+        <Text style={styles.alertTime}>{item.generated_at}</Text>
       </View>
+
+      {item.status === 'active' && (
+        <TouchableOpacity style={styles.acknowledgeButton} onPress={() => acknowledgeAlert(item.alert_id)}>
+          <Text style={styles.acknowledgeText}>Acknowledge</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 
@@ -269,7 +266,7 @@ export default function AlertsScreen() {
             <FlatList
               data={filteredAlerts}
               renderItem={renderAlertItem}
-              keyExtractor={item => item.id.toString()}
+              keyExtractor={item => item.alert_id.toString()}
               scrollEnabled={false}
               ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
             />
@@ -300,7 +297,6 @@ const styles = StyleSheet.create({
   pageTitle: { fontSize: 26, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 6, letterSpacing: -0.3 },
   pageSub: { fontSize: 13, color: COLORS.textSecondary, lineHeight: 18 },
 
-  // Summary panel
   summaryPanel: {
     flexDirection: 'row', backgroundColor: COLORS.surface, borderRadius: 18,
     borderWidth: 1, borderColor: COLORS.border, paddingVertical: 16, marginBottom: 18, ...softShadow,
@@ -310,7 +306,6 @@ const styles = StyleSheet.create({
   summaryValue: { fontSize: 18, fontWeight: '700', color: COLORS.textPrimary, fontFamily: mono, marginTop: 6, marginBottom: 3 },
   summaryLabel: { fontSize: 10, color: COLORS.textTertiary, textAlign: 'center' },
 
-  // Section card
   sectionCard: {
     backgroundColor: COLORS.surface, borderRadius: 18, padding: 16,
     borderWidth: 1, borderColor: COLORS.border, ...softShadow,
@@ -324,7 +319,6 @@ const styles = StyleSheet.create({
   onlineDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: COLORS.success, marginRight: 6 },
   onlineText: { fontSize: 11, fontWeight: '700', color: COLORS.success },
 
-  // Filter chips
   filterRow: { marginBottom: 14 },
   filterChip: {
     backgroundColor: COLORS.bg, borderWidth: 1, borderColor: COLORS.border,
@@ -334,11 +328,9 @@ const styles = StyleSheet.create({
   filterChipText: { fontSize: 12, fontWeight: '600', color: COLORS.textSecondary },
   filterChipTextActive: { color: '#FFFFFF' },
 
-  // Empty state
   emptyState: { alignItems: 'center', paddingVertical: 30 },
   emptyText: { fontSize: 13, color: COLORS.textSecondary, textAlign: 'center', marginTop: 8, lineHeight: 18, paddingHorizontal: 12 },
 
-  // Alert card — tinted background per severity (same pattern as the dashboard's Alert Feed)
   alertItem: { borderRadius: 14, borderWidth: 1, padding: 14 },
   alertRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   alertTypeRow: { flexDirection: 'row', alignItems: 'center' },
@@ -350,4 +342,7 @@ const styles = StyleSheet.create({
   statusBadge: { paddingHorizontal: 9, paddingVertical: 3, borderRadius: 10 },
   statusText: { fontSize: 11, fontWeight: '600', textTransform: 'capitalize' },
   alertTime: { fontSize: 11, color: COLORS.textTertiary, fontFamily: mono },
+
+  acknowledgeButton: { marginTop: 10, backgroundColor: COLORS.primary, paddingVertical: 6, borderRadius: 8, alignItems: 'center' },
+  acknowledgeText: { color: '#fff', fontWeight: '700', fontSize: 12 },
 });

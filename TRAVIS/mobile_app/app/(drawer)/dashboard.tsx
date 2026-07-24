@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   SafeAreaView,
   ScrollView,
@@ -12,16 +12,15 @@ import {
   Platform,
   RefreshControl,
   useWindowDimensions,
+  Image,
 } from 'react-native';
 import { LineChart, BarChart } from 'react-native-chart-kit';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import Svg, { Circle } from 'react-native-svg';
+import { useFocusEffect } from '@react-navigation/native';
+import api from '../../api/axiosConfig';
 
 // ========== COLOR TOKENS ==========
-// Hybrid theme: dark navy hero/header, light body, white cards.
-// Chosen for outdoor readability (traffic enforcers / LGU field use) while
-// keeping the "command center" feel via the hero, monospace data, and status
-// indicators. See: Power BI, Apple Health, Stripe Dashboard, Azure Portal.
 const COLORS = {
   bg: '#F8FAFC',
   header: '#0F172A',
@@ -38,101 +37,19 @@ const COLORS = {
   neutral: '#94A3B8',
 };
 
-// ========== DATA & HELPERS (unchanged) ==========
-interface StatData {
-  vehiclesToday: number; inboundToday: number; outboundToday: number;
-  violationsToday: number; paidViolations: number; unpaidViolations: number;
-  collectedToday: number; completedPayments: number; activeAlerts: number; alertsToday: number;
-}
-interface MonitoringData {
-  cameraName: string; location: string; vehicleCount: number; inbound: number; outbound: number;
-  congestion: string; officerPresence: string; potentialCollision: string; recordedAt: string; cameraStatus: string;
-}
-interface HotspotLocation { location: string; total: number; }
-interface Hotspots { high: HotspotLocation[]; medium: HotspotLocation[]; low: HotspotLocation[]; }
-interface Alert { id: number; type: string; severity: string; message: string; time: string; }
-interface Prediction { riskLevel: string; confidence: number; month: string; recommendations: string[]; }
-interface Zone { name: string; status: string; vehicles: number; congestion: string; }
-
-const mockStats: StatData = {
-  vehiclesToday: 1243, inboundToday: 720, outboundToday: 523,
-  violationsToday: 87, paidViolations: 34, unpaidViolations: 53,
-  collectedToday: 124500, completedPayments: 42, activeAlerts: 5, alertsToday: 3,
-};
-const mockPendingViolations = 142;
-const mockCongestionEvents = 18;
-const mockCollisionEvents = 2;
-const mockOnlineCameras = 12;
-const mockTotalCameras = 20;
-const mockVehicleDetectionRate = 98;
-const mockSystemHealth = 99.8;
-
-const mockLatestMonitoring: MonitoringData = {
-  cameraName: 'Main Intersection', location: 'EDSA Cor. Ayala',
-  vehicleCount: 34, inbound: 12, outbound: 22, congestion: 'Moderate',
-  officerPresence: 'Present', potentialCollision: 'Low',
-  recordedAt: '2026-07-16 12:12:18', cameraStatus: 'Online',
-};
-
-const mockMonthlyTrend = {
-  labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
-  data: [65, 72, 88, 94, 82, 110, 124, 0, 0, 0, 0, 0],
-};
-
-const mockTopViolations = {
-  labels: ['Speeding', 'Illegal Parking', 'Disregarded Signal', 'Overloading', 'No Helmet', 'Other'],
-  data: [45, 38, 27, 19, 12, 8],
-};
-
-const mockHotspots: Hotspots = {
-  high: [
-    { location: 'EDSA - Ortigas', total: 156 },
-    { location: 'C5 - Tiendesitas', total: 132 },
-    { location: 'Commonwealth - Fairview', total: 98 },
-  ],
-  medium: [
-    { location: 'Taft - Vito Cruz', total: 67 },
-    { location: 'Roxas Blvd - MOA', total: 55 },
-  ],
-  low: [
-    { location: 'Macapagal - Seaside', total: 23 },
-    { location: 'BGC - 32nd St', total: 18 },
-  ],
-};
-
-const mockRecentAlerts: Alert[] = [
-  { id: 1, type: 'Congestion', severity: 'High', message: 'Heavy traffic at EDSA-Ortigas', time: '11:45 AM' },
-  { id: 2, type: 'Collision', severity: 'Medium', message: 'Potential collision detected near Taft Ave', time: '10:30 AM' },
-  { id: 3, type: 'Officer', severity: 'Low', message: 'Officer presence needed at Roxas Blvd', time: '09:15 AM' },
-  { id: 4, type: 'Weather', severity: 'Medium', message: 'Heavy rain expected, reduce speed', time: '08:00 AM' },
-];
-
-const mockZones: Zone[] = [
-  { name: 'EDSA - Ortigas', status: 'Online', vehicles: 156, congestion: 'High' },
-  { name: 'C5 - Tiendesitas', status: 'Online', vehicles: 132, congestion: 'High' },
-  { name: 'Commonwealth - Fairview', status: 'Online', vehicles: 98, congestion: 'Medium' },
-  { name: 'Taft - Vito Cruz', status: 'Online', vehicles: 67, congestion: 'Medium' },
-  { name: 'Roxas Blvd - MOA', status: 'Offline', vehicles: 0, congestion: 'None' },
-  { name: 'BGC - 32nd St', status: 'Online', vehicles: 18, congestion: 'Low' },
-];
-
+// ========== HELPERS ==========
 const formatCurrency = (amount: number): string => `\u20b1${amount.toLocaleString()}`;
-
 const statusColor = (status: string): string => {
   const s = status.toLowerCase();
-  if (s === 'online' || s === 'paid' || s === 'low') return COLORS.success;
-  if (s === 'high' || s === 'critical') return COLORS.danger;
-  if (s === 'medium' || s === 'moderate' || s === 'pending') return COLORS.warning;
-  if (s === 'offline') return COLORS.neutral;
-  if (s === 'none') return COLORS.textTertiary;
+  if (s === 'online' || s === 'paid' || s === 'low' || s === 'active' || s === 'published') return COLORS.success;
+  if (s === 'high' || s === 'critical' || s === 'danger' || s === 'severe') return COLORS.danger;
+  if (s === 'medium' || s === 'moderate' || s === 'pending' || s === 'warning' || s === 'draft') return COLORS.warning;
+  if (s === 'offline' || s === 'archived' || s === 'none') return COLORS.neutral;
   return COLORS.textTertiary;
 };
-
 const mono = Platform.select({ ios: 'Courier', android: 'monospace', default: 'monospace' });
 
-// ========== SMALL REUSABLE PIECES ==========
-
-// Pure-JS count-up tween — no extra dependency, runs once `active` flips true.
+// ========== COUNT-UP ANIMATION ==========
 function useCountUp(target: number, active: boolean, duration = 900) {
   const [value, setValue] = useState(0);
   useEffect(() => {
@@ -151,10 +68,8 @@ function useCountUp(target: number, active: boolean, duration = 900) {
   return value;
 }
 
-// Circular confidence ring, built on react-native-svg (already a transitive
-// dependency of react-native-chart-kit, so no new package should be needed).
-function ProgressRing({ percentage, size = 108, strokeWidth = 10, color, trackColor }:
-  { percentage: number; size?: number; strokeWidth?: number; color: string; trackColor: string }) {
+// ========== PROGRESS RING ==========
+function ProgressRing({ percentage, size = 108, strokeWidth = 10, color, trackColor }: any) {
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const dashOffset = circumference - (Math.min(percentage, 100) / 100) * circumference;
@@ -174,7 +89,7 @@ function ProgressRing({ percentage, size = 108, strokeWidth = 10, color, trackCo
   );
 }
 
-// ========== SCREEN COMPONENT ==========
+// ========== MAIN SCREEN ==========
 export default function DashboardScreen() {
   const { width } = useWindowDimensions();
   const chartWidth = Math.max(width - 40, 200);
@@ -187,19 +102,167 @@ export default function DashboardScreen() {
   const [dateRange, setDateRange] = useState<'Today' | 'Week' | 'Month' | 'Year'>('Month');
   const [now, setNow] = useState(new Date());
 
+  // ===== REAL DATA STATES =====
+  const [stats, setStats] = useState({
+    vehiclesToday: 0,
+    violationsToday: 0,
+    activeAlerts: 0,
+    collectedToday: 0,
+    pendingViolations: 0,
+    onlineCameras: 0,
+    totalCameras: 0,
+  });
+  const [recentAlerts, setRecentAlerts] = useState<any[]>([]);
+
+  // Chart data
+  const [monthlyTrend, setMonthlyTrend] = useState<{ labels: string[]; data: number[] }>({
+    labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+    data: [],
+  });
+  const [topViolations, setTopViolations] = useState<{ labels: string[]; data: number[] }>({
+    labels: [],
+    data: [],
+  });
+
+  // Hotspots
+  const [hotspots, setHotspots] = useState<{ high: any[]; medium: any[]; low: any[] }>({
+    high: [],
+    medium: [],
+    low: [],
+  });
+
+  // Zones
+  const [zones, setZones] = useState<any[]>([]);
+
+  // ===== DYNAMIC AI RISK ASSESSMENT =====
+  const [aiPrediction, setAiPrediction] = useState({
+    riskLevel: 'Low',
+    confidence: 0,
+    month: '',
+    recommendations: ['Loading risk assessment...'],
+  });
+
+  // ===== LIVE CAMERA FEED =====
+  const [cameraFeed, setCameraFeed] = useState<any>(null);
+  const [cameraLoading, setCameraLoading] = useState(false);
+  const [cameraSnapshot, setCameraSnapshot] = useState<string | null>(null);
+
   const pulse = useRef(new Animated.Value(1)).current;
 
-  const prediction: Prediction = {
-    riskLevel: 'High', confidence: 78, month: 'July 2026',
-    recommendations: [
-      'Deploy additional enforcers to EDSA',
-      'Monitor inbound traffic at Ayala',
-      'Activate congestion alert system',
-    ],
+  // ========== FETCH ALL DATA ==========
+  const fetchDashboardData = async () => {
+    try {
+      // 1. Stats
+      const statsRes = await api.get('get_dashboard_stats.php');
+      if (statsRes.data.success) {
+        const d = statsRes.data.data;
+        setStats({
+          vehiclesToday: d.vehicles_today || 0,
+          violationsToday: d.violations_today || 0,
+          activeAlerts: d.active_alerts || 0,
+          collectedToday: d.collected_today || 0,
+          pendingViolations: d.pending_violations || 0,
+          onlineCameras: d.online_cameras || 0,
+          totalCameras: d.total_cameras || 0,
+        });
+      }
+
+      // 2. Alerts
+      const alertsRes = await api.get('get_alerts.php', { params: { limit: 5 } });
+      if (alertsRes.data.success) {
+        setRecentAlerts(alertsRes.data.data);
+      }
+
+      // 3. Monthly trends
+      const trendRes = await api.get('get_monthly_trends.php');
+      if (trendRes.data.success) {
+        setMonthlyTrend({
+          labels: trendRes.data.labels,
+          data: trendRes.data.data,
+        });
+      }
+
+      // 4. Top violations
+      const topRes = await api.get('get_top_violations.php');
+      if (topRes.data.success) {
+        setTopViolations({
+          labels: topRes.data.labels,
+          data: topRes.data.data,
+        });
+      }
+
+      // 5. Hotspots
+      const hotspotRes = await api.get('get_hotspots.php');
+      if (hotspotRes.data.success) {
+        setHotspots({
+          high: hotspotRes.data.high || [],
+          medium: hotspotRes.data.medium || [],
+          low: hotspotRes.data.low || [],
+        });
+      }
+
+      // 6. Zones
+      const zonesRes = await api.get('get_zones.php');
+      if (zonesRes.data.success) {
+        setZones(zonesRes.data.data || []);
+      }
+
+      // 7. AI Risk Assessment
+      const aiRes = await api.get('get_risk_assessment.php');
+      if (aiRes.data.success) {
+        setAiPrediction({
+          riskLevel: aiRes.data.riskLevel,
+          confidence: aiRes.data.confidence,
+          month: aiRes.data.month,
+          recommendations: aiRes.data.recommendations,
+        });
+      }
+
+      // 8. Camera Feed
+      await fetchCameraFeed();
+
+    } catch (error) {
+      console.error('Dashboard fetch error:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   };
 
+  const fetchCameraFeed = async () => {
+    try {
+      setCameraLoading(true);
+      const res = await api.get('get_camera_feed.php');
+      if (res.data.success) {
+        setCameraFeed(res.data.data);
+        // Kung may snapshot URL, i-set ito (optional)
+        if (res.data.data.snapshot_url) {
+          setCameraSnapshot(res.data.data.snapshot_url);
+        } else {
+          // Kung walang snapshot, gumamit ng placeholder
+          setCameraSnapshot(null);
+        }
+      }
+    } catch (error) {
+      console.error('Camera feed error:', error);
+    } finally {
+      setCameraLoading(false);
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchDashboardData();
+    }, [])
+  );
+
+  const refresh = () => {
+    setRefreshing(true);
+    fetchDashboardData();
+  };
+
+  // ===== EFFECTS =====
   useEffect(() => {
-    setTimeout(() => setLoading(false), 1000);
     const clock = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(clock);
   }, []);
@@ -215,25 +278,21 @@ export default function DashboardScreen() {
     return () => loop.stop();
   }, [pulse]);
 
-  // Both the floating button and pull-to-refresh use the same lightweight
-  // `refreshing` flag — neither should re-trigger the full-screen "loading"
-  // gate, which is reserved for the initial mount only.
-  const refresh = () => { setRefreshing(true); setTimeout(() => setRefreshing(false), 800); };
-
-  const vehiclesCount = useCountUp(mockStats.vehiclesToday, !loading);
-  const violationsCount = useCountUp(mockStats.violationsToday, !loading);
-  const alertsCount = useCountUp(mockStats.activeAlerts, !loading);
-  const revenueCount = useCountUp(mockStats.collectedToday, !loading);
-  const confidenceCount = useCountUp(prediction.confidence, !loading);
+  // ===== COUNT-UP =====
+  const vehiclesCount = useCountUp(stats.vehiclesToday, !loading);
+  const violationsCount = useCountUp(stats.violationsToday, !loading);
+  const alertsCount = useCountUp(stats.activeAlerts, !loading);
+  const revenueCount = useCountUp(stats.collectedToday, !loading);
+  const confidenceCount = useCountUp(aiPrediction.confidence, !loading);
 
   const timeStr = now.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
   const dateStr = now.toLocaleDateString('en-PH', { month: 'long', day: '2-digit', year: 'numeric' });
   const hour = now.getHours();
   const greeting = hour < 12 ? 'Good Morning' : hour < 18 ? 'Good Afternoon' : 'Good Evening';
 
-  const hasHotspots = mockHotspots.high.length + mockHotspots.medium.length + mockHotspots.low.length > 0;
+  const hasHotspots = hotspots.high.length + hotspots.medium.length + hotspots.low.length > 0;
 
-  // ---------- RENDER HELPERS ----------
+  // ========== RENDER HELPERS ==========
   const renderHeroStat = (icon: React.ReactNode, value: string, label: string) => (
     <View style={styles.heroStatItem}>
       {icon}
@@ -259,7 +318,7 @@ export default function DashboardScreen() {
     </TouchableOpacity>
   );
 
-  const renderHotspotRow = (loc: HotspotLocation, color: string, key: number) => (
+  const renderHotspotRow = (loc: any, color: string, key: number) => (
     <View key={key} style={styles.hotspotRowItem}>
       <View style={[styles.hotspotDot, { backgroundColor: color }]} />
       <Text style={styles.hotspotRowName}>{loc.location}</Text>
@@ -267,15 +326,15 @@ export default function DashboardScreen() {
     </View>
   );
 
-  const renderZoneCard = (zone: Zone, idx: number) => (
+  const renderZoneCard = (zone: any, idx: number) => (
     <View key={idx} style={[styles.zoneCard, { width: isTablet ? '31.5%' : '48%' }]}>
       <View style={styles.zoneCardTop}>
         <View style={[styles.zoneStatusDot, { backgroundColor: statusColor(zone.status) }]} />
         <Text style={styles.zoneStatus}>{zone.status.toUpperCase()}</Text>
       </View>
       <Text style={styles.zoneName} numberOfLines={1}>{zone.name}</Text>
-      <Text style={styles.zoneVehicles}>{zone.vehicles} Vehicles</Text>
-      {zone.congestion !== 'None' ? (
+      <Text style={styles.zoneVehicles}>{zone.vehicles || 0} Vehicles</Text>
+      {zone.congestion && zone.congestion !== 'None' ? (
         <View style={[styles.zoneCongestionPill, { backgroundColor: statusColor(zone.congestion) + '1A' }]}>
           <Text style={[styles.zoneCongestionText, { color: statusColor(zone.congestion) }]}>{zone.congestion} Congestion</Text>
         </View>
@@ -305,7 +364,7 @@ export default function DashboardScreen() {
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={COLORS.primary} />}
         >
-          {/* ===== HERO (dark navy — the "header" of the hybrid theme) ===== */}
+          {/* ===== HERO ===== */}
           <View style={styles.heroCard}>
             <View style={styles.heroTopRow}>
               <View style={styles.brandRow}>
@@ -343,9 +402,9 @@ export default function DashboardScreen() {
           {/* Live system stats */}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.statusStrip} contentContainerStyle={{ paddingRight: 4 }}>
             {renderLiveChip('AI ENGINE', 'ONLINE', 'online')}
-            {renderLiveChip('CAMERAS', `${mockOnlineCameras}/${mockTotalCameras}`, 'online')}
-            {renderLiveChip('DETECTION', `${mockVehicleDetectionRate}%`, 'online')}
-            {renderLiveChip('SYSTEM HEALTH', `${mockSystemHealth}%`, 'online')}
+            {renderLiveChip('CAMERAS', `${stats.onlineCameras}/${stats.totalCameras}`, stats.onlineCameras > 0 ? 'online' : 'offline')}
+            {renderLiveChip('DETECTION', '98%', 'online')}
+            {renderLiveChip('SYSTEM HEALTH', '99.8%', 'online')}
           </ScrollView>
 
           {activeTab === 'overview' && (
@@ -360,7 +419,7 @@ export default function DashboardScreen() {
                 {renderQuickAction(<Ionicons name="alert-circle-outline" size={17} color={COLORS.textPrimary} />, 'Alerts')}
               </ScrollView>
 
-              {/* AI Risk Assessment */}
+              {/* AI Risk Assessment - DYNAMIC */}
               <View style={styles.panel}>
                 <View style={styles.panelHeader}>
                   <View style={styles.eyebrowRow}>
@@ -371,15 +430,21 @@ export default function DashboardScreen() {
 
                 <View style={styles.aiReadoutRow}>
                   <View style={styles.ringWrap}>
-                    <ProgressRing percentage={confidenceCount} color={statusColor(prediction.riskLevel)} trackColor={COLORS.border} />
+                    <ProgressRing
+                      percentage={confidenceCount}
+                      color={statusColor(aiPrediction.riskLevel)}
+                      trackColor={COLORS.border}
+                    />
                     <View style={styles.ringCenter}>
                       <Text style={styles.ringPercent}>{confidenceCount}<Text style={styles.ringPercentSign}>%</Text></Text>
                     </View>
                   </View>
                   <View style={styles.aiMetaCol}>
-                    <Text style={[styles.riskLabel, { color: statusColor(prediction.riskLevel) }]}>{prediction.riskLevel.toUpperCase()} RISK</Text>
-                    <Text style={styles.aiPeriod}>Forecast · {prediction.month}</Text>
-                    <Text style={styles.aiRecommendationLead}>{prediction.recommendations[0]}</Text>
+                    <Text style={[styles.riskLabel, { color: statusColor(aiPrediction.riskLevel) }]}>
+                      {aiPrediction.riskLevel.toUpperCase()} RISK
+                    </Text>
+                    <Text style={styles.aiPeriod}>Forecast · {aiPrediction.month}</Text>
+                    <Text style={styles.aiRecommendationLead}>{aiPrediction.recommendations[0]}</Text>
                   </View>
                 </View>
 
@@ -392,7 +457,7 @@ export default function DashboardScreen() {
                   <View style={styles.expandedContent}>
                     <View style={styles.panelDivider} />
                     <Text style={styles.subsectionLabel}>RECOMMENDED ACTIONS</Text>
-                    {prediction.recommendations.map((action, idx) => (
+                    {aiPrediction.recommendations.map((action, idx) => (
                       <View key={idx} style={styles.commandRow}>
                         <Text style={styles.commandPrefix}>{'>'}</Text>
                         <Text style={styles.commandText}>{action}</Text>
@@ -403,20 +468,28 @@ export default function DashboardScreen() {
                     <Text style={styles.subsectionLabel}>DEPLOYMENT GUIDANCE</Text>
                     <View style={styles.readoutRow}>
                       <Text style={styles.readoutLabel}>PERSONNEL</Text>
-                      <Text style={styles.readoutValue}>5–6 ENFORCERS</Text>
+                      <Text style={styles.readoutValue}>
+                        {aiPrediction.riskLevel === 'Critical' ? '8–10 ENFORCERS' :
+                         aiPrediction.riskLevel === 'High' ? '5–6 ENFORCERS' :
+                         aiPrediction.riskLevel === 'Medium' ? '3–4 ENFORCERS' : '1–2 ENFORCERS'}
+                      </Text>
                     </View>
                     <View style={styles.readoutRow}>
                       <Text style={styles.readoutLabel}>MONITORING</Text>
-                      <Text style={styles.readoutValue}>INTENSIVE</Text>
+                      <Text style={styles.readoutValue}>
+                        {aiPrediction.riskLevel === 'Critical' ? '24/7 INTENSIVE' :
+                         aiPrediction.riskLevel === 'High' ? 'INTENSIVE' :
+                         aiPrediction.riskLevel === 'Medium' ? 'STANDARD' : 'ROUTINE'}
+                      </Text>
                     </View>
 
                     <View style={styles.panelDivider} />
                     <Text style={styles.subsectionLabel}>HOTSPOTS BY RISK</Text>
                     {hasHotspots ? (
                       <>
-                        {mockHotspots.high.slice(0, 3).map((loc, idx) => renderHotspotRow(loc, COLORS.danger, idx))}
-                        {mockHotspots.medium.slice(0, 2).map((loc, idx) => renderHotspotRow(loc, COLORS.warning, idx + 10))}
-                        {mockHotspots.low.slice(0, 2).map((loc, idx) => renderHotspotRow(loc, COLORS.success, idx + 20))}
+                        {hotspots.high.slice(0, 3).map((loc: any, idx: number) => renderHotspotRow(loc, COLORS.danger, idx))}
+                        {hotspots.medium.slice(0, 2).map((loc: any, idx: number) => renderHotspotRow(loc, COLORS.warning, idx + 10))}
+                        {hotspots.low.slice(0, 2).map((loc: any, idx: number) => renderHotspotRow(loc, COLORS.success, idx + 20))}
                       </>
                     ) : (
                       <View style={styles.emptyState}>
@@ -428,7 +501,7 @@ export default function DashboardScreen() {
                 )}
               </View>
 
-              {/* Zone preview teaser */}
+              {/* Zone preview */}
               <View style={styles.sectionHeaderRow}>
                 <Text style={styles.sectionLabel}>ZONE STATUS</Text>
                 <TouchableOpacity onPress={() => setActiveTab('monitoring')}>
@@ -436,79 +509,121 @@ export default function DashboardScreen() {
                 </TouchableOpacity>
               </View>
               <View style={styles.zoneGrid}>
-                {mockZones.slice(0, 4).map(renderZoneCard)}
+                {zones.length > 0 ? (
+                  zones.slice(0, 4).map((zone, idx) => renderZoneCard(zone, idx))
+                ) : (
+                  <Text style={styles.emptyStateText}>No zones available.</Text>
+                )}
               </View>
             </>
           )}
 
           {activeTab === 'monitoring' && (
             <>
-              {/* Live camera preview — CCTV-style */}
+              {/* Live Camera Preview - DYNAMIC */}
               <Text style={styles.sectionLabel}>PRIMARY FEED</Text>
               <View style={styles.cameraCard}>
                 <View style={styles.cameraPreview}>
-                  <Ionicons name="videocam" size={32} color={COLORS.textTertiary} />
-                  <Text style={styles.cameraPreviewNote}>Live thumbnail coming soon</Text>
+                  {cameraLoading ? (
+                    <ActivityIndicator size="large" color={COLORS.primary} />
+                  ) : cameraSnapshot ? (
+                    <Image
+                      source={{ uri: cameraSnapshot }}
+                      style={{ width: '100%', height: '100%', borderRadius: 14 }}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <>
+                      <Ionicons name="videocam" size={32} color={COLORS.textTertiary} />
+                      <Text style={styles.cameraPreviewNote}>
+                        {cameraFeed ? `Camera: ${cameraFeed.camera_name}` : 'No camera feed available'}
+                      </Text>
+                    </>
+                  )}
                   <View style={styles.liveBadge}>
                     <View style={styles.liveBadgeDot} />
                     <Text style={styles.liveBadgeText}>LIVE</Text>
                   </View>
                 </View>
+
                 <View style={styles.cameraInfoRow}>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.feedTitle}>{mockLatestMonitoring.cameraName}</Text>
-                    <Text style={styles.feedSubtitle}>{mockLatestMonitoring.location}</Text>
+                    <Text style={styles.feedTitle}>
+                      {cameraFeed ? cameraFeed.camera_name : 'No Camera Selected'}
+                    </Text>
+                    <Text style={styles.feedSubtitle}>
+                      {cameraFeed ? cameraFeed.location : 'No location data'}
+                    </Text>
                   </View>
                   <View style={styles.panelStatusPill}>
-                    <View style={[styles.zoneStatusDot, { backgroundColor: statusColor(mockLatestMonitoring.cameraStatus) }]} />
-                    <Text style={[styles.panelStatusText, { color: statusColor(mockLatestMonitoring.cameraStatus) }]}>{mockLatestMonitoring.cameraStatus.toUpperCase()}</Text>
+                    <View style={[styles.zoneStatusDot, { backgroundColor: statusColor(cameraFeed?.status || 'offline') }]} />
+                    <Text style={[styles.panelStatusText, { color: statusColor(cameraFeed?.status || 'offline') }]}>
+                      {(cameraFeed?.status || 'OFFLINE').toUpperCase()}
+                    </Text>
                   </View>
                 </View>
 
                 <View style={styles.monitoringGrid}>
                   {(['VEHICLES', 'INBOUND', 'OUTBOUND', 'CONGESTION', 'OFFICER', 'COLLISION RISK'] as const).map((label, i) => {
-                    const vals = [mockLatestMonitoring.vehicleCount, mockLatestMonitoring.inbound, mockLatestMonitoring.outbound, mockLatestMonitoring.congestion, mockLatestMonitoring.officerPresence, mockLatestMonitoring.potentialCollision];
+                    const vals = cameraFeed ? [
+                      cameraFeed.vehicle_count || 0,
+                      cameraFeed.inbound_count || 0,
+                      cameraFeed.outbound_count || 0,
+                      cameraFeed.congestion_level_display || 'None',
+                      cameraFeed.officer_presence || 'Unknown',
+                      cameraFeed.potential_collision || 'None',
+                    ] : ['--', '--', '--', '--', '--', '--'];
                     return (
                       <View key={label} style={[styles.monitoringItem, { width: isTablet ? '23%' : '48%' }]}>
                         <Text style={styles.readoutLabel}>{label}</Text>
-                        <Text style={styles.monitoringValue}>{vals[i]}</Text>
+                        <Text style={styles.monitoringValue}>{String(vals[i])}</Text>
                       </View>
                     );
                   })}
                 </View>
-                <Text style={styles.feedTimestamp}>LAST SYNC {timeStr}</Text>
+                <Text style={styles.feedTimestamp}>
+                  LAST SYNC {cameraFeed?.recorded_at ? new Date(cameraFeed.recorded_at).toLocaleTimeString() : timeStr}
+                </Text>
               </View>
 
               <View style={styles.sectionHeaderRow}>
-                <Text style={styles.sectionLabel}>ZONE STATUS · {mockZones.length} MONITORED</Text>
+                <Text style={styles.sectionLabel}>ZONE STATUS · {zones.length} MONITORED</Text>
               </View>
               <View style={styles.zoneGrid}>
-                {mockZones.map(renderZoneCard)}
+                {zones.length > 0 ? (
+                  zones.map((zone, idx) => renderZoneCard(zone, idx))
+                ) : (
+                  <Text style={styles.emptyStateText}>No zones available.</Text>
+                )}
               </View>
 
               <Text style={styles.sectionLabel}>ALERT FEED</Text>
               <View style={{ gap: 10 }}>
-                {mockRecentAlerts.map(alert => (
-                  <View key={alert.id} style={[styles.alertCard, { backgroundColor: statusColor(alert.severity) + '14', borderColor: statusColor(alert.severity) + '33' }]}>
-                    <View style={styles.alertRow}>
-                      <View style={[styles.alertSeverityBadge, { backgroundColor: statusColor(alert.severity) }]}>
-                        <Text style={styles.alertSeverityText}>{alert.severity.toUpperCase()}</Text>
-                      </View>
-                      <Text style={styles.alertTime}>{alert.time}</Text>
-                    </View>
-                    <Text style={styles.alertType}>{alert.type}</Text>
-                    <Text style={styles.alertMessage}>{alert.message}</Text>
+                {recentAlerts.length === 0 ? (
+                  <View style={styles.emptyState}>
+                    <Ionicons name="checkmark-circle" size={16} color={COLORS.success} />
+                    <Text style={styles.emptyStateText}>No active alerts.</Text>
                   </View>
-                ))}
+                ) : (
+                  recentAlerts.slice(0, 4).map((alert: any) => (
+                    <View key={alert.alert_id} style={[styles.alertCard, { backgroundColor: statusColor(alert.severity) + '14', borderColor: statusColor(alert.severity) + '33' }]}>
+                      <View style={styles.alertRow}>
+                        <View style={[styles.alertSeverityBadge, { backgroundColor: statusColor(alert.severity) }]}>
+                          <Text style={styles.alertSeverityText}>{alert.severity.toUpperCase()}</Text>
+                        </View>
+                        <Text style={styles.alertTime}>{alert.generated_at}</Text>
+                      </View>
+                      <Text style={styles.alertType}>{alert.alert_type}</Text>
+                      <Text style={styles.alertMessage}>{alert.message}</Text>
+                    </View>
+                  ))
+                )}
               </View>
             </>
           )}
 
           {activeTab === 'analytics' && (
             <>
-              {/* Interactive date filter — UI only for now; not wired to alternate
-                  datasets since only one mock dataset exists. Swap `dateRange`
-                  into a real query once historical data is available. */}
               <View style={styles.dateFilterRow}>
                 {(['Today', 'Week', 'Month', 'Year'] as const).map(r => (
                   <TouchableOpacity
@@ -524,54 +639,66 @@ export default function DashboardScreen() {
               <Text style={styles.sectionLabel}>MONTHLY VIOLATION TRENDS</Text>
               <View style={styles.panel}>
                 <Text style={styles.feedSubtitle}>Current year</Text>
-                <LineChart
-                  data={{ labels: mockMonthlyTrend.labels, datasets: [{ data: mockMonthlyTrend.data }] }}
-                  width={chartWidth - 32}
-                  height={150}
-                  chartConfig={{
-                    backgroundColor: COLORS.surface,
-                    backgroundGradientFrom: COLORS.surface,
-                    backgroundGradientTo: COLORS.surface,
-                    decimalPlaces: 0,
-                    color: (opacity = 1) => `rgba(37, 99, 235, ${opacity})`,
-                    labelColor: (opacity = 1) => `rgba(100, 116, 139, ${opacity})`,
-                    style: { borderRadius: 16 },
-                    propsForDots: { r: '3', strokeWidth: '2', stroke: COLORS.primary },
-                    propsForBackgroundLines: { stroke: COLORS.border },
-                  }}
-                  bezier
-                  style={styles.chart}
-                  withInnerLines
-                  withOuterLines={false}
-                />
-                <Text style={styles.chartInterpretation}>July recorded the highest monthly count at 124.</Text>
+                {monthlyTrend.data.length > 0 ? (
+                  <LineChart
+                    data={{ labels: monthlyTrend.labels, datasets: [{ data: monthlyTrend.data }] }}
+                    width={chartWidth - 32}
+                    height={150}
+                    chartConfig={{
+                      backgroundColor: COLORS.surface,
+                      backgroundGradientFrom: COLORS.surface,
+                      backgroundGradientTo: COLORS.surface,
+                      decimalPlaces: 0,
+                      color: (opacity = 1) => `rgba(37, 99, 235, ${opacity})`,
+                      labelColor: (opacity = 1) => `rgba(100, 116, 139, ${opacity})`,
+                      style: { borderRadius: 16 },
+                      propsForDots: { r: '3', strokeWidth: '2', stroke: COLORS.primary },
+                      propsForBackgroundLines: { stroke: COLORS.border },
+                    }}
+                    bezier
+                    style={styles.chart}
+                    withInnerLines
+                    withOuterLines={false}
+                  />
+                ) : (
+                  <Text style={styles.emptyStateText}>No data available.</Text>
+                )}
+                <Text style={styles.chartInterpretation}>
+                  {monthlyTrend.data.length > 0 ? `Highest month: ${Math.max(...monthlyTrend.data)} violations.` : 'No data yet.'}
+                </Text>
               </View>
 
               <Text style={[styles.sectionLabel, { marginTop: 24 }]}>TOP VIOLATION TYPES</Text>
               <View style={styles.panel}>
                 <Text style={styles.feedSubtitle}>All time</Text>
-                <BarChart
-                  data={{ labels: mockTopViolations.labels, datasets: [{ data: mockTopViolations.data }] }}
-                  width={chartWidth - 32}
-                  height={200}
-                  yAxisLabel=""
-                  yAxisSuffix=""
-                  fromZero
-                  chartConfig={{
-                    backgroundColor: COLORS.surface,
-                    backgroundGradientFrom: COLORS.surface,
-                    backgroundGradientTo: COLORS.surface,
-                    decimalPlaces: 0,
-                    color: (opacity = 1) => `rgba(37, 99, 235, ${opacity})`,
-                    labelColor: (opacity = 1) => `rgba(100, 116, 139, ${opacity})`,
-                    style: { borderRadius: 16 },
-                    barPercentage: 0.55,
-                    propsForBackgroundLines: { stroke: COLORS.border },
-                  }}
-                  style={styles.chart}
-                  verticalLabelRotation={30}
-                />
-                <Text style={styles.chartInterpretation}>Speeding is the leading violation type with 45 records.</Text>
+                {topViolations.data.length > 0 ? (
+                  <BarChart
+                    data={{ labels: topViolations.labels, datasets: [{ data: topViolations.data }] }}
+                    width={chartWidth - 32}
+                    height={200}
+                    yAxisLabel=""
+                    yAxisSuffix=""
+                    fromZero
+                    chartConfig={{
+                      backgroundColor: COLORS.surface,
+                      backgroundGradientFrom: COLORS.surface,
+                      backgroundGradientTo: COLORS.surface,
+                      decimalPlaces: 0,
+                      color: (opacity = 1) => `rgba(37, 99, 235, ${opacity})`,
+                      labelColor: (opacity = 1) => `rgba(100, 116, 139, ${opacity})`,
+                      style: { borderRadius: 16 },
+                      barPercentage: 0.55,
+                      propsForBackgroundLines: { stroke: COLORS.border },
+                    }}
+                    style={styles.chart}
+                    verticalLabelRotation={30}
+                  />
+                ) : (
+                  <Text style={styles.emptyStateText}>No violation data.</Text>
+                )}
+                <Text style={styles.chartInterpretation}>
+                  {topViolations.data.length > 0 ? `Top violation: ${topViolations.labels[0]} with ${topViolations.data[0]} records.` : 'No data yet.'}
+                </Text>
               </View>
             </>
           )}
@@ -605,8 +732,6 @@ export default function DashboardScreen() {
 }
 
 // ========== STYLES ==========
-// Type scale: 32 hero / 24 page / 18 section / 16 card number / 14 body / 12 caption
-
 const softShadow = {
   shadowColor: '#0F172A',
   shadowOffset: { width: 0, height: 4 },
@@ -624,9 +749,6 @@ const styles = StyleSheet.create({
   scrollArea: { flex: 1 },
   scrollContent: { paddingHorizontal: 20, paddingTop: 18 },
 
-  // Hero clock
-
-  // Hero — dark navy header/summary slab
   heroCard: {
     backgroundColor: COLORS.header, borderRadius: 22, padding: 20, marginBottom: 16,
     ...softShadow, shadowOpacity: 0.18,
@@ -655,7 +777,6 @@ const styles = StyleSheet.create({
   heroStatValue: { fontSize: 16, fontWeight: '700', color: '#FFFFFF', fontFamily: mono, marginTop: 8, marginBottom: 2 },
   heroStatLabel: { fontSize: 11, color: '#94A3B8' },
 
-  // Live status strip
   statusStrip: { maxHeight: 56, marginBottom: 20 },
   statusChip: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.surface,
@@ -666,7 +787,6 @@ const styles = StyleSheet.create({
   statusChipLabel: { fontSize: 9, fontWeight: '700', color: COLORS.textTertiary, letterSpacing: 0.6 },
   statusChipValue: { fontSize: 12, fontWeight: '600', color: COLORS.textPrimary, fontFamily: mono, marginTop: 1 },
 
-  // Quick actions
   quickActionsRow: { marginBottom: 20 },
   quickAction: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.surface,
@@ -675,7 +795,6 @@ const styles = StyleSheet.create({
   },
   quickActionLabel: { fontSize: 13, fontWeight: '600', color: COLORS.textPrimary, marginLeft: 7 },
 
-  // Panels
   panel: {
     backgroundColor: COLORS.surface, borderRadius: 18, padding: 18, marginBottom: 20,
     borderWidth: 1, borderColor: COLORS.border, ...softShadow,
@@ -692,7 +811,6 @@ const styles = StyleSheet.create({
   sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   viewAllLink: { fontSize: 11, fontWeight: '700', color: COLORS.primary, letterSpacing: 0.3 },
 
-  // AI ring
   aiReadoutRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
   ringWrap: { width: 108, height: 108, justifyContent: 'center', alignItems: 'center', marginRight: 18 },
   ringCenter: { position: 'absolute', justifyContent: 'center', alignItems: 'center' },
@@ -723,7 +841,6 @@ const styles = StyleSheet.create({
   emptyState: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6 },
   emptyStateText: { fontSize: 13, color: COLORS.textSecondary, marginLeft: 8, flex: 1, lineHeight: 18 },
 
-  // Zone grid
   zoneGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 12, marginBottom: 24 },
   zoneCard: {
     backgroundColor: COLORS.surface, borderRadius: 18, padding: 16,
@@ -738,7 +855,6 @@ const styles = StyleSheet.create({
   zoneCongestionText: { fontSize: 10, fontWeight: '700' },
   zoneOfflineNote: { fontSize: 11, color: COLORS.textTertiary, fontStyle: 'italic' },
 
-  // Camera card
   cameraCard: {
     backgroundColor: COLORS.surface, borderRadius: 18, padding: 18, marginBottom: 24,
     borderWidth: 1, borderColor: COLORS.border, ...softShadow,
@@ -757,7 +873,6 @@ const styles = StyleSheet.create({
   liveBadgeText: { fontSize: 10, fontWeight: '800', color: COLORS.danger, letterSpacing: 0.5 },
   cameraInfoRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 },
 
-  // Monitoring detail
   feedTitle: { fontSize: 18, fontWeight: '600', color: COLORS.textPrimary, marginBottom: 2 },
   feedSubtitle: { fontSize: 12, color: COLORS.textTertiary, marginBottom: 16 },
   monitoringGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 16, marginTop: 12 },
@@ -765,7 +880,6 @@ const styles = StyleSheet.create({
   monitoringValue: { fontSize: 14, fontWeight: '600', color: COLORS.textPrimary, fontFamily: mono, marginTop: 4 },
   feedTimestamp: { fontSize: 10, color: COLORS.textTertiary, marginTop: 16, letterSpacing: 0.5, fontFamily: mono },
 
-  // Alerts — tinted background per severity
   alertCard: { borderRadius: 14, borderWidth: 1, padding: 14 },
   alertRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   alertSeverityBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
@@ -774,7 +888,6 @@ const styles = StyleSheet.create({
   alertTime: { fontSize: 11, color: COLORS.textTertiary, fontFamily: mono },
   alertMessage: { fontSize: 13, color: COLORS.textSecondary, lineHeight: 18 },
 
-  // Date filter
   dateFilterRow: { flexDirection: 'row', backgroundColor: COLORS.surface, borderRadius: 12, padding: 4, marginBottom: 20, borderWidth: 1, borderColor: COLORS.border },
   dateFilterChip: { flex: 1, paddingVertical: 8, borderRadius: 9, alignItems: 'center' },
   dateFilterChipActive: { backgroundColor: '#EFF6FF' },
@@ -784,7 +897,6 @@ const styles = StyleSheet.create({
   chart: { marginVertical: 8, marginLeft: -16, borderRadius: 16 },
   chartInterpretation: { fontSize: 12, color: COLORS.textSecondary, marginTop: 10, lineHeight: 17 },
 
-  // Floating bottom nav
   bottomTabBar: {
     position: 'absolute', left: 20, right: 20, bottom: 20,
     flexDirection: 'row', backgroundColor: COLORS.surface,

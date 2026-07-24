@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   SafeAreaView,
   ScrollView,
@@ -17,10 +17,10 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
+import api from '../../api/axiosConfig';
 
 // ========== COLOR TOKENS ==========
-// Same tokens as the TRAVIS dashboard (light hybrid theme) for visual
-// consistency across screens.
 const COLORS = {
   bg: '#F8FAFC',
   header: '#0F172A',
@@ -57,85 +57,6 @@ interface Violation {
 
 type StatusFilter = '' | 'pending' | 'overdue' | 'paid' | 'cancelled';
 
-// ========== MOCK DATA ==========
-const mockViolations: Violation[] = [
-  {
-    id: 1,
-    ticketNumber: 'TRV-20260716-000001',
-    driverName: 'Juan Dela Cruz',
-    licenseNumber: 'N12-34-567890',
-    plateNumber: 'ABC-1234',
-    vehicleType: 'Car',
-    violationType: 'Speeding',
-    location: 'EDSA Ayala',
-    date: '2026-07-16',
-    time: '10:30',
-    penalty: 1200,
-    status: 'pending',
-    createdAt: '2026-07-16 10:35:00',
-  },
-  {
-    id: 2,
-    ticketNumber: 'TRV-20260716-000002',
-    driverName: 'Maria Santos',
-    licenseNumber: 'M98-76-543210',
-    plateNumber: 'XYZ-5678',
-    vehicleType: 'SUV',
-    violationType: 'Illegal Parking',
-    location: 'BGC 32nd St',
-    date: '2026-07-16',
-    time: '09:15',
-    penalty: 800,
-    status: 'paid',
-    createdAt: '2026-07-16 09:20:00',
-  },
-  {
-    id: 3,
-    ticketNumber: 'TRV-20260715-000003',
-    driverName: 'Pedro Reyes',
-    licenseNumber: 'P11-22-334455',
-    plateNumber: 'DEF-9012',
-    vehicleType: 'Motorcycle',
-    violationType: 'Disregarded Signal',
-    location: 'Commonwealth Ave',
-    date: '2026-07-15',
-    time: '17:45',
-    penalty: 600,
-    status: 'overdue',
-    createdAt: '2026-07-15 17:50:00',
-  },
-  {
-    id: 4,
-    ticketNumber: 'TRV-20260715-000004',
-    driverName: 'Ana Reyes',
-    licenseNumber: 'A55-66-778899',
-    plateNumber: 'GHI-3456',
-    vehicleType: 'Van',
-    violationType: 'Overloading',
-    location: 'C5',
-    date: '2026-07-15',
-    time: '14:20',
-    penalty: 1500,
-    status: 'pending',
-    createdAt: '2026-07-15 14:25:00',
-  },
-  {
-    id: 5,
-    ticketNumber: 'TRV-20260714-000005',
-    driverName: 'Carlos Gomez',
-    licenseNumber: 'C77-88-990011',
-    plateNumber: 'JKL-7890',
-    vehicleType: 'Tricycle',
-    violationType: 'No Helmet',
-    location: 'Taft Ave',
-    date: '2026-07-14',
-    time: '08:10',
-    penalty: 300,
-    status: 'cancelled',
-    createdAt: '2026-07-14 08:15:00',
-  },
-];
-
 // ========== HELPERS ==========
 const formatCurrency = (amount: number): string => `\u20b1${amount.toLocaleString()}`;
 
@@ -167,56 +88,102 @@ export default function ViolationsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
 
-  // Summary counts
-  const counts = {
-    today: 2,
-    awaiting: 3, // pending + overdue
-    paid: 1,
-    cancelled: 1,
-  };
+  const [formData, setFormData] = useState({
+    driver_name: '',
+    license_number: '',
+    plate_number: '',
+    vehicle_type: 'Car',
+    violation_type: '',
+    location: '',
+    penalty_amount: '',
+  });
+  const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    fetchViolations();
-  }, []);
-
+  // ===== FETCH VIOLATIONS =====
   const fetchViolations = async () => {
-    // Replace with actual API: fetch('/api/violations')
-    await new Promise(resolve => setTimeout(resolve, 800));
-    setViolations(mockViolations);
-    setFiltered(mockViolations);
-    setLoading(false);
-    setRefreshing(false);
+    try {
+      setLoading(true);
+      const response = await api.get('get_violations.php', {
+        params: { status: statusFilter, search, limit: 100 },
+      });
+      if (response.data.success) {
+        const data = response.data.data.map((item: any) => ({
+          id: item.violation_id,
+          ticketNumber: item.ticket_number,
+          driverName: item.driver_name,
+          licenseNumber: item.license_number,
+          plateNumber: item.plate_number,
+          vehicleType: item.vehicle_type,
+          violationType: item.violation_type,
+          location: item.violation_location,
+          date: item.violation_date,
+          time: item.violation_time,
+          penalty: parseFloat(item.penalty_amount),
+          status: item.status,
+          createdAt: item.created_at,
+        }));
+        setViolations(data);
+        setFiltered(data);
+      }
+    } catch (error) {
+      console.error('Fetch violations error:', error);
+      Alert.alert('Error', 'Failed to load violations.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   };
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchViolations();
+    }, [statusFilter, search])
+  );
 
   const onRefresh = () => {
     setRefreshing(true);
     fetchViolations();
   };
 
-  // Filter logic
-  useEffect(() => {
-    let result = violations;
-    if (search.trim()) {
-      const lower = search.toLowerCase();
-      result = result.filter(
-        v =>
-          v.ticketNumber.toLowerCase().includes(lower) ||
-          v.driverName.toLowerCase().includes(lower) ||
-          v.plateNumber.toLowerCase().includes(lower) ||
-          v.violationType.toLowerCase().includes(lower) ||
-          v.location.toLowerCase().includes(lower)
-      );
-    }
-    if (statusFilter) {
-      result = result.filter(v => v.status === statusFilter);
-    }
-    setFiltered(result);
-  }, [search, statusFilter, violations]);
+  const clearFilters = () => {
+    setSearch('');
+    setStatusFilter('');
+  };
 
-  const hasActiveFilters = search.trim().length > 0 || statusFilter !== '';
-  const clearFilters = () => { setSearch(''); setStatusFilter(''); };
+  // ===== ADD VIOLATION =====
+  const handleAddViolation = async () => {
+    const { driver_name, license_number, plate_number, vehicle_type, violation_type, location, penalty_amount } = formData;
+    if (!driver_name || !license_number || !plate_number || !violation_type || !location || !penalty_amount) {
+      Alert.alert('Error', 'Please fill in all fields.');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const response = await api.post('add_violation.php', {
+        driver_name,
+        license_number,
+        plate_number,
+        vehicle_type,
+        violation_type,
+        location,
+        penalty_amount: parseFloat(penalty_amount),
+      });
+      if (response.data.success) {
+        Alert.alert('Success', 'Violation added successfully.');
+        setModalVisible(false);
+        setFormData({ driver_name: '', license_number: '', plate_number: '', vehicle_type: 'Car', violation_type: '', location: '', penalty_amount: '' });
+        fetchViolations();
+      } else {
+        Alert.alert('Error', response.data.error || 'Failed to add violation.');
+      }
+    } catch (error: any) {
+      Alert.alert('Error', error.response?.data?.error || 'Network error.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
-  // ---------- RENDER HELPERS ----------
+  // ========== RENDER HELPERS ==========
   const renderSummaryCell = (icon: React.ReactNode, label: string, value: number, isLast: boolean) => (
     <View style={[styles.summaryCell, !isLast && styles.summaryCellDivider]}>
       {icon}
@@ -268,6 +235,14 @@ export default function ViolationsScreen() {
       </View>
     </View>
   );
+
+  // ===== COMPUTE COUNTS =====
+  const counts = {
+    today: violations.filter(v => v.date === new Date().toISOString().slice(0, 10)).length,
+    awaiting: violations.filter(v => v.status === 'pending' || v.status === 'overdue').length,
+    paid: violations.filter(v => v.status === 'paid').length,
+    cancelled: violations.filter(v => v.status === 'cancelled').length,
+  };
 
   if (loading) {
     return (
@@ -337,7 +312,7 @@ export default function ViolationsScreen() {
               );
             })}
           </ScrollView>
-          {hasActiveFilters && (
+          {(search.trim() || statusFilter) && (
             <TouchableOpacity onPress={clearFilters} style={styles.clearLink}>
               <Text style={styles.clearLinkText}>Clear</Text>
             </TouchableOpacity>
@@ -358,7 +333,7 @@ export default function ViolationsScreen() {
             <View style={styles.emptyState}>
               <Ionicons name="document-text-outline" size={28} color={COLORS.textTertiary} />
               <Text style={styles.emptyText}>No violation records matched your search or filter.</Text>
-              {hasActiveFilters && (
+              {(search.trim() || statusFilter) && (
                 <TouchableOpacity onPress={clearFilters} style={styles.emptyClearButton}>
                   <Text style={styles.emptyClearButtonText}>Clear filters</Text>
                 </TouchableOpacity>
@@ -390,31 +365,70 @@ export default function ViolationsScreen() {
 
             <ScrollView showsVerticalScrollIndicator={false}>
               <Text style={styles.modalLabel}>Driver Name</Text>
-              <TextInput style={styles.modalInput} placeholder="Driver name" placeholderTextColor={COLORS.textTertiary} />
+              <TextInput
+                style={styles.modalInput}
+                placeholder="Driver name"
+                placeholderTextColor={COLORS.textTertiary}
+                value={formData.driver_name}
+                onChangeText={text => setFormData({ ...formData, driver_name: text })}
+              />
               <Text style={styles.modalLabel}>License Number</Text>
-              <TextInput style={styles.modalInput} placeholder="License number" placeholderTextColor={COLORS.textTertiary} />
+              <TextInput
+                style={styles.modalInput}
+                placeholder="License number"
+                placeholderTextColor={COLORS.textTertiary}
+                value={formData.license_number}
+                onChangeText={text => setFormData({ ...formData, license_number: text })}
+              />
               <Text style={styles.modalLabel}>Plate Number</Text>
-              <TextInput style={styles.modalInput} placeholder="Plate number" placeholderTextColor={COLORS.textTertiary} />
+              <TextInput
+                style={styles.modalInput}
+                placeholder="Plate number"
+                placeholderTextColor={COLORS.textTertiary}
+                value={formData.plate_number}
+                onChangeText={text => setFormData({ ...formData, plate_number: text })}
+              />
               <Text style={styles.modalLabel}>Violation Type</Text>
-              <TextInput style={styles.modalInput} placeholder="Violation type" placeholderTextColor={COLORS.textTertiary} />
+              <TextInput
+                style={styles.modalInput}
+                placeholder="Violation type"
+                placeholderTextColor={COLORS.textTertiary}
+                value={formData.violation_type}
+                onChangeText={text => setFormData({ ...formData, violation_type: text })}
+              />
               <Text style={styles.modalLabel}>Location</Text>
-              <TextInput style={styles.modalInput} placeholder="Location" placeholderTextColor={COLORS.textTertiary} />
+              <TextInput
+                style={styles.modalInput}
+                placeholder="Location"
+                placeholderTextColor={COLORS.textTertiary}
+                value={formData.location}
+                onChangeText={text => setFormData({ ...formData, location: text })}
+              />
               <Text style={styles.modalLabel}>Penalty Amount</Text>
-              <TextInput style={styles.modalInput} placeholder="Penalty amount" placeholderTextColor={COLORS.textTertiary} keyboardType="numeric" />
+              <TextInput
+                style={styles.modalInput}
+                placeholder="Penalty amount"
+                placeholderTextColor={COLORS.textTertiary}
+                keyboardType="numeric"
+                value={formData.penalty_amount}
+                onChangeText={text => setFormData({ ...formData, penalty_amount: text })}
+              />
             </ScrollView>
 
             <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.cancelModalButton} onPress={() => setModalVisible(false)}>
+              <TouchableOpacity
+                style={styles.cancelModalButton}
+                onPress={() => setModalVisible(false)}
+                disabled={submitting}
+              >
                 <Text style={styles.cancelModalButtonText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.saveModalButton}
-                onPress={() => {
-                  Alert.alert('Success', 'Violation record added (mock)');
-                  setModalVisible(false);
-                }}
+                onPress={handleAddViolation}
+                disabled={submitting}
               >
-                <Text style={styles.saveModalButtonText}>Save Violation</Text>
+                {submitting ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.saveModalButtonText}>Save Violation</Text>}
               </TouchableOpacity>
             </View>
           </View>
@@ -444,7 +458,6 @@ const styles = StyleSheet.create({
   pageTitle: { fontSize: 26, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 6, letterSpacing: -0.3 },
   pageSub: { fontSize: 13, color: COLORS.textSecondary, lineHeight: 18 },
 
-  // Summary panel
   summaryPanel: {
     flexDirection: 'row', backgroundColor: COLORS.surface, borderRadius: 18,
     borderWidth: 1, borderColor: COLORS.border, paddingVertical: 16, marginBottom: 18, ...softShadow,
@@ -454,7 +467,6 @@ const styles = StyleSheet.create({
   summaryValue: { fontSize: 18, fontWeight: '700', color: COLORS.textPrimary, fontFamily: mono, marginTop: 6, marginBottom: 3 },
   summaryLabel: { fontSize: 10, color: COLORS.textTertiary, textAlign: 'center' },
 
-  // Search
   searchWrap: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.surface,
     borderRadius: 12, borderWidth: 1, borderColor: COLORS.border,
@@ -463,7 +475,6 @@ const styles = StyleSheet.create({
   searchIcon: { marginRight: 8 },
   searchInput: { flex: 1, fontSize: 14, color: COLORS.textPrimary },
 
-  // Filter chips
   filterRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
   filterChip: {
     backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
@@ -477,7 +488,6 @@ const styles = StyleSheet.create({
 
   resultCount: { fontSize: 12, color: COLORS.textTertiary, marginBottom: 12 },
 
-  // Violation card
   violationCard: {
     backgroundColor: COLORS.surface, borderRadius: 16, padding: 16,
     borderWidth: 1, borderColor: COLORS.border, ...softShadow,
@@ -511,13 +521,11 @@ const styles = StyleSheet.create({
   cancelButton: { backgroundColor: COLORS.danger + '14', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8 },
   cancelButtonText: { fontSize: 12, fontWeight: '700', color: COLORS.danger },
 
-  // Empty state
   emptyState: { alignItems: 'center', paddingVertical: 40 },
   emptyText: { fontSize: 13, color: COLORS.textSecondary, textAlign: 'center', marginTop: 10, lineHeight: 18, paddingHorizontal: 20 },
   emptyClearButton: { marginTop: 14, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8, backgroundColor: COLORS.primary + '14' },
   emptyClearButtonText: { fontSize: 12, fontWeight: '700', color: COLORS.primary },
 
-  // Floating add button
   fab: {
     position: 'absolute', right: 20, bottom: 24,
     flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.primary,
@@ -526,7 +534,6 @@ const styles = StyleSheet.create({
   },
   fabText: { fontSize: 14, fontWeight: '700', color: '#FFFFFF', marginLeft: 6 },
 
-  // Modal
   modalOverlay: { flex: 1, backgroundColor: 'rgba(15,23,42,0.5)', justifyContent: 'center', alignItems: 'center' },
   modalContent: {
     backgroundColor: COLORS.surface, borderRadius: 20, padding: 22, width: '90%', maxHeight: '82%',
