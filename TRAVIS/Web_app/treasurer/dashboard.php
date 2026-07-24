@@ -90,85 +90,6 @@ $monthlyTotals = monthly_collection_totals();
 page_start('Dashboard', 'dashboard', 'Search violations, receipts, plates...', 'Overview of collections and violation payments', false);
 ?>
 
-<style id="treasurer-dashboard-theme">
-body.admin-dashboard {
-  --treasury-navy-950: #060f1e;
-  --treasury-navy-900: #0a1a30;
-  --treasury-navy-800: #0f2544;
-  --treasury-border: rgba(255,255,255,.10);
-  --treasury-blue: #38bdf8;
-  --treasury-cyan: #4fc3f7;
-  --treasury-soft: #c9d8ea;
-  font-family: 'Poppins', sans-serif;
-  background:
-    radial-gradient(circle at 12% 8%, rgba(56,189,248,.09), transparent 28%),
-    radial-gradient(circle at 88% 82%, rgba(37,99,235,.10), transparent 34%),
-    linear-gradient(160deg, var(--treasury-navy-950), var(--treasury-navy-900) 48%, var(--treasury-navy-800));
-  color: #fff;
-}
-.treasurer-page-heading { display: none; }
-.topbar { background:var(--treasury-navy-900) !important; border-bottom:1px solid var(--treasury-border) !important; box-shadow:none; }
-.topbar .search .form-control { color:#fff; background:rgba(255,255,255,.06); border:1px solid var(--treasury-border); }
-.topbar .search .form-control::placeholder { color:#94a3b8; }
-.topbar .search i, .topbar #liveClock { color:var(--treasury-soft) !important; }
-.topbar .btn-light { color:#fff; background:rgba(255,255,255,.06); border:1px solid var(--treasury-border); }
-.topbar .btn-light:hover { background:rgba(255,255,255,.12); }
-.topbar .role-pill { color:#94a3b8; }
-.treasury-hero { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; flex-wrap:wrap; margin-bottom:24px; }
-.treasury-eyebrow { display:inline-flex; align-items:center; gap:7px; color:var(--treasury-cyan); font-size:.72rem; font-weight:700; letter-spacing:.09em; text-transform:uppercase; margin-bottom:8px; }
-.treasury-hero h1 { color:#fff; font-size:1.8rem; font-weight:800; margin:0 0 6px; }
-.treasury-hero p { color:var(--treasury-soft); margin:0; }
-.treasury-online { display:inline-flex; align-items:center; gap:8px; padding:8px 14px; border:1px solid rgba(52,211,153,.3); border-radius:999px; background:rgba(52,211,153,.12); color:#34d399; font-size:.76rem; font-weight:600; }
-.treasury-online span { width:8px; height:8px; border-radius:50%; background:#34d399; box-shadow:0 0 0 3px rgba(52,211,153,.22); }
-.treasury-actions { display:flex; gap:10px; flex-wrap:wrap; }
-.treasury-actions .btn { border-radius:10px; padding:.58rem .9rem; font-weight:600; }
-.treasury-actions .btn-light { color:#fff; background:rgba(255,255,255,.06); border:1px solid var(--treasury-border); }
-.treasury-actions .btn-primary { border:0; background:linear-gradient(90deg,#2563eb,var(--treasury-cyan)); box-shadow:0 12px 26px rgba(37,99,235,.28); }
-.stat-card, .section-card { color:#fff; background:rgba(255,255,255,.035); border:1px solid var(--treasury-border); border-radius:18px; box-shadow:0 14px 30px rgba(0,0,0,.25); backdrop-filter:blur(8px); }
-.stat-card { padding:20px; gap:.55rem; overflow:hidden; position:relative; }
-.stat-card::after { content:""; position:absolute; width:85px; height:85px; right:-30px; top:-35px; border-radius:50%; background:rgba(56,189,248,.07); }
-.stat-card .stat-icon { width:44px; height:44px; border-radius:12px; margin-bottom:7px; }
-.stat-card .stat-label { color:var(--treasury-soft); }
-.stat-card .stat-value { color:#fff; font-size:1.75rem; font-weight:800; }
-.stat-card .stat-trend { display:inline-flex; align-items:center; width:max-content; padding:4px 8px; border-radius:999px; color:#34d399; background:rgba(52,211,153,.10); }
-.stat-card .stat-trend.down { color:#f87171; background:rgba(248,113,113,.10); }
-.tone-navy { background:rgba(56,189,248,.14); color:var(--treasury-cyan); }
-.tone-teal { background:rgba(45,212,191,.14); color:#2dd4bf; }
-.section-card { padding:20px; }
-.section-head h6 { color:#fff; font-weight:700; }
-.section-card small, .section-card .text-muted { color:var(--treasury-soft) !important; }
-.section-head a { color:var(--treasury-cyan) !important; }
-.table { --bs-table-bg:transparent; --bs-table-color:var(--treasury-soft); --bs-table-border-color:var(--treasury-border); color:var(--treasury-soft); }
-.table thead th { color:#94a3b8; border-color:var(--treasury-border); }
-.table tbody td { color:var(--treasury-soft); border-color:rgba(255,255,255,.07); }
-.table tbody tr:hover td { background:rgba(56,189,248,.05) !important; color:#fff; }
-.table .fw-semibold { color:#fff; }
-.icon-link { display:inline-grid; place-items:center; width:30px; height:30px; border:1px solid var(--treasury-border); border-radius:8px; color:var(--treasury-cyan); margin-left:4px; }
-.icon-link:hover { color:#fff; background:rgba(56,189,248,.14); }
-.empty-state { color:var(--treasury-soft) !important; background:rgba(255,255,255,.025) !important; border-color:var(--treasury-border) !important; }
-.tag { border:1px solid var(--treasury-border); }
-@media (max-width:767.98px) {
-  .treasury-hero h1 { font-size:1.5rem; }
-  .treasury-actions { width:100%; }
-  .treasury-actions .btn { flex:1; }
-}
-</style>
-
-<div class="treasury-hero">
-  <div>
-    <span class="treasury-eyebrow"><i class="bi bi-bank2"></i> TRAVIS TREASURY CENTER</span>
-    <h1>Collection Dashboard</h1>
-    <p>Monitor violation payments, daily collections, and outstanding balances.</p>
-  </div>
-  <div class="d-flex align-items-center gap-2 flex-wrap">
-    <span class="treasury-online"><span></span>Collection system online</span>
-    <div class="treasury-actions">
-      <a class="btn btn-light" href="<?= esc(app_url('reports.php')) ?>"><i class="bi bi-file-earmark-bar-graph me-1"></i> Reports</a>
-      <a class="btn btn-primary" href="<?= esc(app_url('payments.php')) ?>"><i class="bi bi-credit-card me-1"></i> Process Payment</a>
-    </div>
-  </div>
-</div>
-
 <div class="row g-3 mb-4">
   <div class="col-sm-6 col-xl">
     <div class="stat-card"><div class="stat-icon tone-primary"><i class="bi bi-cone-striped"></i></div>
@@ -291,8 +212,8 @@ const dailyData = <?= json_encode($dailyTrend['data']) ?>;
 const monthLabels = <?= json_encode(month_labels()) ?>;
 const monthlyData = <?= json_encode($monthlyTotals) ?>;
 
-Chart.defaults.font.family = "'Poppins', sans-serif";
-Chart.defaults.color = '#c9d8ea';
+Chart.defaults.font.family = "'Inter', sans-serif";
+Chart.defaults.color = '#64748b';
 
 function baseOpts() {
   return {
@@ -303,7 +224,7 @@ function baseOpts() {
     }},
     scales: {
       y: { grid: { color: 'rgba(148,163,184,.15)' }, ticks: { callback: v => '₱' + (v / 1000) + 'k', font: { size: 11 } } },
-      x: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 11 } } }
+      x: { grid: { display: false }, ticks: { font: { size: 11 } } }
     }
   };
 }
@@ -311,7 +232,7 @@ function baseOpts() {
 new Chart(document.getElementById('chartStatus'), {
   type: 'doughnut',
   data: { labels: statusLabels, datasets: [{ data: statusData, backgroundColor: ['#16a34a', '#f59e0b', '#dc2626', '#94a3b8'], borderWidth: 0, hoverOffset: 10 }] },
-  options: { responsive: true, maintainAspectRatio: false, cutout: '68%', plugins: { legend: { position: 'bottom', labels: { color: '#c9d8ea', usePointStyle: true, padding: 16, font: { size: 12 } } } } }
+  options: { responsive: true, maintainAspectRatio: false, cutout: '68%', plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, padding: 16, font: { size: 12 } } } } }
 });
 
 const dailyCtx = document.getElementById('chartDaily').getContext('2d');

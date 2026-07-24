@@ -115,40 +115,11 @@ $methodOptions = payment_method_options();
 page_start('Payment History', 'history', 'Search receipt, plate...', 'Recorded payments and receipts', false);
 ?>
 
-<style>
-.history-table .action-column { min-width: 118px; width: 118px; white-space: nowrap; }
-.history-table .receipt-action-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  width: auto;
-  min-width: 96px;
-  height: 34px;
-  margin: 0;
-  padding: 0 12px;
-  border: 1px solid rgba(79,195,247,.32);
-  border-radius: 9px;
-  background: rgba(56,189,248,.10);
-  color: var(--tp-cyan, #4fc3f7);
-  font-size: .78rem;
-  font-weight: 600;
-  line-height: 1;
-  white-space: nowrap;
-}
-.history-table .receipt-action-btn:hover {
-  color: #fff;
-  background: rgba(56,189,248,.20);
-  border-color: rgba(79,195,247,.55);
-}
-.history-table .receipt-action-btn i { font-size: .9rem; }
-</style>
-
 <div class="section-card">
   <div class="section-head flex-wrap gap-2">
     <div><h6 class="mb-0">Transactions</h6><small class="text-muted"><?= num($totalCount) ?> total &middot; page <?= num($page) ?> of <?= num($totalPages) ?></small></div>
-    <form method="get" class="d-flex flex-wrap gap-2 align-items-center">
-      <input class="form-control form-control-sm" style="width:220px" name="search" value="<?= esc($search) ?>" placeholder="Search receipt, plate, ID...">
+    <form method="get" class="d-flex flex-wrap gap-2 align-items-center" id="historyFilterForm">
+      <input class="form-control form-control-sm" style="width:220px" id="historySearchInput" name="search" value="<?= esc($search) ?>" placeholder="Search receipt, plate, ID...">
       <input class="form-control form-control-sm" style="width:150px" type="date" name="date_from" value="<?= esc($dateFrom) ?>">
       <input class="form-control form-control-sm" style="width:150px" type="date" name="date_to" value="<?= esc($dateTo) ?>">
       <select class="form-select form-select-sm" style="width:160px" name="method">
@@ -168,9 +139,9 @@ page_start('Payment History', 'history', 'Search receipt, plate...', 'Recorded p
     <?php empty_state('No payment transactions matched your current filters.'); ?>
   <?php else: ?>
     <div class="table-responsive table-scroll">
-      <table class="table align-middle history-table">
-        <thead><tr><th>Receipt No.</th><th>Violation ID</th><th>Plate Number</th><th>Amount</th><th>Payment Date</th><th>Processed By</th><th>Status</th><th class="text-end action-column">Action</th></tr></thead>
-        <tbody>
+      <table class="table align-middle">
+        <thead><tr><th>Receipt No.</th><th>Violation ID</th><th>Plate Number</th><th>Amount</th><th>Payment Date</th><th>Processed By</th><th>Status</th><th class="text-end">Action</th></tr></thead>
+        <tbody id="historyTableBody">
           <?php foreach ($history as $h): ?>
             <tr>
               <td class="fw-semibold"><?= esc(payment_reference((int)$h['payment_id'])) ?></td>
@@ -180,17 +151,48 @@ page_start('Payment History', 'history', 'Search receipt, plate...', 'Recorded p
               <td><?= esc($h['payment_date']) ?></td>
               <td><?= esc($h['received_by_name'] ?? 'Not recorded') ?></td>
               <td><span class="tag <?= tag_class($h['payment_status']) ?>"><?= esc(ucfirst($h['payment_status'])) ?></span></td>
-              <td class="text-end action-column">
-                <button class="receipt-action-btn" type="button" data-bs-toggle="modal" data-bs-target="#receipt<?= (int)$h['payment_id'] ?>">
+              <td class="text-end">
+                <button class="icon-link" data-bs-toggle="modal" data-bs-target="#receipt<?= (int)$h['payment_id'] ?>">
                   <i class="bi bi-printer"></i> Receipt
                 </button>
               </td>
             </tr>
           <?php endforeach; ?>
+          <tr id="noHistoryLiveResultsRow" style="display:none;">
+            <td colspan="8" class="text-center text-muted py-3">No matching transactions on this page. Try Apply to search all records.</td>
+          </tr>
         </tbody>
       </table>
     </div>
   <?php endif; ?>
+
+  <script>
+  (function () {
+    var searchInput = document.getElementById('historySearchInput');
+    var tbody = document.getElementById('historyTableBody');
+    if (!searchInput || !tbody) return;
+
+    var noResultsRow = document.getElementById('noHistoryLiveResultsRow');
+    var rows = Array.prototype.filter.call(tbody.querySelectorAll('tr'), function (row) {
+      return row.id !== 'noHistoryLiveResultsRow';
+    });
+
+    searchInput.addEventListener('input', function () {
+      var query = searchInput.value.trim().toLowerCase();
+      var anyVisible = false;
+
+      rows.forEach(function (row) {
+        var matches = row.textContent.toLowerCase().indexOf(query) !== -1;
+        row.style.display = matches ? '' : 'none';
+        if (matches) anyVisible = true;
+      });
+
+      if (noResultsRow) {
+        noResultsRow.style.display = anyVisible ? 'none' : '';
+      }
+    });
+  })();
+  </script>
 
   <?php if ($totalPages > 1): ?>
     <?php

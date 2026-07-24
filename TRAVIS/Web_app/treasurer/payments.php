@@ -1,25 +1,20 @@
 <?php
-define('TRAVIS_PORTAL_LAYOUT', __DIR__ . '/layout.php');
-define('TRAVIS_EMBEDDED_ADMIN_PAGE', true);
-require dirname(__DIR__) . '/Admin/payments.php';
-exit;
-
 require_once __DIR__ . '/layout.php';
 
 $message = '';
 $messageType = 'info';
 
-function legacy_treasurer_payment_post(string $key, string $default = ''): string {
+function payment_post(string $key, string $default = ''): string {
     return trim((string)($_POST[$key] ?? $default));
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'record_payment') {
     $csrfOk = hash_equals((string)($_SESSION['csrf_token'] ?? ''), (string)($_POST['csrf_token'] ?? ''));
     $violationId = (int)($_POST['violation_id'] ?? 0);
-    $amountPaid = (float)legacy_treasurer_payment_post('amount_paid', '0');
-    $paymentMethod = legacy_treasurer_payment_post('payment_method', 'cash');
-    $notes = legacy_treasurer_payment_post('notes');
-    $paymentDateInput = legacy_treasurer_payment_post('payment_date');
+    $amountPaid = (float)payment_post('amount_paid', '0');
+    $paymentMethod = payment_post('payment_method', 'cash');
+    $notes = payment_post('notes');
+    $paymentDateInput = payment_post('payment_date');
     $paymentDateTime = ($paymentDateInput !== '' && strtotime($paymentDateInput) !== false)
         ? date('Y-m-d H:i:s', strtotime($paymentDateInput))
         : date('Y-m-d H:i:s');
@@ -100,14 +95,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'recor
 
             $conn->commit();
 
-            $message = 'Payment recorded successfully. Reference: ' . payment_reference((int)$paymentId);
-            $messageType = 'success';
+            $_SESSION['payment_flash'] = 'Payment recorded successfully. Reference: ' . payment_reference((int)$paymentId);
+            $_SESSION['payment_flash_type'] = 'success';
+            $_SESSION['payment_flash_id'] = (int)$paymentId;
+            header('Location: ' . app_url('payments.php'));
+            exit;
         } catch (Throwable $e) {
             $conn->rollback();
             $message = $e->getMessage() ?: 'Failed to record the payment.';
             $messageType = 'danger';
         }
     }
+}
+
+if (!empty($_SESSION['payment_flash'])) {
+    $message = $_SESSION['payment_flash'];
+    $messageType = $_SESSION['payment_flash_type'] ?? 'info';
+    unset($_SESSION['payment_flash'], $_SESSION['payment_flash_type']);
+}
+
+$justPaidReceipt = null;
+if (!empty($_SESSION['payment_flash_id'])) {
+    $justPaidId = (int)$_SESSION['payment_flash_id'];
+    unset($_SESSION['payment_flash_id']);
+    $justPaidReceipt = fetch_one("
+        SELECT p.*, v.ticket_number, v.plate_number, v.violation_type, v.driver_name
+        FROM payments p
+        JOIN violations v ON v.violation_id = p.violation_id
+        WHERE p.payment_id = ?
+        LIMIT 1
+    ", [(string)$justPaidId]);
 }
 
 $selectedViolationId = (int)($_GET['violation_id'] ?? 0);
@@ -120,47 +137,27 @@ if ($selectedViolationId > 0) {
     $selectedViolation = $stmt->get_result()->fetch_assoc();
 }
 
-$pendingSearch = trim((string)($_GET['pending_search'] ?? ''));
 $paymentSearch = trim((string)($_GET['payment_search'] ?? ''));
 $methodFilter = trim((string)($_GET['method'] ?? ''));
-
-$pendingWhere = "WHERE v.status IN ('pending', 'overdue')";
-$pendingParams = [];
-$pendingTypes = '';
-
-if ($pendingSearch !== '') {
-    $pendingWhere .= " AND (v.ticket_number LIKE ? OR v.driver_name LIKE ? OR v.plate_number LIKE ? OR v.violation_type LIKE ?)";
-    $like = "%{$pendingSearch}%";
-    array_push($pendingParams, $like, $like, $like, $like);
-    $pendingTypes .= 'ssss';
-}
 
 $pendingSql = "
     SELECT v.*
     FROM violations v
-    {$pendingWhere}
-    ORDER BY CASE WHEN v.status = 'overdue' THEN 0 ELSE 1 END, v.violation_date ASC, v.created_at ASC
-    LIMIT 50
+    WHERE v.status IN ('pending', 'overdue')
+    ORDER BY CASE WHEN v.status = 'overdue' THEN 0 ELSE 1 END, v.violation_date ASC
+    LIMIT 200
 ";
-
-if ($pendingParams) {
-    $stmt = $conn->prepare($pendingSql);
-    $stmt->bind_param($pendingTypes, ...$pendingParams);
-    $stmt->execute();
-    $pendingViolations = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-} else {
-    $pendingViolations = fetch_all($pendingSql);
-}
+$pendingViolations = fetch_all($pendingSql);
 
 $paymentWhere = [];
 $paymentParams = [];
 $paymentTypes = '';
 
 if ($paymentSearch !== '') {
-    $paymentWhere[] = "(v.ticket_number LIKE ? OR v.driver_name LIKE ? OR v.plate_number LIKE ? OR p.receipt_reference LIKE ?)";
+    $paymentWhere[] = "(v.ticket_number LIKE ? OR v.plate_number LIKE ? OR p.receipt_reference LIKE ?)";
     $like = "%{$paymentSearch}%";
-    array_push($paymentParams, $like, $like, $like, $like);
-    $paymentTypes .= 'ssss';
+    array_push($paymentParams, $like, $like, $like);
+    $paymentTypes .= 'sss';
 }
 
 if ($methodFilter !== '') {
@@ -172,13 +169,13 @@ if ($methodFilter !== '') {
 $paymentWhereSql = $paymentWhere ? 'WHERE ' . implode(' AND ', $paymentWhere) : '';
 
 $paymentSql = "
-    SELECT p.*, v.ticket_number, v.driver_name, v.plate_number, v.violation_type, u.full_name AS received_by_name
+    SELECT p.*, v.ticket_number, v.plate_number, v.violation_type, u.full_name AS received_by_name
     FROM payments p
     JOIN violations v ON v.violation_id = p.violation_id
     LEFT JOIN users u ON u.user_id = p.received_by
     {$paymentWhereSql}
     ORDER BY p.payment_date DESC, p.payment_id DESC
-    LIMIT 100
+    LIMIT 50
 ";
 
 if ($paymentParams) {
@@ -269,7 +266,12 @@ page_start('Payments', 'payments', 'Search payments...', 'Process unpaid violati
       <p class="text-muted small mb-3">Fill in the details to record a violation payment</p>
 
       <?php if ($message): ?>
-        <div class="alert alert-<?= esc($messageType) ?>"><?= esc($message) ?></div>
+        <div class="alert alert-<?= esc($messageType) ?> d-flex justify-content-between align-items-center flex-wrap gap-2">
+          <span><?= esc($message) ?></span>
+          <?php if ($justPaidReceipt): ?>
+            <button type="button" class="btn btn-sm btn-teal" onclick="printReceiptNow()"><i class="bi bi-printer me-1"></i>Print Receipt</button>
+          <?php endif; ?>
+        </div>
       <?php endif; ?>
 
       <?php if ($selectedViolationId > 0 && !$selectedViolation): ?>
@@ -346,10 +348,12 @@ page_start('Payments', 'payments', 'Search payments...', 'Process unpaid violati
       <h6 class="mb-1 fw-bold">Pending Violations</h6>
       <p class="text-muted small mb-3">Click to auto-fill</p>
 
-      <form method="get" class="d-flex gap-2 mb-3">
-        <input class="form-control form-control-sm" name="pending_search" value="<?= esc($pendingSearch) ?>" placeholder="Search ticket, driver, plate, violation...">
-        <button class="btn btn-sm btn-light"><i class="bi bi-search"></i></button>
-      </form>
+      <div class="mb-3">
+        <div class="position-relative">
+          <input class="form-control form-control-sm ps-4" id="pendingLiveSearch" placeholder="Search ticket, plate, violation...">
+          <i class="bi bi-search position-absolute" style="left:.6rem; top:50%; transform:translateY(-50%); color:#94a3b8;"></i>
+        </div>
+      </div>
 
       <?php if (!$pendingViolations): ?>
         <?php empty_state('No pending or overdue violations were found.'); ?>
@@ -357,7 +361,7 @@ page_start('Payments', 'payments', 'Search payments...', 'Process unpaid violati
         <div class="table-responsive" style="max-height: 420px; overflow-y: auto;">
           <table class="table align-middle mb-0">
             <thead><tr><th>ID</th><th>Plate</th><th class="text-end">Fine</th></tr></thead>
-            <tbody>
+            <tbody id="pendingTableBody">
               <?php foreach ($pendingViolations as $v): ?>
                 <tr class="pending-row" data-violation-id="<?= (int)$v['violation_id'] ?>" data-ticket="<?= esc($v['ticket_number']) ?>" data-plate="<?= esc($v['plate_number']) ?>" data-fine="<?= esc($v['penalty_amount']) ?>">
                   <td class="pv-id"><?= esc($v['ticket_number']) ?></td>
@@ -365,6 +369,9 @@ page_start('Payments', 'payments', 'Search payments...', 'Process unpaid violati
                   <td class="text-end fw-semibold"><?= peso($v['penalty_amount']) ?></td>
                 </tr>
               <?php endforeach; ?>
+              <tr id="noPendingLiveResultsRow" style="display:none;">
+                <td colspan="3" class="text-center text-muted py-3">No matching violations found.</td>
+              </tr>
             </tbody>
           </table>
         </div>
@@ -386,6 +393,32 @@ document.querySelectorAll('.pending-row').forEach(function (row) {
     if (warning) warning.classList.add('d-none');
   });
 });
+
+(function () {
+  var searchInput = document.getElementById('pendingLiveSearch');
+  var tbody = document.getElementById('pendingTableBody');
+  if (!searchInput || !tbody) return;
+
+  var noResultsRow = document.getElementById('noPendingLiveResultsRow');
+  var rows = Array.prototype.filter.call(tbody.querySelectorAll('tr'), function (row) {
+    return row.id !== 'noPendingLiveResultsRow';
+  });
+
+  searchInput.addEventListener('input', function () {
+    var query = searchInput.value.trim().toLowerCase();
+    var anyVisible = false;
+
+    rows.forEach(function (row) {
+      var matches = row.textContent.toLowerCase().indexOf(query) !== -1;
+      row.style.display = matches ? '' : 'none';
+      if (matches) anyVisible = true;
+    });
+
+    if (noResultsRow) {
+      noResultsRow.style.display = anyVisible ? 'none' : '';
+    }
+  });
+})();
 </script>
 
 <div class="modal fade" id="confirmPaymentModal" tabindex="-1" aria-labelledby="confirmPaymentModalLabel" aria-hidden="true">
@@ -462,8 +495,7 @@ document.querySelectorAll('.pending-row').forEach(function (row) {
     <div><h6 class="mb-0">Payment Transactions</h6><small class="text-muted">Completed and recorded collection history.</small></div>
     <form method="get" class="filter-toolbar" id="paymentFilterForm">
       <?php if ($selectedViolationId > 0): ?><input type="hidden" name="violation_id" value="<?= $selectedViolationId ?>"><?php endif; ?>
-      <input type="hidden" name="pending_search" value="<?= esc($pendingSearch) ?>">
-      <input class="form-control" style="min-width:220px" id="paymentSearchInput" name="payment_search" value="<?= esc($paymentSearch) ?>" placeholder="Ticket, driver, plate, or receipt...">
+      <input class="form-control" style="min-width:220px" id="paymentSearchInput" name="payment_search" value="<?= esc($paymentSearch) ?>" placeholder="Ticket, plate, or receipt no...">
       <select class="form-select" style="max-width:190px" id="paymentMethodSelect" name="method">
         <option value="">All Methods</option>
         <?php foreach (payment_method_options() as $value => $label): ?>
@@ -495,13 +527,12 @@ document.querySelectorAll('.pending-row').forEach(function (row) {
   <?php else: ?>
     <div class="table-responsive table-scroll">
       <table class="table align-middle">
-        <thead><tr><th>Reference</th><th>Ticket</th><th>Driver</th><th>Plate</th><th>Violation</th><th>Amount</th><th>Method</th><th>Date</th><th>Status</th><th>Received By</th></tr></thead>
+        <thead><tr><th>Reference</th><th>Ticket</th><th>Plate</th><th>Violation</th><th>Amount</th><th>Method</th><th>Date</th><th>Status</th><th>Received By</th></tr></thead>
         <tbody>
           <?php foreach ($payments as $p): ?>
             <tr>
               <td class="fw-semibold"><?= esc(payment_reference((int)$p['payment_id'])) ?></td>
               <td><?= esc($p['ticket_number']) ?></td>
-              <td><?= esc($p['driver_name']) ?></td>
               <td><?= esc($p['plate_number']) ?></td>
               <td><?= esc($p['violation_type']) ?></td>
               <td class="fw-semibold"><?= peso($p['amount_paid']) ?></td>
@@ -516,5 +547,99 @@ document.querySelectorAll('.pending-row').forEach(function (row) {
     </div>
   <?php endif; ?>
 </div>
+
+<?php if ($justPaidReceipt): ?>
+<div id="receiptSheet" class="print-sheet-overlay">
+  <div class="ps-title">Official Receipt</div>
+  <div class="ps-subtitle"><?= esc(payment_reference((int)$justPaidReceipt['payment_id'])) ?></div>
+  <hr>
+  <div class="ps-row">
+    <div><div class="ps-label">Ticket Number</div><div class="ps-value"><?= esc($justPaidReceipt['ticket_number']) ?></div></div>
+    <div><div class="ps-label">Plate Number</div><div class="ps-value"><?= esc($justPaidReceipt['plate_number']) ?></div></div>
+    <div><div class="ps-label">Driver</div><div class="ps-value"><?= esc($justPaidReceipt['driver_name']) ?></div></div>
+    <div><div class="ps-label">Violation</div><div class="ps-value"><?= esc($justPaidReceipt['violation_type']) ?></div></div>
+    <div><div class="ps-label">Amount Paid</div><div class="ps-value"><?= peso($justPaidReceipt['amount_paid']) ?></div></div>
+    <div><div class="ps-label">Payment Method</div><div class="ps-value"><?= esc(payment_method_label($justPaidReceipt['payment_method'])) ?></div></div>
+    <div><div class="ps-label">Payment Date</div><div class="ps-value"><?= esc($justPaidReceipt['payment_date']) ?></div></div>
+    <div><div class="ps-label">Received By</div><div class="ps-value"><?= esc($_SESSION['user']['name'] ?? 'Treasury Personnel') ?></div></div>
+    <?php if (!empty($justPaidReceipt['notes'])): ?>
+      <div class="col-12" style="grid-column:1/-1;"><div class="ps-label">Notes</div><div class="ps-value"><?= nl2br(esc($justPaidReceipt['notes'])) ?></div></div>
+    <?php endif; ?>
+  </div>
+</div>
+
+<style>
+.print-sheet-overlay {
+  position: fixed;
+  top: 0; left: 0;
+  width: 800px;
+  max-width: 100%;
+  background: #fff;
+  padding: 2.5rem;
+  visibility: hidden;
+  z-index: -1;
+}
+.print-sheet-overlay .ps-title { font-size: 1.6rem; font-weight: 700; margin-bottom: .15rem; color: #111827; }
+.print-sheet-overlay .ps-subtitle { color: #64748b; font-size: .9rem; margin-bottom: 1rem; }
+.print-sheet-overlay hr { margin: 0 0 1.75rem; }
+.print-sheet-overlay .ps-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem 2rem; }
+.print-sheet-overlay .ps-label { font-weight: 700; color: #111827; margin-bottom: .2rem; }
+.print-sheet-overlay .ps-value { color: #111827; }
+
+@media print {
+  body.printing-receipt * { visibility: hidden !important; }
+  body.printing-receipt .print-sheet-overlay,
+  body.printing-receipt .print-sheet-overlay * { visibility: visible !important; }
+  body.printing-receipt .print-sheet-overlay {
+    position: absolute;
+    top: 0; left: 0;
+    z-index: 99999;
+  }
+}
+</style>
+
+<script>
+function printReceiptNow() {
+  document.body.classList.add('printing-receipt');
+  var cleanup = function () {
+    document.body.classList.remove('printing-receipt');
+    window.removeEventListener('afterprint', cleanup);
+  };
+  window.addEventListener('afterprint', cleanup);
+  window.print();
+  setTimeout(cleanup, 2000);
+}
+</script>
+
+<div class="modal fade" id="printReceiptPromptModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content text-center">
+      <div class="modal-body py-4">
+        <div class="mb-3" style="font-size:2.5rem;color:#0d9488;"><i class="bi bi-receipt-cutoff"></i></div>
+        <h5 class="mb-2">Payment Saved</h5>
+        <p class="text-muted mb-0">Would you like to print the official receipt now?</p>
+      </div>
+      <div class="modal-footer border-top-0 pt-0 justify-content-center">
+        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Not Now</button>
+        <button type="button" class="btn btn-teal" id="printReceiptOkBtn"><i class="bi bi-printer me-1"></i>OK, Print</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  var el = document.getElementById('printReceiptPromptModal');
+  if (!el) return;
+  var modal = bootstrap.Modal.getOrCreateInstance(el);
+  modal.show();
+  document.getElementById('printReceiptOkBtn').addEventListener('click', function () {
+    modal.hide();
+    printReceiptNow();
+  });
+});
+</script>
+<?php endif; ?>
+
 
 <?php page_end(); ?>
