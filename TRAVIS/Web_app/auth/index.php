@@ -144,495 +144,687 @@ if (!empty($_SESSION['user']['id'])) {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>TRAVIS Login</title>
+<title>TRAVIS Login · Municipality of Nasugbu</title>
 
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
-<link href="css/style.css" rel="stylesheet">
 
 <style>
-:root{
-  --navy-950:#060f1e;
-  --navy-900:#0a1a30;
-  --navy-800:#0f2544;
-  --navy-700:#15315c;
-  --blue-accent:#38bdf8;
-  --blue-accent-2:#2563eb;
-  --cyan-glow:#4fc3f7;
-  --text-soft:#c9d8ea;
-  --border-glass:rgba(255,255,255,.10);
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
 }
 
-*{box-sizing:border-box}
-
-html,body{height:100%;margin:0;font-family:'Poppins',sans-serif}
-
-body{
-  color:#fff;
-  background:
-    radial-gradient(circle at 12% 15%, rgba(56,189,248,.14), transparent 32%),
-    radial-gradient(circle at 85% 75%, rgba(37,99,235,.16), transparent 35%),
-    linear-gradient(160deg, var(--navy-950) 0%, var(--navy-900) 45%, var(--navy-800) 100%);
-  overflow:hidden;
+html, body {
+    height: 100%;
+    margin: 0;
+    font-family: 'Poppins', sans-serif;
 }
 
-.bg-glow{
-  position:fixed;inset:0;pointer-events:none;
-  background:
-    radial-gradient(circle at 18% 22%, rgba(79,195,247,.18), transparent 28%),
-    radial-gradient(circle at 82% 68%, rgba(37,99,235,.16), transparent 32%);
-  animation:floatGlow 8s ease-in-out infinite alternate;
-}
-@keyframes floatGlow{from{transform:translateY(-10px)}to{transform:translateY(10px)}}
-
-.traffic-fx{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:0}
-
-.vision-grid{
-  position:absolute;inset:0;
-  background-image:
-    linear-gradient(rgba(56,189,248,.08) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(56,189,248,.08) 1px, transparent 1px);
-  background-size:52px 52px;
+body {
+    background: url('../../assets/images/nasugbu-municipal-hall.jpg') center 45% / cover fixed no-repeat;
+    position: relative;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
 }
 
-.login-wrapper{position:relative;z-index:1}
-
-.login-wrapper{min-height:100vh;display:flex;align-items:center}
-
-.info-side{padding:4rem 2.5rem 4rem 5.5rem}
-
-.badge-pill{
-  display:inline-flex !important;align-items:center;gap:8px;
-  padding:8px 16px;border-radius:999px;
-  background:rgba(56,189,248,.12);
-  border:1px solid rgba(56,189,248,.28);
-  color:var(--cyan-glow);
-  font-size:.8rem;font-weight:600;letter-spacing:.02em;
-  margin-bottom:.6rem !important;
-  width:fit-content !important;
-  clear:both;
+/* Dark overlay for the entire background */
+body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: rgba(6, 15, 30, 0.35);
+    z-index: 0;
 }
 
-.info-side h1{
-  font-family:'Poppins',sans-serif;
-  font-size:3.1rem;
-  font-weight:800;
-  letter-spacing:.01em;
-  line-height:1.05;
-  margin-bottom:.5rem;
-  margin-top:0;
-  display:block !important;
-  width:fit-content !important;
-  clear:both;
-  background:linear-gradient(90deg,#ffffff 0%,#cfe4ff 40%,#38bdf8 75%,#2563eb 100%);
-  -webkit-background-clip:text;
-  background-clip:text;
-  -webkit-text-fill-color:transparent;
-  color:transparent;
+/* White gradient overlay - fades from left to right */
+.gradient-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(to right, 
+        rgba(255, 255, 255, 0.92) 0%,
+        rgba(255, 255, 255, 0.85) 25%,
+        rgba(255, 255, 255, 0.65) 45%,
+        rgba(255, 255, 255, 0.35) 60%,
+        rgba(255, 255, 255, 0.10) 75%,
+        rgba(255, 255, 255, 0) 100%
+    );
+    z-index: 0;
+    pointer-events: none;
 }
 
-.info-side h4{
-  font-weight:600;color:var(--text-soft);margin-bottom:1.5rem;
+.login-wrapper {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    padding: 30px 40px;
 }
 
-.info-side p.lead-copy{
-  max-width:600px;color:var(--text-soft);font-size:1.02rem;line-height:1.65;
+/* Left Panel - Info Side */
+.info-side {
+    padding: 3rem 2.5rem 3rem 0;
+    color: #1a2a3a;
 }
 
-.kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:2rem;max-width:600px}
-.kpi .glass{
-  padding:18px 14px;text-align:center;
-  background:rgba(255,255,255,.04);
-  border:1px solid var(--border-glass);
-  border-radius:16px;
-}
-.kpi .glass h2{
-  font-size:1.6rem;font-weight:800;margin:0 0 4px;
-  color:var(--cyan-glow);
-}
-.kpi .glass small{color:var(--text-soft);font-size:.72rem;letter-spacing:.03em;text-transform:uppercase}
-
-.footer-strip{
-  margin-top:2.5rem;color:var(--text-soft);opacity:.7;font-size:.85rem;
-}
-
-/* login card, styled like the dashboard panel from the reference */
-.login-card{
-  background:rgba(15,37,68,.55);
-  backdrop-filter:blur(22px);
-  -webkit-backdrop-filter:blur(22px);
-  border:1px solid var(--border-glass);
-  border-radius:22px;
-  padding:0;
-  box-shadow:0 30px 70px rgba(0,0,0,.45);
-  overflow:hidden;
+.badge-pill {
+    display: inline-flex !important;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 18px 6px 14px;
+    border-radius: 999px;
+    background: rgba(26, 35, 80, 0.08);
+    border: 1px solid rgba(26, 35, 80, 0.15);
+    color: #1a2350;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 1.2rem !important;
+    width: fit-content !important;
 }
 
-.login-card-header{
-  display:flex;align-items:center;gap:8px;
-  padding:16px 22px;
-  background:rgba(255,255,255,.03);
-  border-bottom:1px solid var(--border-glass);
-}
-.dot{width:10px;height:10px;border-radius:50%}
-.dot.red{background:#ff5f57}
-.dot.yellow{background:#febc2e}
-.dot.green{background:#28c840}
-.login-card-header .live{
-  margin-left:auto;font-size:.7rem;letter-spacing:.08em;
-  color:var(--text-soft);opacity:.75;text-transform:uppercase;
+.badge-pill i {
+    font-size: 0.8rem;
+    color: #1a2350;
 }
 
-.login-card-body{padding:42px 44px 38px}
-
-.logo-holder{display:flex;justify-content:center;gap:18px;margin-bottom:22px}
-.logo-circle{
-  width:68px;height:68px;border-radius:50%;
-  background:linear-gradient(135deg, rgba(56,189,248,.22), rgba(37,99,235,.22));
-  border:1px solid rgba(255,255,255,.12);
-  display:flex;align-items:center;justify-content:center;
-  font-weight:800;font-size:.88rem;color:var(--cyan-glow);
+.info-side h1 {
+    font-size: 4.5rem;
+    font-weight: 900;
+    letter-spacing: -0.04em;
+    line-height: 1.02;
+    margin-bottom: 0.25rem;
+    margin-top: 0;
+    background: linear-gradient(135deg, #0a1128 0%, #1a2350 35%, #2a3a7a 70%, #3a4a9a 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
 }
 
-.login-card h2{font-weight:800}
-.login-card p.subtitle{color:var(--text-soft);opacity:.8}
-
-.form-label{color:var(--cyan-glow);font-size:.72rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px;display:block}
-
-.login-card .form-control{
-  background:rgba(255,255,255,.05);
-  border:1px solid var(--border-glass);
-  color:var(--text-soft);
-  border-radius:12px;
-  padding:.8rem 1rem .8rem 2.7rem;
-  font-size:.98rem;
-}
-.login-card .form-control::placeholder{color:rgba(201,216,234,.55)}
-.login-card .form-control:focus{
-  background:rgba(255,255,255,.07);
-  border-color:var(--blue-accent);
-  box-shadow:0 0 0 3px rgba(56,189,248,.18);
-  color:var(--text-soft);
+.info-side h4 {
+    font-weight: 700;
+    color: #1a2350;
+    font-size: 1.35rem;
+    margin-bottom: 1rem;
+    letter-spacing: -0.01em;
 }
 
-.input-icon-group{position:relative}
-.input-icon-group i.field-icon{
-  position:absolute;left:16px;top:50%;transform:translateY(-50%);
-  color:var(--text-soft);opacity:.55;font-size:1rem;pointer-events:none;
-}
-.input-icon-group .toggle-visibility{
-  position:absolute;right:16px;top:50%;transform:translateY(-50%);
-  background:none;border:none;padding:0;color:var(--text-soft);opacity:.6;
-  font-size:1rem;cursor:pointer;line-height:1;
-}
-.input-icon-group .toggle-visibility:hover{opacity:1;color:var(--cyan-glow)}
-.input-icon-group .form-control:focus ~ i.field-icon{color:var(--blue-accent);opacity:.9}
-.input-icon-group input[type="password"],.input-icon-group input[type="text"].pw-field{padding-right:2.6rem}
-
-.form-check-input{background-color:rgba(255,255,255,.08);border-color:var(--border-glass)}
-.form-check-input:checked{background-color:var(--blue-accent-2);border-color:var(--blue-accent-2)}
-
-a.forgot-link{color:var(--cyan-glow);text-decoration:none;font-size:.85rem}
-a.forgot-link:hover{text-decoration:underline}
-
-.btn-signin{
-  background:linear-gradient(90deg,var(--blue-accent-2),var(--cyan-glow));
-  border:none;color:#fff;font-weight:700;
-  border-radius:12px;padding:.7rem 1rem;
-  box-shadow:0 12px 28px rgba(37,99,235,.35);
-  transition:transform .15s ease, box-shadow .15s ease;
-}
-.btn-signin:hover{
-  transform:translateY(-1px);
-  box-shadow:0 16px 32px rgba(56,189,248,.4);
-  color:#fff;
+.info-side .lead-copy {
+    max-width: 540px;
+    color: #3a4a6a;
+    font-size: 0.98rem;
+    line-height: 1.75;
+    font-weight: 400;
 }
 
-hr{border-color:var(--border-glass);opacity:1}
-
-.small-footer{color:var(--text-soft);opacity:.65;font-size:.78rem}
-
-.alert-danger{
-  background:rgba(220,53,69,.14);
-  border:1px solid rgba(220,53,69,.35);
-  color:#ffb3bd;
-  border-radius:12px;
+/* KPI Cards */
+.kpi {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-top: 2rem;
+    max-width: 460px;
 }
 
-@media(max-width:991px){
-  body{overflow:auto}
-  .info-side{display:none}
-  .login-card{margin:30px 0}
+.kpi .glass {
+    padding: 16px 14px;
+    background: rgba(255, 255, 255, 0.5);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(26, 35, 80, 0.06);
+    border-radius: 14px;
+    text-align: center;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
 }
 
-/* Nasugbu TMO public-information visual theme */
-:root{
-  --municipal-navy:#102f49;
-  --municipal-ink:#10202c;
-  --municipal-teal:#087d78;
-  --municipal-orange:#eb941f;
-  --municipal-cream:#f7f5ee;
-  --municipal-muted:#61716d;
+.kpi .glass:hover {
+    background: rgba(255, 255, 255, 0.7);
+    transform: translateY(-3px);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
 }
 
-body{
-  color:var(--municipal-ink);
-  background:
-    linear-gradient(rgba(247,245,238,.66),rgba(247,245,238,.76)),
-    url('../../assets/images/nasugbu-municipal-hall.jpg') center 58%/cover fixed no-repeat;
+.kpi .glass h2 {
+    font-size: 1.5rem;
+    font-weight: 800;
+    margin: 0 0 4px;
+    color: #1a2350;
+    letter-spacing: -0.02em;
 }
 
-.bg-glow{display:none}
-.traffic-fx{z-index:0}
-.vision-grid{
-  background-image:radial-gradient(rgba(16,42,67,.13) 1px,transparent 1px);
-  background-size:22px 22px;
-  -webkit-mask-image:linear-gradient(90deg,transparent,#000 35%);
-  mask-image:linear-gradient(90deg,transparent,#000 35%);
+.kpi .glass h2 i {
+    font-size: 1.3rem;
+    color: #1a2350;
 }
 
-.login-wrapper{padding:28px 34px}
-.info-side{padding:3rem 3rem 3rem 4.5rem}
-.badge-pill{
-  padding:0;
-  border:0;
-  border-radius:0;
-  background:transparent;
-  color:var(--municipal-teal);
-  font-size:.76rem;
-  font-weight:800;
-  letter-spacing:.13em;
-  text-transform:uppercase;
+.kpi .glass small {
+    color: #5a6a8a;
+    font-size: 0.65rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    display: block;
+    font-weight: 600;
 }
-.badge-pill::before{content:"";width:32px;height:3px;background:var(--municipal-orange)}
-.badge-pill i{display:none}
 
-.info-side h1{
-  margin-top:1.25rem;
-  color:var(--municipal-ink);
-  background:none;
-  -webkit-text-fill-color:currentColor;
-  font-size:4.7rem;
-  font-weight:900;
-  letter-spacing:-.055em;
+.footer-strip {
+    margin-top: 2.5rem;
+    color: #5a6a8a;
+    font-size: 0.78rem;
+    letter-spacing: 0.02em;
 }
-.info-side h4{
-  max-width:650px;
-  color:var(--municipal-teal);
-  font-size:1.55rem;
-  font-weight:800;
-  line-height:1.35;
-}
-.info-side p.lead-copy{color:var(--municipal-muted);font-size:1rem;line-height:1.75}
-.kpi .glass{
-  text-align:left;
-  background:rgba(255,253,247,.54);
-  border:1px solid rgba(16,47,73,.14);
-  border-radius:12px;
-  box-shadow:0 12px 28px rgba(16,47,73,.07);
-  backdrop-filter:blur(12px);
-}
-.kpi .glass h2{color:var(--municipal-teal)}
-.kpi .glass small{color:#516760;font-weight:700}
-.footer-strip{color:#536a64;opacity:1}
 
-.login-card{
-  color:#fff;
-  background:rgba(16,47,73,.96);
-  border:1px solid rgba(255,255,255,.12);
-  border-radius:12px;
-  box-shadow:14px 16px 0 rgba(8,125,120,.12),0 30px 70px rgba(16,47,73,.25);
-  backdrop-filter:blur(20px) saturate(110%);
+.footer-strip i {
+    color: #1a2350;
 }
-.login-card-header{
-  padding:15px 22px;
-  background:rgba(255,255,255,.035);
-  border-bottom-color:rgba(255,255,255,.12);
-}
-.login-card-header .live{color:#9fd5cf;opacity:1;font-weight:700}
-.login-card-body{padding:36px 44px 38px}
-.logo-holder{align-items:center;gap:12px;margin-bottom:20px}
-.auth-seal{
-  width:68px;
-  height:68px;
-  object-fit:cover;
-  border:3px solid rgba(255,255,255,.9);
-  border-radius:50%;
-  box-shadow:0 8px 20px rgba(0,0,0,.22);
-}
-.auth-agency{text-align:left}
-.auth-agency strong{display:block;color:#fff;font-size:1rem;letter-spacing:.02em}
-.auth-agency small{display:block;color:#9fd5cf;font-size:.72rem;margin-top:3px}
-.login-card h2{color:#fff}
-.login-card p.subtitle{color:#b9cbc9;opacity:1}
-.form-label{color:#91d0ca}
-.login-card .form-control{
-  color:#fff;
-  background:rgba(255,255,255,.065);
-  border-color:rgba(255,255,255,.16);
-}
-.login-card .form-control::placeholder{color:rgba(221,233,231,.5)}
-.login-card .form-control:focus{
-  color:#fff;
-  background:rgba(255,255,255,.09);
-  border-color:#60c6bd;
-  box-shadow:0 0 0 3px rgba(96,198,189,.17);
-}
-.input-icon-group i.field-icon,.input-icon-group .toggle-visibility{color:#a9c8c5}
-.input-icon-group .toggle-visibility:hover{color:#fff}
-.input-icon-group .form-control:focus ~ i.field-icon{color:#60c6bd}
-.form-check-input{background-color:rgba(255,255,255,.08);border-color:rgba(255,255,255,.25)}
-.form-check-input:checked{background-color:var(--municipal-orange);border-color:var(--municipal-orange)}
-a.forgot-link{color:#9fd5cf}
-.btn-signin{
-  color:#10202c;
-  background:linear-gradient(90deg,#eb941f,#f3aa43);
-  box-shadow:0 12px 28px rgba(235,148,31,.25);
-}
-.btn-signin:hover{color:#10202c;box-shadow:0 16px 34px rgba(235,148,31,.34)}
-hr{border-color:rgba(255,255,255,.13)}
-.small-footer{color:#b5c9c6;opacity:.78}
-.alert-danger{background:rgba(220,53,69,.18);border-color:rgba(255,145,157,.38);color:#ffd4da}
 
-@media(max-width:1199px){.info-side h1{font-size:4rem}.info-side{padding-left:2.5rem}}
-@media(max-width:991px){
-  body{background-position:center}
-  .login-wrapper{padding:18px}
-  .login-card{margin:18px 0;box-shadow:8px 10px 0 rgba(8,125,120,.12),0 24px 55px rgba(16,47,73,.24)}
+/* ============================================
+   GLASS LOGIN CARD - NAVY BLUE THEME
+   ============================================ */
+.login-card {
+    background: rgba(255, 255, 255, 0.12);
+    backdrop-filter: blur(30px);
+    -webkit-backdrop-filter: blur(30px);
+    border: 1px solid rgba(255, 255, 255, 0.20);
+    border-radius: 24px;
+    box-shadow: 
+        0 25px 80px rgba(0, 0, 0, 0.25),
+        0 10px 30px rgba(0, 0, 0, 0.10),
+        inset 0 1px 0 rgba(255, 255, 255, 0.25);
+    overflow: hidden;
+    transition: all 0.4s ease;
 }
-@media(max-width:575px){
-  .login-wrapper{padding:10px}
-  .login-card-body{padding:30px 22px}
-  .auth-seal{width:58px;height:58px}
+
+.login-card:hover {
+    box-shadow: 
+        0 35px 100px rgba(0, 0, 0, 0.30),
+        0 15px 40px rgba(0, 0, 0, 0.12),
+        inset 0 1px 0 rgba(255, 255, 255, 0.25);
+    transform: translateY(-2px);
+}
+
+/* Card Header - Mac style */
+.login-card-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 16px 28px;
+    background: rgba(255, 255, 255, 0.04);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.login-card-header .dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    transition: all 0.2s ease;
+}
+
+.login-card-header .dot.red { 
+    background: #ff5f57;
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.1);
+}
+.login-card-header .dot.yellow { 
+    background: #febc2e;
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.1);
+}
+.login-card-header .dot.green { 
+    background: #28c840;
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.1);
+}
+
+.login-card-header .live {
+    margin-left: auto;
+    font-size: 0.6rem;
+    letter-spacing: 0.1em;
+    color: rgba(255, 255, 255, 0.7);
+    text-transform: uppercase;
+    font-weight: 700;
+    background: rgba(255, 255, 255, 0.06);
+    padding: 4px 14px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.login-card-header .live i {
+    color: #28c840;
+    font-size: 0.55rem;
+}
+
+/* Card Body */
+.login-card-body {
+    padding: 42px 44px 44px;
+}
+
+/* Logo/Agency */
+.logo-holder {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 28px;
+}
+
+.auth-seal {
+    width: 68px;
+    height: 68px;
+    object-fit: cover;
+    border: 3px solid rgba(255, 255, 255, 0.15);
+    border-radius: 50%;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    transition: all 0.3s ease;
+}
+
+.auth-seal:hover {
+    transform: scale(1.05);
+    border-color: rgba(255, 255, 255, 0.30);
+}
+
+.auth-agency {
+    text-align: left;
+}
+
+.auth-agency strong {
+    display: block;
+    color: #ffffff;
+    font-size: 1.1rem;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.auth-agency small {
+    display: block;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.7rem;
+    font-weight: 500;
+    margin-top: 2px;
+    letter-spacing: 0.05em;
+}
+
+/* Welcome Text */
+.login-card h2 {
+    color: #ffffff;
+    font-weight: 800;
+    font-size: 1.8rem;
+    margin-bottom: 0.1rem;
+    letter-spacing: -0.02em;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.login-card .subtitle {
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 0.85rem;
+    margin-bottom: 1.8rem;
+    font-weight: 400;
+}
+
+/* Form Elements */
+.form-label {
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+    display: block;
+}
+
+.input-icon-group {
+    position: relative;
+}
+
+.input-icon-group .field-icon {
+    position: absolute;
+    left: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: rgba(255, 255, 255, 0.35);
+    font-size: 1rem;
+    pointer-events: none;
+    transition: color 0.3s ease;
+}
+
+.login-card .form-control {
+    background: rgba(255, 255, 255, 0.07);
+    border: 2px solid #1a2350;
+    color: #ffffff;
+    border-radius: 14px;
+    padding: 0.8rem 1rem 0.8rem 2.8rem;
+    font-size: 0.95rem;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    font-family: 'Poppins', sans-serif;
+}
+
+.login-card .form-control::placeholder {
+    color: rgba(255, 255, 255, 0.30);
+    font-weight: 400;
+}
+
+.login-card .form-control:focus {
+    background: rgba(255, 255, 255, 0.11);
+    border-color: #3a4a9a;
+    box-shadow: 0 0 0 4px rgba(26, 35, 80, 0.25);
+    color: #ffffff;
+}
+
+.login-card .form-control:focus ~ .field-icon {
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.input-icon-group .toggle-visibility {
+    position: absolute;
+    right: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    padding: 0;
+    color: rgba(255, 255, 255, 0.35);
+    font-size: 1.1rem;
+    cursor: pointer;
+    line-height: 1;
+    transition: color 0.3s ease;
+}
+
+.input-icon-group .toggle-visibility:hover {
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.login-card input[type="password"],
+.login-card input[type="text"].pw-field {
+    padding-right: 2.8rem;
+}
+
+/* Checkbox & Forgot Link */
+.form-check-input {
+    width: 18px;
+    height: 18px;
+    background-color: rgba(255, 255, 255, 0.08);
+    border: 2px solid rgba(255, 255, 255, 0.12);
+    border-radius: 5px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.form-check-input:checked {
+    background-color: #1a2350;
+    border-color: #1a2350;
+}
+
+.form-check-input:focus {
+    box-shadow: 0 0 0 3px rgba(26, 35, 80, 0.25);
+}
+
+.form-check-label {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    padding-left: 2px;
+}
+
+a.forgot-link {
+    color: rgba(255, 255, 255, 0.8);
+    text-decoration: none;
+    font-size: 0.82rem;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    position: relative;
+}
+
+a.forgot-link::after {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: 0;
+    width: 0;
+    height: 2px;
+    background: #ffffff;
+    transition: width 0.3s ease;
+}
+
+a.forgot-link:hover {
+    color: #ffffff;
+}
+
+a.forgot-link:hover::after {
+    width: 100%;
+}
+
+/* Sign In Button - Navy Blue Theme */
+.btn-signin {
+    background: linear-gradient(135deg, #0a1128 0%, #1a2350 50%, #2a3a7a 100%);
+    border: none;
+    color: #fff;
+    font-weight: 700;
+    border-radius: 14px;
+    padding: 0.85rem 1rem;
+    transition: all 0.3s ease;
+    font-size: 0.95rem;
+    font-family: 'Poppins', sans-serif;
+    letter-spacing: 0.02em;
+    position: relative;
+    overflow: hidden;
+}
+
+.btn-signin::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(255,255,255,0.08) 0%, transparent 50%);
+    pointer-events: none;
+}
+
+.btn-signin:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 12px 35px rgba(26, 35, 80, 0.35);
+    color: #fff;
+}
+
+.btn-signin:active {
+    transform: translateY(0);
+    box-shadow: 0 8px 25px rgba(26, 35, 80, 0.20);
+}
+
+/* Divider */
+hr {
+    border: none;
+    border-top: 2px solid rgba(255, 255, 255, 0.05);
+    margin: 1.5rem 0;
+}
+
+.small-footer {
+    color: rgba(255, 255, 255, 0.4);
+    font-size: 0.7rem;
+    line-height: 1.7;
+    letter-spacing: 0.03em;
+}
+
+.small-footer i {
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 0.65rem;
+}
+
+.alert-danger {
+    background: rgba(220, 53, 69, 0.12);
+    border: 2px solid rgba(220, 53, 69, 0.15);
+    color: #ffb3bd;
+    border-radius: 14px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    padding: 12px 16px;
+}
+
+/* Responsive */
+@media (max-width: 1199px) {
+    .info-side h1 { font-size: 3.6rem; }
+    .info-side h4 { font-size: 1.15rem; }
+    .login-card-body { padding: 32px 30px 36px; }
+}
+
+@media (max-width: 991px) {
+    body { align-items: flex-start; padding: 20px 0; }
+    body::before { background: rgba(6, 15, 30, 0.5); }
+    .gradient-overlay { 
+        background: rgba(255, 255, 255, 0.90);
+        width: 100%;
+    }
+    .login-wrapper { padding: 20px; }
+    .info-side { display: none; }
+    .login-card { margin: 0 auto; max-width: 460px; }
+}
+
+@media (max-width: 575px) {
+    .login-wrapper { padding: 12px; }
+    .login-card-body { padding: 24px 20px 28px; }
+    .login-card h2 { font-size: 1.5rem; }
+    .auth-seal { width: 56px; height: 56px; }
+    .logo-holder { gap: 12px; }
+    .login-card-header { padding: 12px 18px; }
 }
 </style>
+
 </head>
 <body>
 
-<div class="bg-glow"></div>
+<!-- White gradient overlay - fades from left to right -->
+<div class="gradient-overlay"></div>
 
-<div class="traffic-fx" aria-hidden="true">
-  <div class="vision-grid"></div>
+<div class="login-wrapper">
+<div class="row w-100 align-items-center g-0">
+
+<!-- Left Panel -->
+<div class="col-lg-7 col-xl-7 info-side">
+    <span class="badge-pill">
+        <i class="bi bi-stars"></i> AI Smart Traffic Command Center
+    </span>
+    <h1>TRAVIS</h1>
+    <h4>An AI, Computer Vision, and IoT-Based Traffic Monitoring and Decision Support System</h4>
+
+    <p class="lead-copy">
+        An AI-powered intelligent traffic monitoring platform designed to assist Local Government Units
+        in monitoring traffic violations, congestion, collisions, and road conditions using
+        Computer Vision and Machine Learning.
+    </p>
+
+    <div class="kpi">
+        <div class="glass">
+            <h2>1</h2>
+            <small>Active Camera</small>
+        </div>
+        <div class="glass">
+            <h2>AI</h2>
+            <small>Monitoring Online</small>
+        </div>
+        <div class="glass">
+            <h2><i class="bi bi-diagram-3-fill"></i></h2>
+            <small>Decision Support</small>
+        </div>
+    </div>
+
+    <div class="footer-strip">
+        <i class="bi bi-shield-check me-2"></i>
+        Municipality of Nasugbu &bull; Batangas State University &bull; TRAVIS v1.0
+    </div>
 </div>
 
-<div class="container-fluid login-wrapper">
-<div class="row w-100 align-items-center">
+<!-- Right Panel - Login Card -->
+<div class="col-lg-5 col-xl-5">
+<div class="mx-auto" style="max-width: 480px;">
 
-<div class="col-lg-6 col-xl-7 info-side">
-  <span class="badge-pill"><i class="bi bi-stars"></i> AI Smart Traffic Command Center</span>
-  <h1>TRAVIS</h1>
-  <h4>An AI, Computer Vision, and IoT-Based Traffic Monitoring and Decision Support System</h4>
-
-  <p class="lead-copy">
-    An AI-powered intelligent traffic monitoring platform designed to assist Local Government Units
-    in monitoring traffic violations, congestion, collisions, and road conditions using
-    Computer Vision and Machine Learning.
-  </p>
-
-  <div class="kpi">
-    <div class="glass">
-      <h2>1</h2>
-      <small>Active Camera</small>
-    </div>
-    <div class="glass">
-      <h2>AI</h2>
-      <small>Monitoring Online</small>
-    </div>
-    <div class="glass">
-      <h2><i class="bi bi-diagram-3-fill"></i></h2>
-      <small>Decision Support</small>
-    </div>
-  </div>
-
-  <div class="footer-strip">
-    <i class="bi bi-shield-check me-2"></i>
-    Municipality of Nasugbu &bull; Batangas State University &bull; TRAVIS v1.0
-  </div>
-</div>
-
-<div class="col-lg-6 col-xl-5">
-<div class="mx-auto" style="max-width:540px">
 <div class="login-card">
 
-  <div class="login-card-header">
-    <span class="dot red"></span>
-    <span class="dot yellow"></span>
-    <span class="dot green"></span>
-    <span class="live">Live &middot; Nasugbu</span>
-  </div>
-
-  <div class="login-card-body">
-    <div class="logo-holder">
-      <img class="auth-seal" src="../../assets/images/nasugbu-seal.jpg" alt="Municipality of Nasugbu seal">
-      <div class="auth-agency"><strong>NASUGBU · TMO</strong><small>Traffic Management Office</small></div>
+    <div class="login-card-header">
+        <span class="dot red"></span>
+        <span class="dot yellow"></span>
+        <span class="dot green"></span>
+        <span class="live"><i class="bi bi-record-fill me-1"></i> Live &bull; Nasugbu</span>
     </div>
 
-    <h2 class="text-center mb-2">Welcome Back</h2>
-    <p class="text-center subtitle mb-4">Authorized Personnel Only</p>
-
-    <?php if(!empty($error)): ?>
-    <div class="alert alert-danger"><?= htmlspecialchars($error) ?></div>
-    <?php endif; ?>
-
-    <form method="post" action="">
-      <div class="mb-4">
-        <label class="form-label">Email / Username</label>
-        <div class="input-icon-group">
-          <i class="bi bi-envelope field-icon"></i>
-          <input class="form-control" type="email" name="identifier" placeholder="Enter email address" required>
+    <div class="login-card-body">
+        <div class="logo-holder">
+            <img class="auth-seal" src="../../assets/images/nasugbu-seal.jpg" alt="Municipality of Nasugbu Seal">
+            <div class="auth-agency">
+                <strong>NASUGBU · TMO</strong>
+                <small>Traffic Management Office</small>
+            </div>
         </div>
-      </div>
 
-      <div class="mb-4">
-        <label class="form-label">Password</label>
-        <div class="input-icon-group">
-          <i class="bi bi-lock field-icon"></i>
-          <input class="form-control" type="password" name="password" id="passwordField" placeholder="Enter password" required>
-          <button type="button" class="toggle-visibility" id="togglePassword" aria-label="Show password">
-            <i class="bi bi-eye"></i>
-          </button>
+        <h2 class="text-center mb-0">Welcome Back</h2>
+        <p class="text-center subtitle">Authorized Personnel Only</p>
+
+        <?php if(!empty($error)): ?>
+        <div class="alert alert-danger"><?= htmlspecialchars($error) ?></div>
+        <?php endif; ?>
+
+        <form method="post" action="">
+            <div class="mb-4">
+                <label class="form-label">Email / Username</label>
+                <div class="input-icon-group">
+                    <i class="bi bi-envelope field-icon"></i>
+                    <input class="form-control" type="email" name="identifier" placeholder="Enter email address" required>
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Password</label>
+                <div class="input-icon-group">
+                    <i class="bi bi-lock field-icon"></i>
+                    <input class="form-control" type="password" name="password" id="passwordField" placeholder="Enter password" required>
+                    <button type="button" class="toggle-visibility" id="togglePassword" aria-label="Show password">
+                        <i class="bi bi-eye"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div class="form-check d-flex align-items-center gap-2">
+                    <input class="form-check-input" type="checkbox" id="remember" name="remember">
+                    <label class="form-check-label" for="remember">Remember me</label>
+                </div>
+                <a href="#" class="forgot-link">Forgot Password?</a>
+            </div>
+
+            <button class="btn btn-signin w-100 py-2">
+                <i class="bi bi-box-arrow-in-right me-2"></i>Sign In
+            </button>
+        </form>
+
+        <hr>
+
+        <div class="text-center small-footer">
+            <i class="bi bi-shield-check me-1"></i>
+            Traffic Violation Recognition and AI Surveillance<br>
+            Powered by Artificial Intelligence
         </div>
-      </div>
-
-      <div class="d-flex justify-content-between align-items-center mb-4">
-        <div class="form-check">
-          <input class="form-check-input" type="checkbox" id="remember" name="remember">
-          <label class="form-check-label" for="remember" style="color:var(--text-soft);font-size:.85rem">Remember me</label>
-        </div>
-        <a href="#" class="forgot-link">Forgot Password?</a>
-      </div>
-
-      <button class="btn btn-signin w-100 py-2">
-        <i class="bi bi-box-arrow-in-right me-2"></i>Sign In
-      </button>
-    </form>
-
-    <hr>
-
-    <div class="text-center small-footer">
-      Traffic Violation Recognition and AI Surveillance<br>
-      Powered by Artificial Intelligence
     </div>
-  </div>
+
+</div>
 
 </div>
 </div>
-</div>
 
 </div>
 </div>
 
-</body>
 <script>
 document.getElementById('togglePassword').addEventListener('click', function () {
-  var field = document.getElementById('passwordField');
-  var icon = this.querySelector('i');
-  var isPassword = field.getAttribute('type') === 'password';
-  field.setAttribute('type', isPassword ? 'text' : 'password');
-  icon.classList.toggle('bi-eye');
-  icon.classList.toggle('bi-eye-slash');
-  this.setAttribute('aria-label', isPassword ? 'Hide password' : 'Show password');
+    var field = document.getElementById('passwordField');
+    var icon = this.querySelector('i');
+    var isPassword = field.getAttribute('type') === 'password';
+    field.setAttribute('type', isPassword ? 'text' : 'password');
+    icon.classList.toggle('bi-eye');
+    icon.classList.toggle('bi-eye-slash');
+    this.setAttribute('aria-label', isPassword ? 'Hide password' : 'Show password');
 });
 </script>
+
+</body>
 </html>
