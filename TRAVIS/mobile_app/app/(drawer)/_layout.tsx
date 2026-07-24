@@ -4,28 +4,28 @@ import {
   DrawerContentScrollView,
   DrawerItem,
 } from '@react-navigation/drawer';
-import { View, Text, StyleSheet, Dimensions, TouchableOpacity, Modal, Platform, Alert } from 'react-native';
+import { View, Text, StyleSheet, Dimensions, TouchableOpacity, Modal, Platform, Alert, Image, ImageBackground } from 'react-native';
 import { useRouter, usePathname, Href } from 'expo-router';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import api from '../../api/axiosConfig';
+import { Ionicons } from '@expo/vector-icons';
+import api, { APP_ROOT_URL } from '../../api/axiosConfig';
 
 const { width } = Dimensions.get('window');
 
 // ========== COLOR TOKENS ==========
 const COLORS = {
-  bg: '#F8FAFC',
-  header: '#0F172A',
-  headerAccent: '#1E293B',
-  surface: '#FFFFFF',
-  border: '#E2E8F0',
-  textPrimary: '#0F172A',
-  textSecondary: '#64748B',
-  textTertiary: '#94A3B8',
-  primary: '#2563EB',
-  success: '#10B981',
-  warning: '#F59E0B',
-  danger: '#EF4444',
-  neutral: '#94A3B8',
+  bg: 'rgba(247, 245, 238, 0.78)',
+  header: '#102F49',
+  headerAccent: '#16445D',
+  surface: 'rgba(255, 253, 247, 0.94)',
+  border: 'rgba(16, 47, 73, 0.22)',
+  textPrimary: '#10202C',
+  textSecondary: '#526B64',
+  textTertiary: '#82928C',
+  primary: '#087D78',
+  success: '#15966F',
+  warning: '#EB941F',
+  danger: '#C84B45',
+  neutral: '#8B9B96',
 };
 
 const mono = Platform.select({ ios: 'Courier', android: 'monospace', default: 'monospace' });
@@ -65,7 +65,7 @@ function CustomDrawerContent(props: any) {
           <Ionicons
             name={icon as any}
             size={18}
-            color={active ? COLORS.primary : COLORS.textTertiary}
+            color={active ? COLORS.header : '#D9E3DE'}
           />
         )}
         onPress={() => router.push(route as Href)}
@@ -109,12 +109,13 @@ function CustomDrawerContent(props: any) {
         {/* Header */}
         <View style={styles.drawerHeader}>
           <View style={styles.brandRow}>
-            <View style={styles.brandBadge}>
-              <MaterialCommunityIcons name="traffic-light" size={16} color="#7DB4FF" />
-            </View>
+            <Image
+              source={{ uri: `${APP_ROOT_URL}assets/images/nasugbu-seal.jpg` }}
+              style={styles.brandSeal}
+            />
             <View>
-              <Text style={styles.logoText}>TRAVIS</Text>
-              <Text style={styles.logoSub}>Traffic Violation Analytics</Text>
+              <Text style={styles.logoText}>NASUGBU · TMO</Text>
+              <Text style={styles.logoSub}>Traffic Management Office</Text>
             </View>
           </View>
         </View>
@@ -227,7 +228,13 @@ function CustomDrawerContent(props: any) {
 // ========== MAIN DRAWER LAYOUT ==========
 export default function DrawerLayout() {
   return (
-    <Drawer
+    <ImageBackground
+      source={{ uri: `${APP_ROOT_URL}assets/images/nasugbu-municipal-hall.jpg` }}
+      style={styles.appBackground}
+      resizeMode="cover"
+    >
+      <View pointerEvents="none" style={styles.appOverlay} />
+      <Drawer
       drawerContent={(props) => <CustomDrawerContent {...props} />}
       screenOptions={{
         headerShown: true,
@@ -240,15 +247,16 @@ export default function DrawerLayout() {
           color: '#FFFFFF',
           letterSpacing: 0.3,
         },
-        drawerActiveBackgroundColor: '#EFF6FF',
-        drawerActiveTintColor: COLORS.primary,
-        drawerInactiveTintColor: COLORS.textTertiary,
+        drawerActiveBackgroundColor: COLORS.warning,
+        drawerActiveTintColor: COLORS.header,
+        drawerInactiveTintColor: '#D9E3DE',
         drawerType: 'slide',
         drawerStyle: {
           width: width * 0.8,
           maxWidth: 300,
-          backgroundColor: COLORS.bg,
+          backgroundColor: COLORS.header,
         },
+        sceneStyle: { backgroundColor: 'transparent' },
         overlayColor: 'rgba(15, 23, 42, 0.5)',
         headerShadowVisible: false,
       }}
@@ -314,17 +322,23 @@ export default function DrawerLayout() {
           headerTitle: 'Settings',
         }}
       />
-    </Drawer>
+      </Drawer>
+    </ImageBackground>
   );
 }
 
 // ========== STYLES ==========
 const styles = StyleSheet.create({
+  appBackground: { flex: 1, backgroundColor: '#E9E8E1' },
+  appOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(247, 245, 238, 0.62)',
+  },
   drawerContent: {
     paddingTop: 0,
     paddingBottom: 20,
     flexGrow: 1,
-    backgroundColor: COLORS.bg,
+    backgroundColor: COLORS.header,
   },
 
   drawerHeader: {
@@ -334,10 +348,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   brandRow: { flexDirection: 'row', alignItems: 'center' },
-  brandBadge: {
-    width: 32, height: 32, borderRadius: 10, backgroundColor: COLORS.headerAccent,
-    justifyContent: 'center', alignItems: 'center', marginRight: 10,
-  },
+  brandSeal: { width: 38, height: 38, marginRight: 11 },
   logoText: {
     fontSize: 18,
     fontWeight: '800',
@@ -346,7 +357,7 @@ const styles = StyleSheet.create({
   },
   logoSub: {
     fontSize: 11,
-    color: '#94A3B8',
+    color: '#C6D6CF',
     marginTop: 1,
   },
 
@@ -359,7 +370,7 @@ const styles = StyleSheet.create({
   sectionHeader: {
     fontSize: 11,
     fontWeight: '700',
-    color: COLORS.textTertiary,
+    color: '#91AAA1',
     letterSpacing: 1,
     textTransform: 'uppercase',
   },
@@ -371,19 +382,19 @@ const styles = StyleSheet.create({
   },
 
   activeDrawerItem: {
-    backgroundColor: '#EFF6FF',
+    backgroundColor: COLORS.warning,
     borderRadius: 12,
   },
 
   drawerLabel: {
     fontSize: 14,
     fontWeight: '600',
-    color: COLORS.textSecondary,
+    color: '#D9E3DE',
     marginLeft: -8,
   },
 
   activeDrawerLabel: {
-    color: COLORS.primary,
+    color: COLORS.header,
     fontWeight: '700',
   },
 
@@ -411,7 +422,7 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: 'rgba(235, 148, 31, 0.16)',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,

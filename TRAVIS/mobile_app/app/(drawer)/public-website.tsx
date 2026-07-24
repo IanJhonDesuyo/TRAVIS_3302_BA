@@ -14,6 +14,7 @@ import {
   Alert,
   FlatList,
   Image,
+  ImageBackground,
   Dimensions,
   Platform,
 } from 'react-native';
@@ -22,25 +23,25 @@ import { Picker } from '@react-native-picker/picker';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import api from '../../api/axiosConfig';
+import api, { APP_ROOT_URL } from '../../api/axiosConfig';
 
 const { width } = Dimensions.get('window');
 
 // ========== COLOR TOKENS ==========
 const COLORS = {
-  bg: '#F8FAFC',
-  header: '#0F172A',
-  headerAccent: '#1E293B',
-  surface: '#FFFFFF',
-  border: '#E2E8F0',
-  textPrimary: '#0F172A',
-  textSecondary: '#64748B',
-  textTertiary: '#94A3B8',
-  primary: '#2563EB',
-  success: '#10B981',
-  warning: '#F59E0B',
-  danger: '#EF4444',
-  neutral: '#94A3B8',
+  bg: 'rgba(247, 245, 238, 0.74)',
+  header: '#102F49',
+  headerAccent: '#16445D',
+  surface: 'rgba(255, 253, 247, 0.92)',
+  border: 'rgba(16, 47, 73, 0.24)',
+  textPrimary: '#10202C',
+  textSecondary: '#526B64',
+  textTertiary: '#72847D',
+  primary: '#087D78',
+  success: '#15966F',
+  warning: '#EB941F',
+  danger: '#C84B45',
+  neutral: '#8B9B96',
 };
 
 const mono = Platform.select({ ios: 'Courier', android: 'monospace', default: 'monospace' });
@@ -380,17 +381,63 @@ export default function PublicWebsiteScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />}
         showsVerticalScrollIndicator={false}
       >
-        {/* Hero */}
-        <View style={styles.heroCard}>
-          <View style={styles.brandRow}>
-            <View style={styles.brandBadge}>
-              <Ionicons name="globe-outline" size={16} color="#7DB4FF" />
+        {/* Public-site visual identity; management behavior below is unchanged. */}
+        <View style={styles.publicHero}>
+          <ImageBackground
+            source={{ uri: `${APP_ROOT_URL}assets/images/nasugbu-municipal-hall.jpg` }}
+            style={styles.heroBackground}
+            imageStyle={styles.heroBackgroundImage}
+          >
+            <View style={styles.heroOverlay}>
+              <View style={styles.publicNav}>
+                <Image
+                  source={{ uri: `${APP_ROOT_URL}assets/images/nasugbu-seal.jpg` }}
+                  style={styles.seal}
+                />
+                <View style={styles.publicBrandCopy}>
+                  <Text style={styles.publicBrandName}>NASUGBU · TMO</Text>
+                  <Text style={styles.publicBrandSub}>Traffic Management Office</Text>
+                </View>
+                <View style={styles.publicInfoPill}>
+                  <Text style={styles.publicInfoPillText}>Public Information</Text>
+                </View>
+              </View>
+
+              <View style={styles.heroCopy}>
+                <View style={styles.eyebrowRow}>
+                  <View style={styles.eyebrowLine} />
+                  <Text style={styles.heroEyebrow}>A SAFER, INFORMED COMMUNITY</Text>
+                </View>
+                <Text style={styles.heroTitle}>Traffic updates.</Text>
+                <Text style={styles.heroTitleAccent}>Made public.</Text>
+                <Text style={styles.heroDescription}>
+                  Your direct source for official traffic advisories, road notices, community activities, and emergency information from the Traffic Management Office.
+                </Text>
+              </View>
+
+              <View style={styles.publicDeskCard}>
+                <Text style={styles.deskLabel}>PUBLIC INFORMATION DESK</Text>
+                <Text style={styles.deskCount}>{stats.published}</Text>
+                <Text style={styles.deskDescription}>
+                  Active {stats.published === 1 ? 'announcement' : 'announcements'} available to the public right now.
+                </Text>
+                <View style={styles.deskDivider} />
+                <View style={styles.deskStatusRow}>
+                  <View style={styles.deskStatusHalo}><View style={styles.deskStatusDot} /></View>
+                  <Text style={styles.deskStatusText}>Official TMO information service</Text>
+                </View>
+              </View>
             </View>
-            <View>
-              <Text style={styles.brandName}>PUBLIC WEBSITE CMS</Text>
-              <Text style={styles.brandSubtitle}>Create, publish, edit, and archive public announcements</Text>
-            </View>
+          </ImageBackground>
+        </View>
+
+        <View style={styles.managementHeading}>
+          <View style={styles.eyebrowRow}>
+            <View style={styles.eyebrowLine} />
+            <Text style={styles.managementEyebrow}>PUBLIC INFORMATION MANAGEMENT</Text>
           </View>
+          <Text style={styles.managementTitle}>Announcements dashboard</Text>
+          <Text style={styles.managementSub}>Create, publish, edit, and archive official public announcements.</Text>
         </View>
 
         {/* Stats */}
@@ -809,21 +856,47 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.bg },
   loadingText: { marginTop: 14, fontSize: 12, fontWeight: '700', color: COLORS.textSecondary, letterSpacing: 1, fontFamily: mono },
-  scrollContent: { paddingHorizontal: 20, paddingTop: 18, paddingBottom: 20 },
+  scrollContent: { paddingBottom: 20 },
 
-  heroCard: {
-    backgroundColor: COLORS.header, borderRadius: 22, padding: 20, marginBottom: 16,
-    ...softShadow, shadowOpacity: 0.18,
+  publicHero: { marginBottom: 28, overflow: 'hidden', backgroundColor: '#F7F5EE' },
+  heroBackground: { width: '100%' },
+  heroBackgroundImage: { resizeMode: 'cover' },
+  heroOverlay: { backgroundColor: 'rgba(247,245,238,0.76)', paddingBottom: 24 },
+  publicNav: {
+    minHeight: 72, paddingHorizontal: 20, paddingVertical: 12, flexDirection: 'row', alignItems: 'center',
+    backgroundColor: 'rgba(250,249,244,0.94)', borderBottomWidth: 1, borderBottomColor: 'rgba(16,42,67,0.12)',
   },
-  brandRow: { flexDirection: 'row', alignItems: 'center' },
-  brandBadge: {
-    width: 32, height: 32, borderRadius: 10, backgroundColor: COLORS.headerAccent,
-    justifyContent: 'center', alignItems: 'center', marginRight: 10,
+  seal: { width: 43, height: 43, borderRadius: 22, marginRight: 10, borderWidth: 2, borderColor: '#FFFFFF' },
+  publicBrandCopy: { flex: 1 },
+  publicBrandName: { color: '#102A43', fontSize: 15, fontWeight: '800' },
+  publicBrandSub: { color: '#61706B', fontSize: 10, marginTop: 2 },
+  publicInfoPill: { backgroundColor: '#EB941F', paddingHorizontal: 11, paddingVertical: 8, borderRadius: 18 },
+  publicInfoPillText: { color: '#10202C', fontSize: 10, fontWeight: '800' },
+  heroCopy: { paddingHorizontal: 22, paddingTop: 34 },
+  eyebrowRow: { flexDirection: 'row', alignItems: 'center' },
+  eyebrowLine: { width: 28, height: 2, backgroundColor: '#EB941F', marginRight: 10 },
+  heroEyebrow: { color: '#087D78', fontSize: 10, fontWeight: '800', letterSpacing: 1.4 },
+  heroTitle: { color: '#10202C', fontSize: 40, lineHeight: 45, fontWeight: '900', marginTop: 18, letterSpacing: -1.2 },
+  heroTitleAccent: { color: '#087D78', fontSize: 40, lineHeight: 45, fontWeight: '900', letterSpacing: -1.2 },
+  heroDescription: { color: '#5E716D', fontSize: 14, lineHeight: 22, marginTop: 18 },
+  publicDeskCard: {
+    marginHorizontal: 22, marginTop: 28, padding: 22, borderRadius: 10, backgroundColor: '#102F49',
+    shadowColor: '#102A43', shadowOffset: { width: 8, height: 10 }, shadowOpacity: 0.13, shadowRadius: 0, elevation: 5,
   },
-  brandName: { fontSize: 16, fontWeight: '800', color: '#FFFFFF', letterSpacing: 1 },
-  brandSubtitle: { fontSize: 11, color: '#94A3B8', marginTop: 2, maxWidth: 260 },
+  deskLabel: { color: '#8FD2CC', fontSize: 10, fontWeight: '800', letterSpacing: 1.1 },
+  deskCount: { color: '#FFFFFF', fontSize: 46, lineHeight: 54, fontWeight: '800', marginTop: 8 },
+  deskDescription: { color: '#C7D5DD', fontSize: 13, lineHeight: 19 },
+  deskDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.13)', marginVertical: 20 },
+  deskStatusRow: { flexDirection: 'row', alignItems: 'center' },
+  deskStatusHalo: { width: 22, height: 22, borderRadius: 11, backgroundColor: 'rgba(52,211,153,0.12)', alignItems: 'center', justifyContent: 'center', marginRight: 8 },
+  deskStatusDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#39C993' },
+  deskStatusText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
+  managementHeading: { paddingHorizontal: 20, marginBottom: 18 },
+  managementEyebrow: { color: '#087D78', fontSize: 10, fontWeight: '800', letterSpacing: 1.2 },
+  managementTitle: { color: '#10202C', fontSize: 28, lineHeight: 34, fontWeight: '900', marginTop: 12 },
+  managementSub: { color: '#647570', fontSize: 13, lineHeight: 19, marginTop: 5 },
 
-  statsRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 4 },
+  statsRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 4, paddingHorizontal: 20 },
   statCard: {
     backgroundColor: COLORS.surface, borderRadius: 16, padding: 14, width: '48%',
     marginBottom: 12, borderWidth: 1, borderColor: COLORS.border, ...softShadow,
@@ -832,9 +905,9 @@ const styles = StyleSheet.create({
   statLabel: { fontSize: 10, fontWeight: '700', color: COLORS.textTertiary, letterSpacing: 0.6, marginBottom: 4 },
   statValue: { fontSize: 20, fontWeight: '700', color: COLORS.textPrimary, fontFamily: mono },
 
-  sectionLabel: { fontSize: 11, fontWeight: '700', color: COLORS.textSecondary, letterSpacing: 1, marginBottom: 12, marginTop: 4 },
+  sectionLabel: { fontSize: 11, fontWeight: '700', color: COLORS.textSecondary, letterSpacing: 1, marginBottom: 12, marginTop: 4, marginHorizontal: 20 },
   panel: {
-    backgroundColor: COLORS.surface, borderRadius: 18, padding: 18, marginBottom: 20,
+    backgroundColor: COLORS.surface, borderRadius: 18, padding: 18, marginBottom: 20, marginHorizontal: 20,
     borderWidth: 1, borderColor: COLORS.border, ...softShadow,
   },
   panelSub: { fontSize: 12, color: COLORS.textTertiary, marginBottom: 16, lineHeight: 17 },

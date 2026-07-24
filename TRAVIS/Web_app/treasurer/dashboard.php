@@ -212,43 +212,43 @@ const dailyData = <?= json_encode($dailyTrend['data']) ?>;
 const monthLabels = <?= json_encode(month_labels()) ?>;
 const monthlyData = <?= json_encode($monthlyTotals) ?>;
 
-Chart.defaults.font.family = "'Inter', sans-serif";
-Chart.defaults.color = '#64748b';
+Chart.defaults.font.family = "'Poppins', sans-serif";
+Chart.defaults.color = '#526b64';
 
 function baseOpts() {
   return {
     responsive: true, maintainAspectRatio: false,
     plugins: { legend: { display: false }, tooltip: {
-      backgroundColor: '#0f1f47', padding: 12, cornerRadius: 8,
+      backgroundColor: '#102f49', titleColor: '#ffffff', bodyColor: '#e8f0ed', padding: 12, cornerRadius: 8,
       callbacks: { label: c => '₱' + c.parsed.y.toLocaleString() }
     }},
     scales: {
       y: { grid: { color: 'rgba(148,163,184,.15)' }, ticks: { callback: v => '₱' + (v / 1000) + 'k', font: { size: 11 } } },
-      x: { grid: { display: false }, ticks: { font: { size: 11 } } }
+      x: { grid: { display: false }, ticks: { color: '#526b64', font: { size: 11 } } }
     }
   };
 }
 
 new Chart(document.getElementById('chartStatus'), {
   type: 'doughnut',
-  data: { labels: statusLabels, datasets: [{ data: statusData, backgroundColor: ['#16a34a', '#f59e0b', '#dc2626', '#94a3b8'], borderWidth: 0, hoverOffset: 10 }] },
-  options: { responsive: true, maintainAspectRatio: false, cutout: '68%', plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, padding: 16, font: { size: 12 } } } } }
+  data: { labels: statusLabels, datasets: [{ data: statusData, backgroundColor: ['#15966f', '#eb941f', '#c84b45', '#8b9b96'], borderWidth: 3, borderColor: '#fffdf7', hoverOffset: 10 }] },
+  options: { responsive: true, maintainAspectRatio: false, cutout: '68%', plugins: { legend: { position: 'bottom', labels: { color: '#526b64', usePointStyle: true, padding: 16, font: { size: 12 } } } } }
 });
 
 const dailyCtx = document.getElementById('chartDaily').getContext('2d');
 const dailyGrad = dailyCtx.createLinearGradient(0, 0, 0, 200);
-dailyGrad.addColorStop(0, 'rgba(20,184,166,.35)');
-dailyGrad.addColorStop(1, 'rgba(20,184,166,0)');
+dailyGrad.addColorStop(0, 'rgba(8,125,120,.30)');
+dailyGrad.addColorStop(1, 'rgba(8,125,120,0)');
 new Chart(dailyCtx, {
   type: 'line',
-  data: { labels: dailyLabels, datasets: [{ label: 'Collection', data: dailyData, borderColor: '#14b8a6', backgroundColor: dailyGrad, fill: true, tension: .4, borderWidth: 3, pointBackgroundColor: '#14b8a6', pointBorderColor: '#fff', pointBorderWidth: 2, pointRadius: 4 }] },
+  data: { labels: dailyLabels, datasets: [{ label: 'Collection', data: dailyData, borderColor: '#087d78', backgroundColor: dailyGrad, fill: true, tension: .4, borderWidth: 3, pointBackgroundColor: '#eb941f', pointBorderColor: '#fffdf7', pointBorderWidth: 2, pointRadius: 4 }] },
   options: baseOpts()
 });
 
 const monthlyCtx = document.getElementById('chartMonthly').getContext('2d');
 const monthlyGrad = monthlyCtx.createLinearGradient(0, 0, 0, 200);
-monthlyGrad.addColorStop(0, '#0d9488');
-monthlyGrad.addColorStop(1, '#14b8a6');
+monthlyGrad.addColorStop(0, '#087d78');
+monthlyGrad.addColorStop(1, '#eb941f');
 new Chart(monthlyCtx, {
   type: 'bar',
   data: { labels: monthLabels, datasets: [{ label: 'Collection', data: monthlyData, backgroundColor: monthlyGrad, borderRadius: 6, borderSkipped: false }] },

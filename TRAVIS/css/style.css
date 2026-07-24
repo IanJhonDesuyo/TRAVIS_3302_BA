@@ -1707,7 +1707,7 @@ body.admin-dashboard ::-webkit-scrollbar-track {
     margin: 2px .35rem;
   }
 
-  body.sidebar-collapsed .nav-logout-btn {
+body.sidebar-collapsed .nav-logout-btn {
     width: calc(100% - .7rem);
   }
 }

@@ -611,32 +611,9 @@ function printReceiptNow() {
 }
 </script>
 
-<div class="modal fade" id="printReceiptPromptModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content text-center">
-      <div class="modal-body py-4">
-        <div class="mb-3" style="font-size:2.5rem;color:#0d9488;"><i class="bi bi-receipt-cutoff"></i></div>
-        <h5 class="mb-2">Payment Saved</h5>
-        <p class="text-muted mb-0">Would you like to print the official receipt now?</p>
-      </div>
-      <div class="modal-footer border-top-0 pt-0 justify-content-center">
-        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Not Now</button>
-        <button type="button" class="btn btn-teal" id="printReceiptOkBtn"><i class="bi bi-printer me-1"></i>OK, Print</button>
-      </div>
-    </div>
-  </div>
-</div>
-
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-  var el = document.getElementById('printReceiptPromptModal');
-  if (!el) return;
-  var modal = bootstrap.Modal.getOrCreateInstance(el);
-  modal.show();
-  document.getElementById('printReceiptOkBtn').addEventListener('click', function () {
-    modal.hide();
-    printReceiptNow();
-  });
+  printReceiptNow();
 });
 </script>
 <?php endif; ?>

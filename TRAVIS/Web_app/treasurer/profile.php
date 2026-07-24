@@ -6,65 +6,16 @@ $messageType = 'info';
 $userId = (int)($_SESSION['user']['id'] ?? 0);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $csrfOk = hash_equals((string)($_SESSION['csrf_token'] ?? ''), (string)($_POST['csrf_token'] ?? ''));
-    $action = $_POST['action'] ?? '';
-
-    if (!$csrfOk) {
-        $message = 'Your session expired. Please try again.';
-        $messageType = 'danger';
-    } elseif ($action === 'update_profile') {
-        $fullName = trim((string)($_POST['full_name'] ?? ''));
-        $email = trim((string)($_POST['email'] ?? ''));
-
-        if ($fullName === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            $message = 'Please provide a valid name and email address.';
-            $messageType = 'danger';
-        } else {
-            $stmt = $conn->prepare("UPDATE users SET full_name = ?, email = ? WHERE user_id = ?");
-            $stmt->bind_param('ssi', $fullName, $email, $userId);
-            if ($stmt->execute()) {
-                $_SESSION['user']['name'] = $fullName;
-                $_SESSION['user']['email'] = $email;
-                $message = 'Profile updated successfully.';
-                $messageType = 'success';
-            } else {
-                $message = 'Failed to update profile. The email may already be in use.';
-                $messageType = 'danger';
-            }
-        }
-    } elseif ($action === 'change_password') {
-        $current = (string)($_POST['current_password'] ?? '');
-        $new = (string)($_POST['new_password'] ?? '');
-        $confirm = (string)($_POST['confirm_password'] ?? '');
-
-        $row = fetch_one("SELECT password FROM users WHERE user_id = ?", [(string)$userId]);
-        $valid = $row && password_verify($current, (string)$row['password']);
-
-        if (!$valid) {
-            $message = 'Current password is incorrect.';
-            $messageType = 'danger';
-        } elseif (strlen($new) < 8) {
-            $message = 'New password must be at least 8 characters long.';
-            $messageType = 'danger';
-        } elseif ($new !== $confirm) {
-            $message = 'New password and confirmation do not match.';
-            $messageType = 'danger';
-        } else {
-            $hash = password_hash($new, PASSWORD_DEFAULT);
-            $stmt = $conn->prepare("UPDATE users SET password = ? WHERE user_id = ?");
-            $stmt->bind_param('si', $hash, $userId);
-            $stmt->execute();
-            $message = 'Password changed successfully.';
-            $messageType = 'success';
-        }
-    }
+    http_response_code(403);
+    $message = 'Treasurer profiles are view-only. Contact an administrator to update account details or reset a password.';
+    $messageType = 'warning';
 }
 
 $user = fetch_one("SELECT full_name, email, role, status, created_at FROM users WHERE user_id = ?", [(string)$userId]) ?: [];
 $totalProcessed = scalar("SELECT COUNT(*) FROM payments WHERE received_by = ? AND payment_status = 'completed'", 0, [(string)$userId]);
 $totalCollected = scalar("SELECT COALESCE(SUM(amount_paid), 0) FROM payments WHERE received_by = ? AND payment_status = 'completed'", 0, [(string)$userId]);
 
-page_start('My Profile', 'profile', 'Search...', 'Manage your account and security', false);
+page_start('My Profile', 'profile', 'Search...', 'View your account information', false);
 ?>
 
 <div class="section-card profile-hero mb-4 d-flex flex-wrap align-items-center gap-3">
@@ -91,29 +42,26 @@ page_start('My Profile', 'profile', 'Search...', 'Manage your account and securi
   <div class="col-lg-6">
     <div class="section-card h-100">
       <div class="section-head"><h6 class="mb-0">Personal Information</h6></div>
-      <form method="post">
-        <input type="hidden" name="action" value="update_profile">
-        <input type="hidden" name="csrf_token" value="<?= esc(csrf_token()) ?>">
-        <div class="mb-3"><label class="form-label">Full Name</label><input class="form-control" name="full_name" value="<?= esc($user['full_name'] ?? '') ?>" required></div>
-        <div class="mb-3"><label class="form-label">Email Address</label><input class="form-control" type="email" name="email" value="<?= esc($user['email'] ?? '') ?>" required></div>
-        <div class="mb-3"><label class="form-label">Access Role</label><input class="form-control" value="<?= esc($user['role'] ?? '') ?>" disabled></div>
-        <div class="mb-3"><label class="form-label">Account Status</label><br><span class="tag <?= tag_class($user['status'] ?? '') ?>"><?= esc(ucfirst($user['status'] ?? 'active')) ?></span></div>
-        <button class="btn btn-primary"><i class="bi bi-save me-1"></i>Save Changes</button>
-      </form>
+      <div class="mb-3"><label class="form-label">Full Name</label><input class="form-control" value="<?= esc($user['full_name'] ?? '') ?>" readonly></div>
+      <div class="mb-3"><label class="form-label">Email / Username</label><input class="form-control" value="<?= esc($user['email'] ?? '') ?>" readonly></div>
+      <div class="mb-3"><label class="form-label">Access Role</label><input class="form-control" value="<?= esc($user['role'] ?? '') ?>" readonly></div>
+      <div class="mb-3"><label class="form-label">Account Status</label><br><span class="tag <?= tag_class($user['status'] ?? '') ?>"><?= esc(ucfirst($user['status'] ?? 'active')) ?></span></div>
+      <div><label class="form-label">Member Since</label><input class="form-control" value="<?= esc(!empty($user['created_at']) ? date('F j, Y', strtotime((string)$user['created_at'])) : 'Not recorded') ?>" readonly></div>
     </div>
   </div>
 
   <div class="col-lg-6">
     <div class="section-card h-100">
-      <div class="section-head"><h6 class="mb-0">Change Password</h6></div>
-      <form method="post">
-        <input type="hidden" name="action" value="change_password">
-        <input type="hidden" name="csrf_token" value="<?= esc(csrf_token()) ?>">
-        <div class="mb-3"><label class="form-label">Current Password</label><input class="form-control" type="password" name="current_password" required></div>
-        <div class="mb-3"><label class="form-label">New Password</label><input class="form-control" type="password" name="new_password" minlength="8" required></div>
-        <div class="mb-3"><label class="form-label">Confirm New Password</label><input class="form-control" type="password" name="confirm_password" minlength="8" required></div>
-        <button class="btn btn-outline-secondary"><i class="bi bi-shield-lock me-1"></i>Update Password</button>
-      </form>
+      <div class="section-head"><h6 class="mb-0">Account Security</h6></div>
+      <div class="d-flex align-items-start gap-3 mb-4">
+        <div class="stat-icon tone-success flex-shrink-0"><i class="bi bi-shield-check"></i></div>
+        <div>
+          <h6 class="mb-1">Protected account</h6>
+          <p class="text-muted mb-0">Your password is securely stored and cannot be viewed or changed from the Treasurer portal.</p>
+        </div>
+      </div>
+      <div class="mb-3"><label class="form-label">Password</label><input class="form-control" value="••••••••••••" readonly aria-label="Password hidden"></div>
+      <div class="alert alert-light border mb-0"><i class="bi bi-info-circle me-2"></i>Contact an administrator if your username, profile information, or password needs to be changed.</div>
     </div>
   </div>
 </div>

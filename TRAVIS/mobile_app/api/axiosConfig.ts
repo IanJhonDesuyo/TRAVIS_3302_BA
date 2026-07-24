@@ -1,14 +1,18 @@
 import axios from "axios";
 import { Alert } from "react-native";
 
-// ========================================
-// PALITAN ANG IP ADDRESS NG COMPUTER
-// ========================================
-const SERVER_IP = "10.71.31.24"; // <-- IP ng PC
-const PORT = "80"; // Default Apache port
+// The phone must use the computer's LAN IP; localhost would point to the phone.
+// Override this after changing networks with EXPO_PUBLIC_API_URL when needed.
+const BASE_URL = (
+  process.env.EXPO_PUBLIC_API_URL || "http://192.168.1.9/TRAVIS/api/"
+).replace(/\/?$/, "/");
 
-// Isama ang TRAVIS_3302_BA sa path
-const BASE_URL = `http://${SERVER_IP}:${PORT}/TRAVIS_3302_BA/TRAVIS/api/`;
+export const APP_ROOT_URL = BASE_URL.replace(/api\/$/, "");
+
+// The prediction proxies live under Web_app/api and forward requests to the
+// local Flask machine-learning service. Derive the URL from the same app root
+// so both APIs keep working when EXPO_PUBLIC_API_URL is changed.
+const ML_BASE_URL = `${APP_ROOT_URL}Web_app/api/`;
 
 const api = axios.create({
   baseURL: BASE_URL,
@@ -18,6 +22,15 @@ const api = axios.create({
     Accept: "application/json",
   },
   withCredentials: true, // Para sa session
+});
+
+export const mlApi = axios.create({
+  baseURL: ML_BASE_URL,
+  timeout: 25000,
+  headers: {
+    "Content-Type": "application/json",
+    Accept: "application/json",
+  },
 });
 
 // ============================================================

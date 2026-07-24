@@ -1,0 +1,51 @@
+{
+    "profile_name": "nyenye",
+    "road_roi": [
+        [
+            0,
+            0
+        ],
+        [
+            1,
+            0
+        ],
+        [
+            1,
+            1
+        ],
+        [
+            0,
+            1
+        ]
+    ],
+    "inbound_line": [
+        [
+            0.10165074274186321,
+            0.4674353114897251
+        ],
+        [
+            0.3371563921102845,
+            0.4815059470420577
+        ]
+    ],
+    "outbound_line": [
+        [
+            0.41302398385313155,
+            0.6489465101148152
+        ],
+        [
+            0.7552184341099316,
+            0.6208052390101501
+        ]
+    ],
+    "officer_zone": [],
+    "officer": {
+        "enabled": false,
+        "presence_frames": 3,
+        "absence_frames": 15
+    },
+    "collision": {
+        "enabled": false,
+        "cooldown_seconds": 30
+    }
+}

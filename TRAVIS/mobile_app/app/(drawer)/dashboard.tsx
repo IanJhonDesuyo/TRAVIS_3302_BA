@@ -18,23 +18,23 @@ import { LineChart, BarChart } from 'react-native-chart-kit';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import Svg, { Circle } from 'react-native-svg';
 import { useFocusEffect } from '@react-navigation/native';
-import api from '../../api/axiosConfig';
+import api, { mlApi } from '../../api/axiosConfig';
 
 // ========== COLOR TOKENS ==========
 const COLORS = {
-  bg: '#F8FAFC',
-  header: '#0F172A',
-  headerAccent: '#1E293B',
-  surface: '#FFFFFF',
-  border: '#E2E8F0',
-  textPrimary: '#0F172A',
-  textSecondary: '#64748B',
-  textTertiary: '#94A3B8',
-  primary: '#2563EB',
-  success: '#10B981',
-  warning: '#F59E0B',
-  danger: '#EF4444',
-  neutral: '#94A3B8',
+  bg: 'rgba(247, 245, 238, 0.74)',
+  header: '#102F49',
+  headerAccent: '#16445D',
+  surface: 'rgba(255, 253, 247, 0.92)',
+  border: 'rgba(16, 47, 73, 0.24)',
+  textPrimary: '#10202C',
+  textSecondary: '#526B64',
+  textTertiary: '#72847D',
+  primary: '#087D78',
+  success: '#15966F',
+  warning: '#EB941F',
+  danger: '#C84B45',
+  neutral: '#8B9B96',
 };
 
 // ========== HELPERS ==========
@@ -191,13 +191,19 @@ export default function DashboardScreen() {
         });
       }
 
-      // 5. Hotspots
-      const hotspotRes = await api.get('get_hotspots.php');
-      if (hotspotRes.data.success) {
+      // 5. ML location/hotspot prediction
+      const hotspotRes = await mlApi.get('predict_hotspot.php');
+      if (hotspotRes.data.success && Array.isArray(hotspotRes.data.data?.locations)) {
+        const locations = hotspotRes.data.data.locations.map((location: any) => ({
+          location: location.Location,
+          total: Number(location['Total Violations']) || 0,
+          riskLevel: location['Risk Level'] || 'Low Risk',
+          recommendation: location.Recommendation || '',
+        }));
         setHotspots({
-          high: hotspotRes.data.high || [],
-          medium: hotspotRes.data.medium || [],
-          low: hotspotRes.data.low || [],
+          high: locations.filter((location: any) => String(location.riskLevel).toLowerCase().startsWith('high')),
+          medium: locations.filter((location: any) => String(location.riskLevel).toLowerCase().startsWith('medium')),
+          low: locations.filter((location: any) => String(location.riskLevel).toLowerCase().startsWith('low')),
         });
       }
 
@@ -207,14 +213,24 @@ export default function DashboardScreen() {
         setZones(zonesRes.data.data || []);
       }
 
-      // 7. AI Risk Assessment
-      const aiRes = await api.get('get_risk_assessment.php');
-      if (aiRes.data.success) {
+      // 7. ML monthly prediction (forecast the next calendar month)
+      const forecastDate = new Date();
+      forecastDate.setMonth(forecastDate.getMonth() + 1, 1);
+      const aiRes = await mlApi.get('predict_monthly.php', {
+        params: {
+          year: forecastDate.getFullYear(),
+          month: forecastDate.getMonth() + 1,
+        },
+      });
+      if (aiRes.data.success && aiRes.data.data) {
+        const prediction = aiRes.data.data;
         setAiPrediction({
-          riskLevel: aiRes.data.riskLevel,
-          confidence: aiRes.data.confidence,
-          month: aiRes.data.month,
-          recommendations: aiRes.data.recommendations,
+          riskLevel: prediction.risk_level || 'Low',
+          confidence: Number(prediction.confidence) || 0,
+          month: `${prediction.month_name || ''} ${prediction.year || ''}`.trim(),
+          recommendations: Array.isArray(prediction.recommendations)
+            ? prediction.recommendations
+            : ['Review the prediction with current traffic conditions.'],
         });
       }
 

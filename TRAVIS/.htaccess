@@ -2,7 +2,7 @@
 RewriteEngine On
 RewriteBase /TRAVIS/
 
-RewriteRule ^$ Web_app/index.php [L]
+RewriteRule ^$ Web_app/public/landing.php [R=302,L]
 
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d

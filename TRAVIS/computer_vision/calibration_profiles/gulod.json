@@ -1,0 +1,51 @@
+{
+    "profile_name": "gulod",
+    "road_roi": [
+        [
+            0,
+            0
+        ],
+        [
+            1,
+            0
+        ],
+        [
+            1,
+            1
+        ],
+        [
+            0,
+            1
+        ]
+    ],
+    "inbound_line": [
+        [
+            0.14985827499513066,
+            0.4587115217412961
+        ],
+        [
+            0.45886065386443503,
+            0.4713750937383954
+        ]
+    ],
+    "outbound_line": [
+        [
+            0.5742426163066817,
+            0.5009234283982938
+        ],
+        [
+            0.8413597622346226,
+            0.44886207685466334
+        ]
+    ],
+    "officer_zone": [],
+    "officer": {
+        "enabled": false,
+        "presence_frames": 3,
+        "absence_frames": 15
+    },
+    "collision": {
+        "enabled": false,
+        "cooldown_seconds": 30
+    }
+}

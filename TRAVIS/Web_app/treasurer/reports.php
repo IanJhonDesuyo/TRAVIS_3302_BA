@@ -171,16 +171,21 @@ const trendData = <?= json_encode(array_map(fn($r) => (float)$r['total'], $weekl
 const typeLabels = <?= json_encode(array_column($violationTypeBreakdown, 'violation_type')) ?>;
 const typeData = <?= json_encode(array_map('intval', array_column($violationTypeBreakdown, 'total'))) ?>;
 
+<<<<<<< HEAD
 Chart.defaults.font.family = "'Inter', sans-serif";
 Chart.defaults.color = '#64748b';
+=======
+Chart.defaults.font.family = "'Poppins', sans-serif";
+Chart.defaults.color = '#526b64';
+>>>>>>> a81f72a (added landing page, updated ui design)
 
 const trendCtx = document.getElementById('chartTrend').getContext('2d');
 const trendGrad = trendCtx.createLinearGradient(0, 0, 0, 260);
-trendGrad.addColorStop(0, 'rgba(30,58,138,.35)');
-trendGrad.addColorStop(1, 'rgba(30,58,138,0)');
+trendGrad.addColorStop(0, 'rgba(8,125,120,.30)');
+trendGrad.addColorStop(1, 'rgba(8,125,120,0)');
 new Chart(trendCtx, {
   type: 'line',
-  data: { labels: trendLabels, datasets: [{ label: 'Weekly', data: trendData, borderColor: '#1e3a8a', backgroundColor: trendGrad, fill: true, tension: .4, borderWidth: 3, pointBackgroundColor: '#1e3a8a', pointBorderColor: '#fff', pointBorderWidth: 2, pointRadius: 5 }] },
+  data: { labels: trendLabels, datasets: [{ label: 'Weekly', data: trendData, borderColor: '#087d78', backgroundColor: trendGrad, fill: true, tension: .4, borderWidth: 3, pointBackgroundColor: '#eb941f', pointBorderColor: '#fffdf7', pointBorderWidth: 2, pointRadius: 5 }] },
   options: {
     responsive: true, maintainAspectRatio: false,
     plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => '₱' + c.parsed.y.toLocaleString() } } },
@@ -190,8 +195,29 @@ new Chart(trendCtx, {
 
 new Chart(document.getElementById('chartTypes'), {
   type: 'polarArea',
+<<<<<<< HEAD
   data: { labels: typeLabels, datasets: [{ data: typeData, backgroundColor: ['rgba(20,184,166,.7)','rgba(30,58,138,.7)','rgba(245,158,11,.7)','rgba(220,38,38,.7)','rgba(59,130,246,.7)','rgba(100,116,139,.6)','rgba(168,85,247,.6)','rgba(236,72,153,.6)'], borderWidth: 2, borderColor: '#fff' }] },
   options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { usePointStyle: true, font: { size: 11 } } } } }
+=======
+  data: { labels: typeLabels, datasets: [{ data: typeData, backgroundColor: ['rgba(8,125,120,.82)','rgba(235,148,31,.82)','rgba(21,150,111,.78)','rgba(200,75,69,.78)','rgba(62,124,146,.78)','rgba(120,169,159,.78)','rgba(200,120,32,.72)','rgba(80,110,103,.72)'], borderWidth: 2, borderColor: '#fffdf7' }] },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { position: 'right', labels: { color: '#526b64', usePointStyle: true, padding: 14, font: { size: 11 } } },
+      tooltip: { backgroundColor: '#102f49', titleColor: '#fff', bodyColor: '#e8f0ed', borderColor: 'rgba(255,255,255,.16)', borderWidth: 1 }
+    },
+    scales: {
+      r: {
+        beginAtZero: true,
+        grid: { color: 'rgba(16,47,73,.12)' },
+        angleLines: { color: 'rgba(16,47,73,.12)' },
+        ticks: { color: '#526b64', backdropColor: 'rgba(255,253,247,.88)', backdropPadding: 3, z: 1 },
+        pointLabels: { color: '#526b64' }
+      }
+    }
+  }
+>>>>>>> a81f72a (added landing page, updated ui design)
 });
 </script>
 

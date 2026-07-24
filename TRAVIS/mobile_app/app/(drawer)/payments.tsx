@@ -22,18 +22,18 @@ import api from '../../api/axiosConfig';
 
 // ========== COLOR TOKENS ==========
 const COLORS = {
-  bg: '#F8FAFC',
-  header: '#0F172A',
-  surface: '#FFFFFF',
-  border: '#E2E8F0',
-  textPrimary: '#0F172A',
-  textSecondary: '#64748B',
-  textTertiary: '#94A3B8',
-  primary: '#2563EB',
-  success: '#10B981',
-  warning: '#F59E0B',
-  danger: '#EF4444',
-  neutral: '#94A3B8',
+  bg: 'rgba(247, 245, 238, 0.74)',
+  header: '#102F49',
+  surface: 'rgba(255, 253, 247, 0.92)',
+  border: 'rgba(16, 47, 73, 0.24)',
+  textPrimary: '#10202C',
+  textSecondary: '#526B64',
+  textTertiary: '#72847D',
+  primary: '#087D78',
+  success: '#15966F',
+  warning: '#EB941F',
+  danger: '#C84B45',
+  neutral: '#8B9B96',
 };
 
 const mono = Platform.select({ ios: 'Courier', android: 'monospace', default: 'monospace' });

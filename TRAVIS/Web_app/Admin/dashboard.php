@@ -1191,9 +1191,9 @@ const trendData = <?= json_encode($trendData) ?>;
 const topViolationLabels = <?= json_encode($topViolationLabels) ?>;
 const topViolationData = <?= json_encode($topViolationData) ?>;
 
-const chartBlues = ['#38bdf8', '#2563eb', '#4fc3f7', '#7dd3fc', '#60a5fa', '#93c5fd'];
-const blueGrid = 'rgba(56, 189, 248, .14)';
-const blueTicks = '#c9d8ea';
+const chartBlues = ['#087d78', '#eb941f', '#15966f', '#3e7c92', '#c87820', '#78a99f'];
+const blueGrid = 'rgba(16, 47, 73, .12)';
+const blueTicks = '#526b64';
 
 function showEmpty(id, message) {
   const target = document.getElementById(id);
@@ -1516,10 +1516,10 @@ if (total(trendData) > 0) {
       datasets: [{
         label: 'Violations',
         data: trendData,
-        borderColor: '#38bdf8',
-        backgroundColor: 'rgba(56,189,248,.18)',
-        pointBackgroundColor: '#2563eb',
-        pointBorderColor: '#fff',
+        borderColor: '#087d78',
+        backgroundColor: 'rgba(8,125,120,.14)',
+        pointBackgroundColor: '#eb941f',
+        pointBorderColor: '#fffdf7',
         fill: true,
         tension: .4,
         borderWidth: 3,

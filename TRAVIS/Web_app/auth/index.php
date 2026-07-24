@@ -365,6 +365,147 @@ hr{border-color:var(--border-glass);opacity:1}
   .info-side{display:none}
   .login-card{margin:30px 0}
 }
+
+/* Nasugbu TMO public-information visual theme */
+:root{
+  --municipal-navy:#102f49;
+  --municipal-ink:#10202c;
+  --municipal-teal:#087d78;
+  --municipal-orange:#eb941f;
+  --municipal-cream:#f7f5ee;
+  --municipal-muted:#61716d;
+}
+
+body{
+  color:var(--municipal-ink);
+  background:
+    linear-gradient(rgba(247,245,238,.66),rgba(247,245,238,.76)),
+    url('../../assets/images/nasugbu-municipal-hall.jpg') center 58%/cover fixed no-repeat;
+}
+
+.bg-glow{display:none}
+.traffic-fx{z-index:0}
+.vision-grid{
+  background-image:radial-gradient(rgba(16,42,67,.13) 1px,transparent 1px);
+  background-size:22px 22px;
+  -webkit-mask-image:linear-gradient(90deg,transparent,#000 35%);
+  mask-image:linear-gradient(90deg,transparent,#000 35%);
+}
+
+.login-wrapper{padding:28px 34px}
+.info-side{padding:3rem 3rem 3rem 4.5rem}
+.badge-pill{
+  padding:0;
+  border:0;
+  border-radius:0;
+  background:transparent;
+  color:var(--municipal-teal);
+  font-size:.76rem;
+  font-weight:800;
+  letter-spacing:.13em;
+  text-transform:uppercase;
+}
+.badge-pill::before{content:"";width:32px;height:3px;background:var(--municipal-orange)}
+.badge-pill i{display:none}
+
+.info-side h1{
+  margin-top:1.25rem;
+  color:var(--municipal-ink);
+  background:none;
+  -webkit-text-fill-color:currentColor;
+  font-size:4.7rem;
+  font-weight:900;
+  letter-spacing:-.055em;
+}
+.info-side h4{
+  max-width:650px;
+  color:var(--municipal-teal);
+  font-size:1.55rem;
+  font-weight:800;
+  line-height:1.35;
+}
+.info-side p.lead-copy{color:var(--municipal-muted);font-size:1rem;line-height:1.75}
+.kpi .glass{
+  text-align:left;
+  background:rgba(255,253,247,.54);
+  border:1px solid rgba(16,47,73,.14);
+  border-radius:12px;
+  box-shadow:0 12px 28px rgba(16,47,73,.07);
+  backdrop-filter:blur(12px);
+}
+.kpi .glass h2{color:var(--municipal-teal)}
+.kpi .glass small{color:#516760;font-weight:700}
+.footer-strip{color:#536a64;opacity:1}
+
+.login-card{
+  color:#fff;
+  background:rgba(16,47,73,.96);
+  border:1px solid rgba(255,255,255,.12);
+  border-radius:12px;
+  box-shadow:14px 16px 0 rgba(8,125,120,.12),0 30px 70px rgba(16,47,73,.25);
+  backdrop-filter:blur(20px) saturate(110%);
+}
+.login-card-header{
+  padding:15px 22px;
+  background:rgba(255,255,255,.035);
+  border-bottom-color:rgba(255,255,255,.12);
+}
+.login-card-header .live{color:#9fd5cf;opacity:1;font-weight:700}
+.login-card-body{padding:36px 44px 38px}
+.logo-holder{align-items:center;gap:12px;margin-bottom:20px}
+.auth-seal{
+  width:68px;
+  height:68px;
+  object-fit:cover;
+  border:3px solid rgba(255,255,255,.9);
+  border-radius:50%;
+  box-shadow:0 8px 20px rgba(0,0,0,.22);
+}
+.auth-agency{text-align:left}
+.auth-agency strong{display:block;color:#fff;font-size:1rem;letter-spacing:.02em}
+.auth-agency small{display:block;color:#9fd5cf;font-size:.72rem;margin-top:3px}
+.login-card h2{color:#fff}
+.login-card p.subtitle{color:#b9cbc9;opacity:1}
+.form-label{color:#91d0ca}
+.login-card .form-control{
+  color:#fff;
+  background:rgba(255,255,255,.065);
+  border-color:rgba(255,255,255,.16);
+}
+.login-card .form-control::placeholder{color:rgba(221,233,231,.5)}
+.login-card .form-control:focus{
+  color:#fff;
+  background:rgba(255,255,255,.09);
+  border-color:#60c6bd;
+  box-shadow:0 0 0 3px rgba(96,198,189,.17);
+}
+.input-icon-group i.field-icon,.input-icon-group .toggle-visibility{color:#a9c8c5}
+.input-icon-group .toggle-visibility:hover{color:#fff}
+.input-icon-group .form-control:focus ~ i.field-icon{color:#60c6bd}
+.form-check-input{background-color:rgba(255,255,255,.08);border-color:rgba(255,255,255,.25)}
+.form-check-input:checked{background-color:var(--municipal-orange);border-color:var(--municipal-orange)}
+a.forgot-link{color:#9fd5cf}
+.btn-signin{
+  color:#10202c;
+  background:linear-gradient(90deg,#eb941f,#f3aa43);
+  box-shadow:0 12px 28px rgba(235,148,31,.25);
+}
+.btn-signin:hover{color:#10202c;box-shadow:0 16px 34px rgba(235,148,31,.34)}
+hr{border-color:rgba(255,255,255,.13)}
+.small-footer{color:#b5c9c6;opacity:.78}
+.alert-danger{background:rgba(220,53,69,.18);border-color:rgba(255,145,157,.38);color:#ffd4da}
+
+@media(max-width:1199px){.info-side h1{font-size:4rem}.info-side{padding-left:2.5rem}}
+@media(max-width:991px){
+  body{background-position:center}
+  .login-wrapper{padding:18px}
+  .login-card{margin:18px 0;box-shadow:8px 10px 0 rgba(8,125,120,.12),0 24px 55px rgba(16,47,73,.24)}
+}
+@media(max-width:575px){
+  .login-wrapper{padding:10px}
+  .login-card-body{padding:30px 22px}
+  .auth-seal{width:58px;height:58px}
+}
 </style>
 </head>
 <body>
@@ -423,8 +564,8 @@ hr{border-color:var(--border-glass);opacity:1}
 
   <div class="login-card-body">
     <div class="logo-holder">
-      <div class="logo-circle">LGU</div>
-      <div class="logo-circle">BSU</div>
+      <img class="auth-seal" src="../../assets/images/nasugbu-seal.jpg" alt="Municipality of Nasugbu seal">
+      <div class="auth-agency"><strong>NASUGBU · TMO</strong><small>Traffic Management Office</small></div>
     </div>
 
     <h2 class="text-center mb-2">Welcome Back</h2>

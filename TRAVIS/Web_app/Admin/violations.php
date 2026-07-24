@@ -515,7 +515,7 @@ div[style*="border-radius: 999px"]:not(.tag){
 
 <div class="d-flex justify-content-between flex-wrap mb-4 gap-2">
   <div>
-    <span class="dashboard-eyebrow">TRAVI$ VIOLATIONS MODULE</span>
+    <span class="dashboard-eyebrow">TRAVIS VIOLATIONS MODULE</span>
     <h3 class="page-title">Violation Records</h3>
     <p class="page-sub">Record, review, and route unpaid traffic violations to the payment module.</p>
   </div>

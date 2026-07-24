@@ -1377,14 +1377,14 @@ new Chart(document.getElementById('dsTrendChart'), {
     datasets: [{
       label: 'Violations',
       data: dsMonthlyTrend,
-      borderColor: '#38bdf8',
-      backgroundColor: 'rgba(56,189,248,.15)',
+      borderColor: '#087d78',
+      backgroundColor: 'rgba(8,125,120,.14)',
       fill: true,
       tension: .4,
       borderWidth: 3,
       pointRadius: 3,
-      pointBackgroundColor: '#2563eb',
-      pointBorderColor: '#fff'
+      pointBackgroundColor: '#eb941f',
+      pointBorderColor: '#fffdf7'
     }]
   },
   options: {
@@ -1395,12 +1395,12 @@ new Chart(document.getElementById('dsTrendChart'), {
     scales: {
       x: {
         grid: { display: false },
-        ticks: { color: '#c9d8ea' }
+        ticks: { color: '#526b64' }
       },
       y: {
         beginAtZero: true,
-        grid: { color: 'rgba(56,189,248,.08)' },
-        ticks: { precision: 0, color: '#c9d8ea' }
+        grid: { color: 'rgba(16,47,73,.12)' },
+        ticks: { precision: 0, color: '#526b64' }
       }
     }
   }
@@ -1413,7 +1413,7 @@ new Chart(document.getElementById('dsViolationChart'), {
     datasets: [{
       label: 'Recorded violations',
       data: dsViolationData,
-      backgroundColor: ['#38bdf8', '#2563eb', '#4fc3f7', '#7dd3fc', '#60a5fa', '#93c5fd', '#3b82f6', '#1d4ed8'],
+      backgroundColor: ['#087d78', '#eb941f', '#15966f', '#3e7c92', '#c87820', '#78a99f', '#0f6f69', '#d99a48'],
       borderRadius: 7
     }]
   },
@@ -1426,12 +1426,12 @@ new Chart(document.getElementById('dsViolationChart'), {
     scales: {
       x: {
         beginAtZero: true,
-        grid: { color: 'rgba(56,189,248,.08)' },
-        ticks: { precision: 0, color: '#c9d8ea' }
+        grid: { color: 'rgba(16,47,73,.12)' },
+        ticks: { precision: 0, color: '#526b64' }
       },
       y: {
         grid: { display: false },
-        ticks: { color: '#c9d8ea' }
+        ticks: { color: '#526b64' }
       }
     }
   }
