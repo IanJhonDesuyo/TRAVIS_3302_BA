@@ -17,12 +17,19 @@ if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
     exit;
 }
 
+$normalizedRole = strtolower(trim((string)($_SESSION['role'] ?? '')));
+if (!in_array($normalizedRole, ['administrator', 'treasurer', 'treasury personnel'], true)) {
+    http_response_code(403);
+    echo json_encode(['error' => 'You do not have permission to process payments']);
+    exit;
+}
+
 require_once '../Web_app/db_connect.php';
 
 $input = json_decode(file_get_contents('php://input'), true);
 
 $violationId = $input['violation_id'] ?? null;
-$paymentMethod = $input['payment_method'] ?? 'cash';
+$paymentMethod = 'cash';
 $amountPaid = $input['amount_paid'] ?? null;
 
 if (!$violationId || !$amountPaid) {

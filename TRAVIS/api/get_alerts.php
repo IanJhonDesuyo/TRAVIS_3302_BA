@@ -19,8 +19,12 @@ $sql = "SELECT * FROM monitoring_alerts WHERE 1=1";
 $params = [];
 
 if (!empty($status)) {
-    $sql .= " AND status = ?";
-    $params[] = $status;
+    $statuses = array_values(array_filter(array_map('trim', explode(',', $status))));
+    $allowed = array_values(array_intersect($statuses, ['active', 'acknowledged', 'resolved']));
+    if ($allowed) {
+        $sql .= " AND status IN (" . implode(',', array_fill(0, count($allowed), '?')) . ")";
+        array_push($params, ...$allowed);
+    }
 }
 
 $sql .= " ORDER BY generated_at DESC LIMIT ?";

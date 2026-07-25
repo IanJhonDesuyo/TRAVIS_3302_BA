@@ -23,6 +23,8 @@ const newCalibrationBtn = document.getElementById('newCalibrationBtn');
 const saveCalibrationBtn = document.getElementById('saveCalibrationBtn');
 const cancelCalibrationBtn = document.getElementById('cancelCalibrationBtn');
 const addOfficerZoneBtn = document.getElementById('addOfficerZoneBtn');
+const drawInboundLineBtn = document.getElementById('drawInboundLineBtn');
+const drawOutboundLineBtn = document.getElementById('drawOutboundLineBtn');
 const calibrationCsrf = document.getElementById('calibrationCsrf');
 let previousCongestionAlertState = null;
 let previousCollisionState = null;
@@ -30,6 +32,7 @@ let congestionAlertTimer = null;
 let streamRetryTimer = null;
 let currentAnalysisStatus = 'idle';
 let switchingCalibration = false;
+let calibrationSelectionTouched = false;
 
 function hideCongestionAlert() {
   document.getElementById('congestionLiveAlert')?.classList.remove('show');
@@ -77,7 +80,7 @@ function apiUrl(file) {
     return API_BASE + file;
 }
 
-const STREAM_URL = `${window.location.protocol}//${window.location.hostname}:5000/video_feed`;
+const STREAM_URL = `${API_BASE}video_feed.php?client=web`;
 
 function updateSourceFields() {
   const isTapo = monitoringSource?.value === 'tapo_camera';
@@ -97,9 +100,10 @@ function updateSourceFields() {
 monitoringSource?.addEventListener('change', updateSourceFields);
 updateSourceFields();
 
-let calibrationPoints = [];
+let inboundLinePoints = [];
+let outboundLinePoints = [];
 let officerZonePoints = [];
-let drawingOfficerZone = false;
+let calibrationTool = null;
 
 function sizeCalibrationCanvas() {
   if (!calibrationCanvas) return;
@@ -132,8 +136,8 @@ function drawCalibrationLines() {
     }
   };
 
-  drawLine(calibrationPoints.slice(0, 2), '#22c55e', 'INBOUND');
-  drawLine(calibrationPoints.slice(2, 4), '#ef4444', 'OUTBOUND');
+  drawLine(inboundLinePoints, '#22c55e', 'INBOUND');
+  drawLine(outboundLinePoints, '#ef4444', 'OUTBOUND');
 
   if (officerZonePoints.length) {
     context.fillStyle = 'rgba(34, 211, 238, .18)';
@@ -165,38 +169,50 @@ function drawCalibrationLines() {
 }
 
 function closeCalibrationEditor() {
-  calibrationPoints = [];
+  inboundLinePoints = [];
+  outboundLinePoints = [];
   officerZonePoints = [];
-  drawingOfficerZone = false;
+  calibrationTool = null;
   calibrationCanvas?.classList.remove('active');
   calibrationEditor?.classList.add('d-none');
   if (calibrationName) calibrationName.value = '';
   if (saveCalibrationBtn) saveCalibrationBtn.disabled = true;
   if (addOfficerZoneBtn) {
-    addOfficerZoneBtn.disabled = true;
     addOfficerZoneBtn.textContent = 'Add Enforcer Zone (Optional)';
   }
   drawCalibrationLines();
 }
 
 newCalibrationBtn?.addEventListener('click', () => {
-  calibrationPoints = [];
+  inboundLinePoints = [];
+  outboundLinePoints = [];
   officerZonePoints = [];
-  drawingOfficerZone = false;
+  calibrationTool = null;
   calibrationEditor?.classList.remove('d-none');
   calibrationCanvas?.classList.add('active');
-  if (calibrationInstruction) calibrationInstruction.textContent = 'Click two points for the green inbound line.';
+  if (calibrationInstruction) calibrationInstruction.textContent = 'Choose Inbound Line, Outbound Line, or Enforcer Zone to begin.';
   if (saveCalibrationBtn) saveCalibrationBtn.disabled = true;
-  if (addOfficerZoneBtn) addOfficerZoneBtn.disabled = true;
   sizeCalibrationCanvas();
 });
 
 cancelCalibrationBtn?.addEventListener('click', closeCalibrationEditor);
 window.addEventListener('resize', sizeCalibrationCanvas);
 
+function selectLineTool(tool) {
+  calibrationTool = tool;
+  if (tool === 'inbound') inboundLinePoints = [];
+  if (tool === 'outbound') outboundLinePoints = [];
+  const label = tool === 'inbound' ? 'green inbound' : 'red outbound';
+  if (calibrationInstruction) calibrationInstruction.textContent = `Click two points for the ${label} line.`;
+  drawCalibrationLines();
+}
+
+drawInboundLineBtn?.addEventListener('click', () => selectLineTool('inbound'));
+drawOutboundLineBtn?.addEventListener('click', () => selectLineTool('outbound'));
+
 addOfficerZoneBtn?.addEventListener('click', () => {
   officerZonePoints = [];
-  drawingOfficerZone = true;
+  calibrationTool = 'officer';
   addOfficerZoneBtn.textContent = 'Drawing Enforcer Zone...';
   if (saveCalibrationBtn) saveCalibrationBtn.disabled = true;
   if (calibrationInstruction) {
@@ -212,14 +228,14 @@ calibrationCanvas?.addEventListener('click', event => {
     Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height))
   ];
 
-  if (drawingOfficerZone) {
+  if (calibrationTool === 'officer') {
     if (officerZonePoints.length >= 4) return;
     officerZonePoints.push(point);
     if (officerZonePoints.length === 4) {
-      drawingOfficerZone = false;
+      calibrationTool = null;
       addOfficerZoneBtn.textContent = 'Redraw Enforcer Zone';
-      if (saveCalibrationBtn) saveCalibrationBtn.disabled = false;
-      if (calibrationInstruction) calibrationInstruction.textContent = 'Enforcer zone ready. Enter a name and save.';
+      if (saveCalibrationBtn) saveCalibrationBtn.disabled = inboundLinePoints.length !== 2 || outboundLinePoints.length !== 2;
+      if (calibrationInstruction) calibrationInstruction.textContent = 'Enforcer zone ready. Choose a line tool or save when both lines are complete.';
     } else if (calibrationInstruction) {
       calibrationInstruction.textContent = `Click ${4 - officerZonePoints.length} more enforcer-zone corner${4 - officerZonePoints.length === 1 ? '' : 's'}.`;
     }
@@ -227,23 +243,28 @@ calibrationCanvas?.addEventListener('click', event => {
     return;
   }
 
-  if (calibrationPoints.length >= 4) return;
-  calibrationPoints.push(point);
+  if (calibrationTool !== 'inbound' && calibrationTool !== 'outbound') {
+    if (calibrationInstruction) calibrationInstruction.textContent = 'Choose Inbound Line, Outbound Line, or Enforcer Zone first.';
+    return;
+  }
+
+  const selectedPoints = calibrationTool === 'inbound' ? inboundLinePoints : outboundLinePoints;
+  if (selectedPoints.length >= 2) return;
+  selectedPoints.push(point);
   drawCalibrationLines();
 
   if (calibrationInstruction) {
-    if (calibrationPoints.length < 2) calibrationInstruction.textContent = 'Click the second point for the green inbound line.';
-    else if (calibrationPoints.length === 2) calibrationInstruction.textContent = 'Now click two points for the red outbound line.';
-    else if (calibrationPoints.length === 3) calibrationInstruction.textContent = 'Click the second point for the red outbound line.';
-    else calibrationInstruction.textContent = 'Both lines are ready. Optionally add an enforcer zone, or enter a name and save.';
+    if (selectedPoints.length < 2) calibrationInstruction.textContent = `Click the second point for the ${calibrationTool} line.`;
+    else if (inboundLinePoints.length === 2 && outboundLinePoints.length === 2) calibrationInstruction.textContent = 'Both lines are ready. Optionally add an enforcer zone, or enter a name and save.';
+    else calibrationInstruction.textContent = `${calibrationTool === 'inbound' ? 'Inbound' : 'Outbound'} line ready. Choose the other line whenever you are ready.`;
   }
-  if (calibrationPoints.length === 4 && addOfficerZoneBtn) addOfficerZoneBtn.disabled = false;
-  if (saveCalibrationBtn) saveCalibrationBtn.disabled = calibrationPoints.length !== 4;
+  if (selectedPoints.length === 2) calibrationTool = null;
+  if (saveCalibrationBtn) saveCalibrationBtn.disabled = inboundLinePoints.length !== 2 || outboundLinePoints.length !== 2;
 });
 
 saveCalibrationBtn?.addEventListener('click', async () => {
   const name = calibrationName?.value.trim() ?? '';
-  if (!name || calibrationPoints.length !== 4) {
+  if (!name || inboundLinePoints.length !== 2 || outboundLinePoints.length !== 2) {
     if (calibrationInstruction) calibrationInstruction.textContent = 'Enter a name and draw both lines first.';
     return;
   }
@@ -256,8 +277,8 @@ saveCalibrationBtn?.addEventListener('click', async () => {
       body: JSON.stringify({
         csrf_token: calibrationCsrf?.value ?? '',
         profile_name: name,
-        inbound_line: calibrationPoints.slice(0, 2),
-        outbound_line: calibrationPoints.slice(2, 4),
+        inbound_line: inboundLinePoints,
+        outbound_line: outboundLinePoints,
         officer_zone: officerZonePoints
       })
     });
@@ -525,7 +546,8 @@ async function refreshMonitoringStatus() {
     const data = await fetchJson(apiUrl('get_status.php'));
     const analysisStatus = data.analysis_status ?? data.ai_status ?? 'Idle';
     currentAnalysisStatus = String(analysisStatus).toLowerCase();
-    if (!switchingCalibration && data.calibration_profile && calibrationProfile) {
+    const liveAnalysis = ['running', 'starting'].includes(currentAnalysisStatus);
+    if (liveAnalysis && !switchingCalibration && !calibrationSelectionTouched && data.calibration_profile && calibrationProfile) {
       const activeOption = Array.from(calibrationProfile.options).find(
         option => option.text === data.calibration_profile || option.value === data.calibration_profile
       );
@@ -593,7 +615,7 @@ async function refreshMonitoringLogs() {
   }
 }
 
-function connectStreamWithRetry(attempt = 0) {
+async function connectStreamWithRetry(attempt = 0) {
   if (!aiLiveStream) return;
 
   if (streamRetryTimer) {
@@ -601,9 +623,31 @@ function connectStreamWithRetry(attempt = 0) {
     streamRetryTimer = null;
   }
 
-  aiLiveStream.style.display = 'block';
-  if (streamFallback) {
-    streamFallback.style.display = 'none';
+  aiLiveStream.style.display = 'none';
+  if (streamFallback) streamFallback.style.display = 'flex';
+
+  // Do not attach the long-lived MJPEG request until Flask has produced its
+  // first frame. The proxy can return HTTP 200 before its upstream is ready,
+  // which otherwise leaves a blank image that never triggers another retry.
+  try {
+    const probe = await fetch(`${API_BASE}video_snapshot.php?client=web&t=${Date.now()}`, {
+      cache: 'no-store'
+    });
+    if (!probe.ok) throw new Error('Stream is not ready.');
+  } catch (error) {
+    if (attempt < 20) {
+      streamRetryTimer = window.setTimeout(
+        () => connectStreamWithRetry(attempt + 1),
+        750
+      );
+    } else {
+      if (streamFallback) streamFallback.style.display = 'flex';
+      if (sourceStatus) {
+        sourceStatus.textContent = 'AI Stream Unavailable';
+        sourceStatus.className = 'tag tag-danger';
+      }
+    }
+    return;
   }
 
   aiLiveStream.onload = () => {
@@ -633,7 +677,7 @@ function connectStreamWithRetry(attempt = 0) {
     }
   };
 
-  aiLiveStream.src = `${STREAM_URL}?t=${new Date().getTime()}`;
+  aiLiveStream.src = `${STREAM_URL}&t=${Date.now()}`;
 
   if (sourceStatus) {
     sourceStatus.textContent = 'Connecting AI Stream';
@@ -669,7 +713,7 @@ async function startAnalysis() {
 
   try {
     const sourceType = monitoringSource?.value ?? 'uploaded_video';
-    const requestBody = { source_type: sourceType };
+    const requestBody = { source_type: sourceType, client: 'web' };
     requestBody.calibration_profile = calibrationProfile?.value ?? '';
 
     if (sourceType === 'tapo_camera') {
@@ -724,7 +768,9 @@ async function stopAnalysis() {
   try {
 
     const response = await fetchJson(apiUrl('stop_analysis.php'), {
-      method: 'POST'
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ client: 'web' })
     });
 
     // Update dashboard status
@@ -797,6 +843,7 @@ if (startAnalysisBtn) startAnalysisBtn.addEventListener('click', startAnalysis);
 if (stopAnalysisBtn) stopAnalysisBtn.addEventListener('click', stopAnalysis);
 
 calibrationProfile?.addEventListener('change', async () => {
+  calibrationSelectionTouched = true;
   const selectedName = calibrationProfile.options[calibrationProfile.selectedIndex]?.text ?? 'Selected configuration';
   if (!['running', 'starting'].includes(currentAnalysisStatus)) {
     if (analysisMessage) {

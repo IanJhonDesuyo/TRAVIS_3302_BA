@@ -11,12 +11,15 @@ import {
   SafeAreaView,
   Modal,
   Pressable,
+  Image,
+  ImageBackground,
+  Alert,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { Href, useRouter } from 'expo-router';
 import LoginSuccessModal from '../../components/LoginSuccessModal';
-import api from '../../api/axiosConfig';
+import api, { APP_ROOT_URL } from '../../api/axiosConfig';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type OrgType = 'LGU' | 'BSU';
 
@@ -47,6 +50,7 @@ export default function LoginScreen() {
   const [errorMsg, setErrorMsg] = useState<string>('');
   const [successVisible, setSuccessVisible] = useState<boolean>(false);
   const [loggedInName, setLoggedInName] = useState<string>('');
+  const [loggedInRole, setLoggedInRole] = useState<string>('');
 
   const handleSignIn = async (): Promise<void> => {
     if (!email || !password) {
@@ -62,7 +66,9 @@ export default function LoginScreen() {
 
       if (response.data.success) {
         const user = response.data.user;
+        await AsyncStorage.setItem('travis_user', JSON.stringify(user));
         setLoggedInName(user.full_name);
+        setLoggedInRole(user.role || '');
         setModalVisible(false);
         setSuccessVisible(true);
       } else {
@@ -78,14 +84,15 @@ export default function LoginScreen() {
 
   const handleContinueToDashboard = (): void => {
     setSuccessVisible(false);
-    router.replace("/(drawer)/dashboard");
+    const normalizedRole = loggedInRole.trim().toLowerCase();
+    const isTreasurer = normalizedRole === 'treasurer' || normalizedRole === 'treasury personnel';
+    router.replace((isTreasurer ? "/(treasurer)/dashboard" : "/(drawer)/dashboard") as Href);
   };
 
   return (
-    <LinearGradient
-      colors={['#3b4652', '#5c6b78', '#7c8a96']}
-      style={styles.background}
-    >
+    <ImageBackground source={{ uri: `${APP_ROOT_URL}assets/images/nasugbu-municipal-hall.jpg` }} style={styles.background} resizeMode="cover">
+      <View pointerEvents="none" style={styles.backgroundWash} />
+      <View pointerEvents="none" style={styles.backgroundShade} />
       <SafeAreaView style={styles.safeArea}>
         <ScrollView
           contentContainerStyle={styles.scrollContent}
@@ -93,26 +100,25 @@ export default function LoginScreen() {
         >
           {/* Info card */}
           <View style={styles.infoCard}>
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>AI Smart Traffic Command Center</Text>
+            <View style={styles.brandRow}>
+              <Image source={{ uri: `${APP_ROOT_URL}assets/images/nasugbu-seal.jpg` }} style={styles.seal} />
+              <View style={{ flex: 1 }}><Text style={styles.brandName}>NASUGBU · TMO</Text><Text style={styles.brandSub}>Traffic Management Office</Text></View>
+              <View style={styles.officialDot}><Ionicons name="checkmark" size={12} color="#FFFFFF" /></View>
             </View>
-
-            <Text style={styles.title}>TRAVIS</Text>
-            <Text style={styles.subtitle}>
-              Traffic Violation Recognition and AI Surveillance
-            </Text>
+            <View style={styles.eyebrowRow}><View style={styles.eyebrowLine} /><Text style={styles.eyebrow}>AI SMART TRAFFIC COMMAND CENTER</Text></View>
+            <Text style={styles.title}>Plan ahead.</Text>
+            <Text style={styles.titleAccent}>Travel safer.</Text>
+            <Text style={styles.subtitle}>TRAVIS · Traffic Violation Recognition and AI Surveillance</Text>
 
             <Text style={styles.description}>
-              An AI-powered intelligent traffic monitoring platform designed to
-              assist Local Government Units in monitoring traffic violations,
-              congestion, collisions, and road conditions using Computer Vision
-              and Machine Learning.
+              Official intelligent traffic monitoring for violations, congestion,
+              collisions, and safer road conditions across Nasugbu.
             </Text>
 
             <View style={styles.statsRow}>
-              <StatItem value="24" label="Active Cameras" />
-              <StatItem value="AI" label="Monitoring Online" />
-              <StatItem value="24/7" label="Traffic Surveillance" />
+              <StatItem value="Live" label="Traffic outlook" />
+              <StatItem value="AI" label="Monitoring" />
+              <StatItem value="24/7" label="Operations" />
             </View>
 
             <TouchableOpacity
@@ -120,13 +126,14 @@ export default function LoginScreen() {
               onPress={() => setModalVisible(true)}
             >
               <Ionicons name="log-in-outline" size={18} color="#fff" style={{ marginRight: 8 }} />
-              <Text style={styles.loginButtonText}>Login</Text>
+              <Text style={styles.loginButtonText}>Personnel Login</Text>
+              <Ionicons name="arrow-forward" size={17} color="#fff" style={{ marginLeft: 8 }} />
             </TouchableOpacity>
 
             <View style={styles.footerRow}>
-              <Ionicons name="shield-checkmark-outline" size={13} color="#cbd5e1" />
+              <Ionicons name="shield-checkmark-outline" size={13} color="#137B70" />
               <Text style={styles.copyright}>
-                {'  '}Municipality of Nasugbu • Batangas State University • TRAVIS v1.0
+                {'  '}Official municipal traffic information system
               </Text>
             </View>
           </View>
@@ -228,7 +235,7 @@ export default function LoginScreen() {
                       <Text style={styles.rememberText}>Remember me</Text>
                     </TouchableOpacity>
 
-                    <TouchableOpacity>
+                    <TouchableOpacity onPress={() => Alert.alert('Forgot Password', 'Contact a TRAVIS administrator to verify your account and reset your password.')}>
                       <Text style={styles.forgotText}>Forgot Password?</Text>
                     </TouchableOpacity>
                   </View>
@@ -263,30 +270,38 @@ export default function LoginScreen() {
           onContinue={handleContinueToDashboard}
         />
       </SafeAreaView>
-    </LinearGradient>
+    </ImageBackground>
   );
 }
 
 const styles = StyleSheet.create({
   background: { flex: 1 },
+  backgroundWash: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(247,244,235,0.82)' },
+  backgroundShade: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(247,244,235,0.10)' },
   safeArea: { flex: 1 },
   scrollContent: {
     flexGrow: 1,
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 40,
+    justifyContent: 'center', paddingHorizontal: 18, paddingVertical: 28,
   },
 
   infoCard: {
     width: '100%',
     maxWidth: 420,
-    backgroundColor: 'rgba(59, 70, 82, 0.55)',
-    borderRadius: 20,
-    padding: 24,
+    backgroundColor: 'rgba(247,244,235,0.90)',
+    borderRadius: 22, padding: 22,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderColor: 'rgba(11,39,66,0.14)',
+    shadowColor: '#071B2E', shadowOffset: { width: 0, height: 16 }, shadowOpacity: 0.20, shadowRadius: 28, elevation: 10,
   },
+  brandRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 34 },
+  seal: { width: 52, height: 52, borderRadius: 26, borderWidth: 3, borderColor: '#FFFFFF', marginRight: 11 },
+  brandName: { color: '#0B2742', fontSize: 14, fontWeight: '900', letterSpacing: .4 },
+  brandSub: { color: '#60716B', fontSize: 10, marginTop: 3 },
+  officialDot: { width: 25, height: 25, borderRadius: 13, backgroundColor: '#137B70', alignItems: 'center', justifyContent: 'center' },
+  eyebrowRow: { flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 12 },
+  eyebrowLine: { width: 28, height: 3, backgroundColor: '#EA9625' },
+  eyebrow: { color: '#137B70', fontSize: 9, fontWeight: '900', letterSpacing: 1.1, flexShrink: 1 },
   badge: {
     alignSelf: 'flex-start',
     backgroundColor: '#22d3ee',
@@ -297,22 +312,15 @@ const styles = StyleSheet.create({
   },
   badgeText: { color: '#0b3b45', fontWeight: '600', fontSize: 11 },
   title: {
-    fontSize: 36,
-    fontWeight: '800',
-    color: '#ffffff',
-    letterSpacing: 1,
+    fontSize: 42, fontWeight: '900', color: '#0B2742', letterSpacing: -1.8, lineHeight: 44,
   },
+  titleAccent: { fontSize: 42, fontWeight: '900', color: '#137B70', letterSpacing: -1.8, lineHeight: 44 },
   subtitle: {
-    fontSize: 15,
-    color: '#e2e8f0',
-    marginTop: 4,
-    marginBottom: 14,
-    fontWeight: '600',
+    fontSize: 10, color: '#137B70', marginTop: 14, marginBottom: 10, fontWeight: '800', letterSpacing: .2,
   },
   description: {
     fontSize: 13,
-    color: '#cbd5e1',
-    lineHeight: 20,
+    color: '#475D56', lineHeight: 20,
     marginBottom: 20,
   },
   statsRow: {
@@ -322,27 +330,26 @@ const styles = StyleSheet.create({
   },
   statBox: {
     flex: 1,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(255,255,255,0.58)',
     borderRadius: 10,
     paddingVertical: 14,
     alignItems: 'center',
     marginHorizontal: 4,
   },
-  statValue: { color: '#fff', fontSize: 18, fontWeight: '800' },
+  statValue: { color: '#0B2742', fontSize: 17, fontWeight: '900' },
   statLabel: {
-    color: '#cbd5e1',
+    color: '#60716B',
     fontSize: 10,
     textAlign: 'center',
     marginTop: 4,
   },
   loginButton: {
     flexDirection: 'row',
-    backgroundColor: '#2563eb',
-    borderRadius: 10,
+    backgroundColor: '#0B2742', borderRadius: 8,
     paddingVertical: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 18,
+    marginBottom: 18, borderBottomWidth: 5, borderBottomColor: '#EA9625',
   },
   loginButtonText: { color: '#fff', fontWeight: '700', fontSize: 15 },
   footerRow: {
@@ -351,7 +358,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   copyright: {
-    color: '#cbd5e1',
+    color: '#60716B',
     fontSize: 10,
     textAlign: 'center',
   },

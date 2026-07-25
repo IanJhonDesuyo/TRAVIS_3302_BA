@@ -32,18 +32,18 @@ $sql = "UPDATE monitoring_alerts SET
         status = 'acknowledged', 
         acknowledged_by = ?, 
         acknowledged_at = NOW() 
-        WHERE alert_id = ?";
+        WHERE alert_id = ? AND status = 'active'";
 
 $stmt = $pdo->prepare($sql);
 $result = $stmt->execute([$_SESSION['user_id'], $alertId]);
 
-if ($result) {
+if ($result && $stmt->rowCount() === 1) {
     echo json_encode([
         'success' => true,
         'message' => 'Alert acknowledged'
     ]);
 } else {
-    http_response_code(500);
-    echo json_encode(['error' => 'Failed to acknowledge alert']);
+    http_response_code(409);
+    echo json_encode(['error' => 'This alert was already acknowledged, resolved, or no longer exists']);
 }
 ?>

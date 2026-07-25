@@ -545,7 +545,7 @@ a:hover{color:#fff}
       <div class="camera-stage mb-3" id="cameraStage">
         <img
           id="aiLiveStream"
-          src="http://<?= esc(!empty($_SERVER['HTTP_HOST']) ? explode(':', $_SERVER['HTTP_HOST'])[0] : 'localhost') ?>:5000/video_feed"
+          src="../api/video_feed.php?client=web"
           alt="TRAVIS Live AI Detection Stream"
           style="width:100%; height:100%; object-fit:cover; border-radius:12px; display:block;"
           onerror="this.style.display='none'; document.getElementById('streamFallback').style.display='flex';"
@@ -610,8 +610,16 @@ a:hover{color:#fff}
       <div id="calibrationEditor" class="d-none mb-3">
         <label class="form-label small fw-semibold" for="calibrationName">Configuration Name</label>
         <input class="form-control mb-2" id="calibrationName" maxlength="100" placeholder="Example: City Hall - North View">
-        <div class="small text-info mb-2" id="calibrationInstruction">Click two points for the inbound line.</div>
-        <button class="btn btn-light w-100 mb-2" type="button" id="addOfficerZoneBtn" disabled>
+        <div class="small text-info mb-2" id="calibrationInstruction">Choose which line you want to draw first.</div>
+        <div class="d-flex gap-2 mb-2">
+          <button class="btn btn-light flex-fill" type="button" id="drawInboundLineBtn">
+            <i class="bi bi-arrow-down-left me-1"></i>Inbound Line
+          </button>
+          <button class="btn btn-light flex-fill" type="button" id="drawOutboundLineBtn">
+            <i class="bi bi-arrow-up-right me-1"></i>Outbound Line
+          </button>
+        </div>
+        <button class="btn btn-light w-100 mb-2" type="button" id="addOfficerZoneBtn">
           <i class="bi bi-person-bounding-box me-1"></i>Add Enforcer Zone (Optional)
         </button>
         <div class="d-flex gap-2">

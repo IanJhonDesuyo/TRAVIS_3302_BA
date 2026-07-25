@@ -73,6 +73,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'recor
 
         $message = 'Payment recorded successfully. Payment reference: PAY-' . str_pad((string)$paymentId, 6, '0', STR_PAD_LEFT);
         $messageType = 'success';
+        if (defined('TRAVIS_AUTO_PRINT_PAYMENT_RECEIPT') && TRAVIS_AUTO_PRINT_PAYMENT_RECEIPT) {
+            $autoPrintPaymentId = (int)$paymentId;
+        }
     } catch (Throwable $e) {
         $conn->rollback();
         $message = $e->getMessage() ?: 'Failed to record the payment.';
@@ -693,5 +696,64 @@ div[style*="border-radius: 999px"]:not(.tag){
     </div>
   <?php endif; ?>
 </div>
+
+<?php if (!empty($autoPrintPaymentId)): ?>
+  <?php
+  $printReceipt = fetch_one("
+      SELECT p.*, v.ticket_number, v.plate_number, v.driver_name, v.violation_type,
+             u.full_name AS received_by_name
+      FROM payments p
+      JOIN violations v ON v.violation_id = p.violation_id
+      LEFT JOIN users u ON u.user_id = p.received_by
+      WHERE p.payment_id = ?
+      LIMIT 1
+  ", [(string)$autoPrintPaymentId]);
+  ?>
+  <?php if ($printReceipt): ?>
+    <div id="treasurerReceiptSheet" class="treasurer-receipt-sheet" aria-hidden="true">
+      <div class="receipt-office">Municipality of Nasugbu</div>
+      <h2>Official Payment Receipt</h2>
+      <div class="receipt-reference"><?= esc(payment_reference((int)$printReceipt['payment_id'])) ?></div>
+      <hr>
+      <div class="receipt-grid">
+        <div><strong>Ticket Number</strong><span><?= esc($printReceipt['ticket_number']) ?></span></div>
+        <div><strong>Plate Number</strong><span><?= esc($printReceipt['plate_number']) ?></span></div>
+        <div><strong>Driver</strong><span><?= esc($printReceipt['driver_name']) ?></span></div>
+        <div><strong>Violation</strong><span><?= esc($printReceipt['violation_type']) ?></span></div>
+        <div><strong>Amount Paid</strong><span><?= peso($printReceipt['amount_paid']) ?></span></div>
+        <div><strong>Payment Method</strong><span><?= esc(payment_method_label($printReceipt['payment_method'])) ?></span></div>
+        <div><strong>Payment Date</strong><span><?= esc($printReceipt['payment_date']) ?></span></div>
+        <div><strong>Received By</strong><span><?= esc($printReceipt['received_by_name'] ?? 'Treasury Personnel') ?></span></div>
+      </div>
+    </div>
+    <style>
+      .treasurer-receipt-sheet{position:fixed;left:0;top:0;width:800px;max-width:100%;padding:2.5rem;background:#fff;color:#111827;visibility:hidden;z-index:-1}
+      .treasurer-receipt-sheet .receipt-office{text-transform:uppercase;letter-spacing:.12em;color:#087d78;font-weight:700}
+      .treasurer-receipt-sheet h2{margin:.35rem 0 .15rem;color:#102f49}
+      .treasurer-receipt-sheet .receipt-reference{color:#526b64;margin-bottom:1rem}
+      .treasurer-receipt-sheet .receipt-grid{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem 2rem}
+      .treasurer-receipt-sheet .receipt-grid div{display:flex;flex-direction:column;gap:.25rem}
+      .treasurer-receipt-sheet strong{color:#10202c}
+      @media print{
+        body.printing-treasurer-receipt *{visibility:hidden!important}
+        body.printing-treasurer-receipt .treasurer-receipt-sheet,
+        body.printing-treasurer-receipt .treasurer-receipt-sheet *{visibility:visible!important}
+        body.printing-treasurer-receipt .treasurer-receipt-sheet{position:absolute;z-index:99999}
+      }
+    </style>
+    <script>
+      document.addEventListener('DOMContentLoaded', function () {
+        document.body.classList.add('printing-treasurer-receipt');
+        var cleanup = function () {
+          document.body.classList.remove('printing-treasurer-receipt');
+          window.removeEventListener('afterprint', cleanup);
+        };
+        window.addEventListener('afterprint', cleanup);
+        window.print();
+        window.setTimeout(cleanup, 2000);
+      });
+    </script>
+  <?php endif; ?>
+<?php endif; ?>
 
 <?php page_end(); ?>

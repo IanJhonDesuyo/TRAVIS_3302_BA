@@ -84,6 +84,19 @@ def video_feed():
     return response
 
 
+@app.route("/snapshot")
+def snapshot():
+    """Single processed JPEG frame for mobile clients that cannot render MJPEG."""
+    with frame_condition:
+        frame_bytes = latest_jpeg
+    if frame_bytes is None:
+        return Response(status=503)
+    response = Response(frame_bytes, mimetype="image/jpeg")
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    return response
+
+
 # ==========================================
 # Start Server
 # ==========================================

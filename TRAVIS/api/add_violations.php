@@ -39,8 +39,8 @@ $sql = "INSERT INTO violations (
     ticket_number, driver_name, license_number, plate_number, 
     vehicle_type, violation_type, violation_location, 
     violation_date, violation_time, penalty_amount, 
-    encoded_by, status
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')";
+    encoded_by, input_method, status
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')";
 
 $stmt = $pdo->prepare($sql);
 $result = $stmt->execute([
@@ -54,7 +54,8 @@ $result = $stmt->execute([
     date('Y-m-d'),
     date('H:i:s'),
     $input['penalty_amount'],
-    $_SESSION['user_id']
+    $_SESSION['user_id'],
+    ($input['input_method'] ?? 'manual') === 'ocr' ? 'ocr' : 'manual'
 ]);
 
 if ($result) {

@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   SafeAreaView,
   ScrollView,
@@ -15,7 +15,7 @@ import {
   FlatList,
   Platform,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import api from '../../api/axiosConfig';
@@ -62,13 +62,11 @@ interface Payment {
   plate_number: string;
   violation_type: string;
   amount_paid: number;
-  payment_method: 'cash' | 'gcash' | 'bank_transfer' | 'other';
+  payment_method: string;
   payment_status: 'completed' | 'pending' | 'failed';
   payment_date: string;
   received_by_name: string | null;
 }
-
-type PaymentMethod = 'cash' | 'gcash' | 'bank_transfer' | 'other';
 
 // ========== HELPERS ==========
 const formatCurrency = (amount: number): string => `\u20b1${amount.toLocaleString()}`;
@@ -105,24 +103,9 @@ const methodLabel = (method: string): string => {
   }
 };
 
-const METHOD_FILTERS: { label: string; value: PaymentMethod | '' }[] = [
-  { label: 'All Methods', value: '' },
-  { label: 'Cash', value: 'cash' },
-  { label: 'GCash', value: 'gcash' },
-  { label: 'Bank Transfer', value: 'bank_transfer' },
-  { label: 'Other', value: 'other' },
-];
-
-const METHOD_OPTIONS: { label: string; value: PaymentMethod }[] = [
-  { label: 'Cash', value: 'cash' },
-  { label: 'GCash', value: 'gcash' },
-  { label: 'Bank Transfer', value: 'bank_transfer' },
-  { label: 'Other', value: 'other' },
-];
-
 // ========== SCREEN ==========
 export default function PaymentsScreen() {
-  const router = useRouter();
+  const { violation_id } = useLocalSearchParams<{ violation_id?: string }>();
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -131,11 +114,22 @@ export default function PaymentsScreen() {
   const [stats, setStats] = useState({ collectedToday: 0, pendingCount: 0, pendingAmount: 0 });
   const [pendingSearch, setPendingSearch] = useState('');
   const [paymentSearch, setPaymentSearch] = useState('');
-  const [methodFilter, setMethodFilter] = useState<PaymentMethod | ''>('');
   const [selectedViolation, setSelectedViolation] = useState<Violation | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [processing, setProcessing] = useState(false);
+  const [handledPaymentLink, setHandledPaymentLink] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!violation_id || handledPaymentLink === violation_id || pendingViolations.length === 0) return;
+    const violation = pendingViolations.find(item => String(item.violation_id) === String(violation_id));
+    setHandledPaymentLink(violation_id);
+    if (violation) {
+      setSelectedViolation(violation);
+      setModalVisible(true);
+    } else {
+      Alert.alert('Payment unavailable', 'This violation is no longer pending or overdue.');
+    }
+  }, [violation_id, handledPaymentLink, pendingViolations]);
 
   // ===== FETCH DATA =====
   const fetchData = async () => {
@@ -191,7 +185,7 @@ export default function PaymentsScreen() {
       const response = await api.post('process_payment.php', {
         violation_id: selectedViolation.violation_id,
         amount_paid: selectedViolation.penalty_amount,
-        payment_method: paymentMethod,
+        payment_method: 'cash',
       });
       if (response.data.success) {
         Alert.alert('Success', `Payment for ${selectedViolation.ticket_number} recorded.`);
@@ -226,8 +220,7 @@ export default function PaymentsScreen() {
       p.driver_name.toLowerCase().includes(search) ||
       p.plate_number.toLowerCase().includes(search)
     );
-    const matchMethod = methodFilter ? p.payment_method === methodFilter : true;
-    return matchSearch && matchMethod;
+    return matchSearch;
   });
 
   // ========== RENDER HELPERS ==========
@@ -262,7 +255,7 @@ export default function PaymentsScreen() {
         <Text style={styles.penalty}>{formatCurrency(item.penalty_amount)}</Text>
         <TouchableOpacity
           style={styles.processButton}
-          onPress={() => { setSelectedViolation(item); setPaymentMethod('cash'); setModalVisible(true); }}
+          onPress={() => { setSelectedViolation(item); setModalVisible(true); }}
           activeOpacity={0.8}
         >
           <Text style={styles.processButtonText}>Process Payment</Text>
@@ -387,22 +380,6 @@ export default function PaymentsScreen() {
             />
           </View>
 
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.methodFilterRow} contentContainerStyle={{ paddingRight: 4 }}>
-            {METHOD_FILTERS.map(f => {
-              const active = methodFilter === f.value;
-              return (
-                <TouchableOpacity
-                  key={f.label}
-                  style={[styles.filterChip, active && styles.filterChipActive]}
-                  onPress={() => setMethodFilter(f.value)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>{f.label}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-
           {filteredPayments.length === 0 ? (
             renderEmpty('No payment transactions matched your current filters.')
           ) : (
@@ -474,21 +451,10 @@ export default function PaymentsScreen() {
 
                 <View style={styles.modalForm}>
                   <Text style={styles.modalFormLabel}>Payment Method</Text>
-                  <View style={styles.methodOptionsRow}>
-                    {METHOD_OPTIONS.map(opt => {
-                      const active = paymentMethod === opt.value;
-                      return (
-                        <TouchableOpacity
-                          key={opt.value}
-                          style={[styles.methodOption, active && styles.methodOptionActive]}
-                          onPress={() => setPaymentMethod(opt.value)}
-                          activeOpacity={0.7}
-                        >
-                          <Ionicons name={methodIcon(opt.value)} size={16} color={active ? COLORS.primary : COLORS.textSecondary} />
-                          <Text style={[styles.methodOptionText, active && styles.methodOptionTextActive]}>{opt.label}</Text>
-                        </TouchableOpacity>
-                      );
-                    })}
+                  <View style={[styles.methodOption, styles.methodOptionActive]}>
+                    <Ionicons name="cash-outline" size={17} color={COLORS.primary} />
+                    <Text style={[styles.methodOptionText, styles.methodOptionTextActive]}>Cash</Text>
+                    <Ionicons name="checkmark-circle" size={17} color={COLORS.success} style={{ marginLeft: 'auto' }} />
                   </View>
                   <Text style={styles.modalNote}>A payment reference will be generated from the saved payment ID.</Text>
                 </View>

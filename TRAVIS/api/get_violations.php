@@ -23,8 +23,12 @@ $sql = "SELECT * FROM violations WHERE 1=1";
 $params = [];
 
 if (!empty($status)) {
-    $sql .= " AND status = ?";
-    $params[] = $status;
+    $statuses = array_values(array_filter(array_map('trim', explode(',', $status))));
+    $allowedStatuses = array_values(array_intersect($statuses, ['pending', 'overdue', 'paid', 'cancelled']));
+    if ($allowedStatuses) {
+        $sql .= " AND status IN (" . implode(',', array_fill(0, count($allowedStatuses), '?')) . ")";
+        array_push($params, ...$allowedStatuses);
+    }
 }
 
 if (!empty($search)) {

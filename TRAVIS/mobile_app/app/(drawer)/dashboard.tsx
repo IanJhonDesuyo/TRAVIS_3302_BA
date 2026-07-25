@@ -18,6 +18,7 @@ import { LineChart, BarChart } from 'react-native-chart-kit';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import Svg, { Circle } from 'react-native-svg';
 import { useFocusEffect } from '@react-navigation/native';
+import { useRouter } from 'expo-router';
 import api, { mlApi } from '../../api/axiosConfig';
 
 // ========== COLOR TOKENS ==========
@@ -91,6 +92,7 @@ function ProgressRing({ percentage, size = 108, strokeWidth = 10, color, trackCo
 
 // ========== MAIN SCREEN ==========
 export default function DashboardScreen() {
+  const router = useRouter();
   const { width } = useWindowDimensions();
   const chartWidth = Math.max(width - 40, 200);
   const isTablet = width >= 700;
@@ -406,7 +408,7 @@ export default function DashboardScreen() {
 
             <View style={styles.heroDivider} />
 
-            <Text style={styles.heroSummaryLabel}>TODAY'S SUMMARY</Text>
+            <Text style={styles.heroSummaryLabel}>TODAY’S SUMMARY</Text>
             <View style={styles.heroStatsRow}>
               {renderHeroStat(<Ionicons name="car" size={16} color="#7DB4FF" />, vehiclesCount.toLocaleString(), 'Vehicles')}
               {renderHeroStat(<Ionicons name="warning" size={16} color="#FBBF24" />, violationsCount.toString(), 'Violations')}
@@ -428,11 +430,11 @@ export default function DashboardScreen() {
               {/* Quick Actions */}
               <Text style={styles.sectionLabel}>QUICK ACTIONS</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.quickActionsRow} contentContainerStyle={{ paddingRight: 20 }}>
-                {renderQuickAction(<Ionicons name="videocam-outline" size={17} color={COLORS.textPrimary} />, 'Cameras')}
-                {renderQuickAction(<MaterialCommunityIcons name="robot-outline" size={17} color={COLORS.textPrimary} />, 'AI')}
-                {renderQuickAction(<Ionicons name="document-text-outline" size={17} color={COLORS.textPrimary} />, 'Reports')}
-                {renderQuickAction(<Ionicons name="map-outline" size={17} color={COLORS.textPrimary} />, 'Live Map')}
-                {renderQuickAction(<Ionicons name="alert-circle-outline" size={17} color={COLORS.textPrimary} />, 'Alerts')}
+                {renderQuickAction(<Ionicons name="videocam-outline" size={17} color={COLORS.textPrimary} />, 'Cameras', () => router.push('/(drawer)/monitoring'))}
+                {renderQuickAction(<MaterialCommunityIcons name="robot-outline" size={17} color={COLORS.textPrimary} />, 'AI', () => setActiveTab('analytics'))}
+                {renderQuickAction(<Ionicons name="document-text-outline" size={17} color={COLORS.textPrimary} />, 'Reports', () => router.push('/(drawer)/reports'))}
+                {renderQuickAction(<Ionicons name="map-outline" size={17} color={COLORS.textPrimary} />, 'Zones', () => setActiveTab('monitoring'))}
+                {renderQuickAction(<Ionicons name="alert-circle-outline" size={17} color={COLORS.textPrimary} />, 'Alerts', () => router.push('/(drawer)/alerts'))}
               </ScrollView>
 
               {/* AI Risk Assessment - DYNAMIC */}

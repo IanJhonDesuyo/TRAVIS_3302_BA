@@ -25,8 +25,31 @@ if ($_SERVER["REQUEST_METHOD"] !== "POST") {
 
 $payload = json_decode(file_get_contents("php://input"), true);
 $sourceType = is_array($payload) ? ($payload["source_type"] ?? "uploaded_video") : "uploaded_video";
+$streamOwner = is_array($payload) ? strtolower((string)($payload["client"] ?? "web")) : "web";
 $calibrationFile = basename((string)($payload["calibration_profile"] ?? ""));
 $calibrationArg = "";
+
+if (!in_array($streamOwner, ["web", "mobile"], true)) {
+    http_response_code(422);
+    echo json_encode(["success" => false, "message" => "Invalid monitoring client."]);
+    exit;
+}
+
+if (is_file($statusFile)) {
+    $existingStatus = json_decode((string)file_get_contents($statusFile), true);
+    $existingState = strtolower((string)($existingStatus["analysis_status"] ?? ""));
+    $existingOwner = strtolower((string)($existingStatus["stream_owner"] ?? ""));
+    $existingUpdated = (int)($existingStatus["updated_at_epoch"] ?? 0);
+    $latestStatusFile = __DIR__ . "/latest_status.json";
+    $latestStatus = is_file($latestStatusFile) ? json_decode((string)file_get_contents($latestStatusFile), true) : [];
+    $hasLiveFrames = !empty($latestStatus["updated_at_epoch"]) && time() - (int)$latestStatus["updated_at_epoch"] <= 6;
+    $isStarting = $existingState === "starting" && $existingUpdated > 0 && time() - $existingUpdated <= 30;
+    if (($hasLiveFrames || $isStarting) && $existingOwner !== "") {
+        http_response_code(409);
+        echo json_encode(["success" => false, "message" => "Monitoring is already active on the " . $existingOwner . " client. Stop the current session before starting another one."]);
+        exit;
+    }
+}
 
 if (!in_array($sourceType, ["uploaded_video", "tapo_camera"], true)) {
     http_response_code(422);
@@ -64,7 +87,9 @@ if ($sourceType === "tapo_camera") {
     $host = $submittedHost !== "" ? $submittedHost : trim((string)($savedCameraConfig["host"] ?? ""));
     $username = $submittedUsername !== "" ? $submittedUsername : trim((string)($savedCameraConfig["username"] ?? ""));
     $password = (string) ($payload["tapo_password"] ?? "");
-    if ($password === "" && $host === ($savedCameraConfig["host"] ?? null) && $username === ($savedCameraConfig["username"] ?? null)) {
+    // A camera commonly receives a new DHCP address while retaining the same
+    // local camera account. Reuse its saved password when the username matches.
+    if ($password === "" && $username === ($savedCameraConfig["username"] ?? null)) {
         $password = (string)($savedCameraConfig["password"] ?? "");
     }
     $streamValue = $payload["tapo_stream"] ?? $savedCameraConfig["stream"] ?? "stream2";
@@ -75,6 +100,14 @@ if ($sourceType === "tapo_camera") {
         echo json_encode(["success" => false, "message" => "Enter a valid camera IP, camera username, and password."]);
         exit;
     }
+
+    $rtspSocket = @fsockopen($host, 554, $socketError, $socketMessage, 2.0);
+    if ($rtspSocket === false) {
+        http_response_code(422);
+        echo json_encode(["success" => false, "message" => "The camera at " . $host . " is not reachable on RTSP port 554. Check its Wi-Fi connection and Camera Account settings."]);
+        exit;
+    }
+    fclose($rtspSocket);
 
     $cameraConfig = json_encode([
         "host" => $host,
@@ -116,6 +149,7 @@ file_put_contents($statusFile, json_encode([
     "analysis_status" => "Starting",
     "ai_status" => "Starting",
     "message" => "Starting AI analysis...",
+    "stream_owner" => $streamOwner,
     "updated_at" => date("Y-m-d H:i:s"),
     "updated_at_epoch" => time()
 ], JSON_PRETTY_PRINT));
@@ -132,5 +166,6 @@ pclose(popen($psexec, "r"));
 echo json_encode([
     "success" => true,
     "analysis_status" => "Starting",
+    "stream_owner" => $streamOwner,
     "message" => $sourceType === "tapo_camera" ? "Tapo camera analysis is starting." : "Video analysis is starting."
 ]);

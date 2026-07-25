@@ -13,6 +13,7 @@ import {
   Share,
   Alert,
   Platform,
+  Modal,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Picker } from '@react-native-picker/picker';
@@ -118,6 +119,10 @@ export default function ReportsScreen() {
   const [reportsToday, setReportsToday] = useState(0);
   const [reportsThisMonth, setReportsThisMonth] = useState(0);
   const [lastGenerated, setLastGenerated] = useState<string | null>(null);
+  const [previewPage, setPreviewPage] = useState(1);
+  const [selectedRecord, setSelectedRecord] = useState<ReportRecord | null>(null);
+  const [showAllHistory, setShowAllHistory] = useState(false);
+  const PREVIEW_PAGE_SIZE = 8;
 
   // ===== FETCH HISTORY =====
   const fetchHistory = async () => {
@@ -159,6 +164,7 @@ export default function ReportsScreen() {
           summary: response.data.summary || {},
           title: response.data.meta?.report_type || 'Report',
         });
+        setPreviewPage(1);
         Alert.alert('Success', 'Report generated.');
       } else {
         Alert.alert('Error', response.data.error || 'Failed to generate report.');
@@ -218,40 +224,25 @@ export default function ReportsScreen() {
   );
 
   const renderRecordItem = ({ item, index }: { item: ReportRecord, index: number }) => {
-    const keys = Object.keys(item);
+    const ticket = item.ticket_number || item.receipt_number || `Record ${index + 1}`;
+    const person = item.driver_name || item.camera_name || item.received_by_name || 'No name recorded';
+    const secondary = item.plate_number || item.location || item.payment_method || '';
+    const category = item.violation_type || item.congestion_level || item.payment_method || reportType;
+    const date = item.violation_date || item.payment_date || item.recorded_at || item.created_at || '';
+    const amount = item.penalty_amount ?? item.amount_paid;
+    const status = String(item.status || item.payment_status || item.congestion_level || 'recorded');
     return (
-      <View key={index} style={styles.recordItem}>
-        {keys.map(key => {
-          let displayValue = item[key] ?? '';
-          if (['penalty_amount', 'amount_paid'].includes(key) && typeof displayValue === 'number') {
-            displayValue = formatCurrency(displayValue);
-          } else if (['status', 'payment_status', 'congestion_level'].includes(key)) {
-            const raw = displayValue;
-            displayValue = (
-              <View style={[styles.statusBadge, { backgroundColor: statusColor(raw) + '1A' }]}>
-                <View style={[styles.statusBadgeDot, { backgroundColor: statusColor(raw) }]} />
-                <Text style={[styles.statusText, { color: statusColor(raw) }]}>
-                  {String(raw).toUpperCase()}
-                </Text>
-              </View>
-            );
-          } else if (['payment_method'].includes(key)) {
-            displayValue = displayValue.toUpperCase();
-          }
-          return (
-            <View key={key} style={styles.recordField}>
-              <Text style={styles.recordLabel}>{key.replace(/_/g, ' ').toUpperCase()}</Text>
-              {typeof displayValue === 'string' || typeof displayValue === 'number' ? (
-                <Text style={styles.recordValue}>{displayValue}</Text>
-              ) : (
-                displayValue
-              )}
-            </View>
-          );
-        })}
-      </View>
+      <TouchableOpacity key={index} style={styles.recordItem} onPress={() => setSelectedRecord(item)} activeOpacity={0.75}>
+        <View style={styles.recordHeader}><Text style={styles.recordTicket} numberOfLines={1}>{ticket}</Text><View style={[styles.statusBadge, { backgroundColor: statusColor(status) + '1A' }]}><View style={[styles.statusBadgeDot, { backgroundColor: statusColor(status) }]} /><Text style={[styles.statusText, { color: statusColor(status) }]}>{status.toUpperCase()}</Text></View></View>
+        <Text style={styles.recordPerson} numberOfLines={1}>{person}{secondary ? ` · ${secondary}` : ''}</Text>
+        <View style={styles.recordFooter}><Text style={styles.recordMeta} numberOfLines={1}>{String(category).replace(/_/g, ' ')} · {String(date).slice(0, 10)}</Text>{amount !== undefined && amount !== null && <Text style={styles.recordAmount}>{formatCurrency(Number(amount))}</Text>}</View>
+        <Text style={styles.viewHint}>Tap to view complete details</Text>
+      </TouchableOpacity>
     );
   };
+
+  const previewTotalPages = Math.max(1, Math.ceil((previewData?.rows.length || 0) / PREVIEW_PAGE_SIZE));
+  const previewRows = previewData?.rows.slice((previewPage - 1) * PREVIEW_PAGE_SIZE, previewPage * PREVIEW_PAGE_SIZE) || [];
 
   const renderHistoryItem = (item: SavedReport) => (
     <View key={item.id} style={styles.historyItem}>
@@ -427,8 +418,9 @@ export default function ReportsScreen() {
               ) : (
                 <View>
                   <View style={styles.panelDivider} />
-                  {previewData.rows.map((item, index) => renderRecordItem({ item, index }))}
-                  <Text style={styles.recordCount}>SHOWING {previewData.rows.length} RECORD(S)</Text>
+                  {previewRows.map((item, index) => renderRecordItem({ item, index: (previewPage - 1) * PREVIEW_PAGE_SIZE + index }))}
+                  <Text style={styles.recordCount}>SHOWING {(previewPage - 1) * PREVIEW_PAGE_SIZE + 1}–{Math.min(previewPage * PREVIEW_PAGE_SIZE, previewData.rows.length)} OF {previewData.rows.length} RECORD(S)</Text>
+                  {previewData.rows.length > PREVIEW_PAGE_SIZE && <View style={styles.pagination}><TouchableOpacity disabled={previewPage === 1} onPress={() => setPreviewPage(value => value - 1)} style={[styles.pageButton, previewPage === 1 && styles.pageButtonDisabled]}><Text style={[styles.pageButtonText, previewPage === 1 && styles.pageButtonTextDisabled]}>Previous</Text></TouchableOpacity><Text style={styles.pageLabel}>{previewPage} / {previewTotalPages}</Text><TouchableOpacity disabled={previewPage === previewTotalPages} onPress={() => setPreviewPage(value => value + 1)} style={[styles.pageButton, previewPage === previewTotalPages && styles.pageButtonDisabled]}><Text style={[styles.pageButtonText, previewPage === previewTotalPages && styles.pageButtonTextDisabled]}>Next</Text></TouchableOpacity></View>}
                 </View>
               )}
             </View>
@@ -448,13 +440,17 @@ export default function ReportsScreen() {
           ) : (
             <>
               <View style={styles.panelDivider} />
-              {history.map(item => renderHistoryItem(item))}
+              {(showAllHistory ? history : history.slice(0, 5)).map(item => renderHistoryItem(item))}
+              {history.length > 5 && <TouchableOpacity style={styles.showMoreButton} onPress={() => setShowAllHistory(value => !value)}><Text style={styles.showMoreText}>{showAllHistory ? 'Show less' : `Show all ${history.length} reports`}</Text></TouchableOpacity>}
             </>
           )}
         </View>
 
         <View style={{ height: 40 }} />
       </ScrollView>
+      <Modal visible={!!selectedRecord} transparent animationType="slide" onRequestClose={() => setSelectedRecord(null)}>
+        <View style={styles.modalOverlay}><View style={styles.detailSheet}><View style={styles.detailHeader}><View><Text style={styles.detailTitle}>Record Details</Text><Text style={styles.detailSub}>Complete database information</Text></View><TouchableOpacity onPress={() => setSelectedRecord(null)} style={styles.closeButton}><Ionicons name="close" size={21} color={COLORS.textSecondary} /></TouchableOpacity></View><ScrollView showsVerticalScrollIndicator={false}>{selectedRecord && Object.entries(selectedRecord).map(([key, value]) => <View key={key} style={styles.detailField}><Text style={styles.detailLabel}>{key.replace(/_/g, ' ').toUpperCase()}</Text><Text style={styles.detailValue} selectable>{value === null || value === '' ? '—' : String(value)}</Text></View>)}</ScrollView></View></View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -537,18 +533,22 @@ const styles = StyleSheet.create({
     minWidth: '22%', borderWidth: 1, borderColor: COLORS.border,
   },
   summaryLabel: { fontSize: 9, fontWeight: '700', color: COLORS.textTertiary, letterSpacing: 0.5, marginBottom: 3 },
-  summaryValue: { fontSize: 14, fontWeight: '700', color: COLORS.textPrimary, fontFamily: mono },
+  summaryValue: { fontSize: 14, fontWeight: '700', color: COLORS.textPrimary },
 
   emptyState: { flexDirection: 'row', alignItems: 'center', paddingVertical: 16, gap: 8 },
   emptyText: { fontSize: 13, color: COLORS.textSecondary, flex: 1, lineHeight: 18 },
 
   recordItem: {
-    padding: 14, borderRadius: 14, marginBottom: 8, backgroundColor: COLORS.bg,
+    padding: 14, borderRadius: 14, marginBottom: 10, backgroundColor: COLORS.bg,
     borderWidth: 1, borderColor: COLORS.border,
   },
-  recordField: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 3 },
-  recordLabel: { fontSize: 10, fontWeight: '600', color: COLORS.textTertiary, letterSpacing: 0.3 },
-  recordValue: { fontSize: 13, fontWeight: '600', color: COLORS.textPrimary, fontFamily: mono },
+  recordHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
+  recordTicket: { flex: 1, fontSize: 13, fontWeight: '800', color: COLORS.textPrimary, fontFamily: mono },
+  recordPerson: { fontSize: 13, color: COLORS.textSecondary, marginTop: 8 },
+  recordFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 9 },
+  recordMeta: { flex: 1, fontSize: 11, color: COLORS.textTertiary, textTransform: 'capitalize' },
+  recordAmount: { fontSize: 14, fontWeight: '800', color: COLORS.primary },
+  viewHint: { fontSize: 10, color: COLORS.primary, marginTop: 9, fontWeight: '700' },
 
   statusBadge: {
     flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 3,
@@ -558,10 +558,27 @@ const styles = StyleSheet.create({
   statusText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.4, fontFamily: mono },
 
   recordCount: { fontSize: 10, color: COLORS.textTertiary, marginTop: 6, letterSpacing: 0.5, fontFamily: mono },
+  pagination: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 14 },
+  pageButton: { backgroundColor: COLORS.primary, borderRadius: 9, paddingHorizontal: 14, paddingVertical: 9 },
+  pageButtonDisabled: { backgroundColor: '#E2E8F0' },
+  pageButtonText: { color: '#FFF', fontSize: 12, fontWeight: '700' },
+  pageButtonTextDisabled: { color: COLORS.textTertiary },
+  pageLabel: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '700' },
 
   historyItem: { paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: COLORS.border },
   historyRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 },
   historyTitle: { fontSize: 14, fontWeight: '700', color: COLORS.textPrimary, flex: 1, marginRight: 8 },
   historyDetail: { fontSize: 12, color: COLORS.textSecondary, marginBottom: 3 },
   historyMeta: { fontSize: 10, color: COLORS.textTertiary, letterSpacing: 0.3, fontFamily: mono },
+  showMoreButton: { alignItems: 'center', paddingVertical: 13, marginTop: 5 },
+  showMoreText: { color: COLORS.primary, fontWeight: '800', fontSize: 12 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(15,23,42,.55)', justifyContent: 'flex-end' },
+  detailSheet: { backgroundColor: '#FFF', maxHeight: '82%', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20 },
+  detailHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  detailTitle: { fontSize: 19, fontWeight: '800', color: COLORS.textPrimary },
+  detailSub: { fontSize: 11, color: COLORS.textTertiary, marginTop: 2 },
+  closeButton: { width: 38, height: 38, borderRadius: 19, backgroundColor: COLORS.bg, alignItems: 'center', justifyContent: 'center' },
+  detailField: { paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: '#E8EEE9' },
+  detailLabel: { fontSize: 9, fontWeight: '800', color: COLORS.textTertiary, letterSpacing: .6, marginBottom: 5 },
+  detailValue: { fontSize: 13, lineHeight: 19, color: COLORS.textPrimary, flexShrink: 1 },
 });

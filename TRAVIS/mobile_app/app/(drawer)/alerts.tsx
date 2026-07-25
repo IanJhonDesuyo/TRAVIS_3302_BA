@@ -13,7 +13,6 @@ import {
   Platform,
   Alert,
 } from 'react-native';
-import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import api from '../../api/axiosConfig';
@@ -88,16 +87,15 @@ const SEVERITY_FILTERS: { label: string; value: SeverityFilter }[] = [
 
 // ========== SCREEN ==========
 export default function AlertsScreen() {
-  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('');
 
   // ===== FETCH ALERTS =====
-  const fetchAlerts = async () => {
+  const fetchAlerts = useCallback(async (showSpinner = true) => {
     try {
-      setLoading(true);
+      if (showSpinner) setLoading(true);
       const params: any = { limit: 100 };
       if (severityFilter === 'resolved') {
         params.status = 'resolved';
@@ -115,12 +113,14 @@ export default function AlertsScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [severityFilter]);
 
   useFocusEffect(
     useCallback(() => {
       fetchAlerts();
-    }, [severityFilter])
+      const timer = setInterval(() => fetchAlerts(false), 5000);
+      return () => clearInterval(timer);
+    }, [fetchAlerts])
   );
 
   const onRefresh = () => {
@@ -138,14 +138,14 @@ export default function AlertsScreen() {
       } else {
         Alert.alert('Error', response.data.error || 'Failed to acknowledge.');
       }
-    } catch (error) {
-      Alert.alert('Error', 'Network error.');
+    } catch (error: any) {
+      Alert.alert('Error', error.response?.data?.error || 'Network error.');
     }
   };
 
   // ===== FILTER =====
   const filteredAlerts = severityFilter
-    ? alerts.filter(a => a.severity === severityFilter)
+    ? alerts.filter(a => severityFilter === 'resolved' ? a.status === 'resolved' : a.severity === severityFilter)
     : alerts;
 
   // ===== COUNTS =====

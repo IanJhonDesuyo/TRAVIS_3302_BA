@@ -475,6 +475,14 @@ while True:
 
     update_frame(annotated_frame)
 
+    # Pace uploaded footage at its recorded frame rate so mobile viewers have
+    # time to connect instead of losing the stream when processing finishes.
+    if config.VIDEO_SOURCE == "video" and fps > 0:
+        target_elapsed = current_frame / fps
+        remaining = target_elapsed - (time.time() - source_started_at)
+        if remaining > 0:
+            time.sleep(remaining)
+
     if out is not None:
         out.write(annotated_frame)
 

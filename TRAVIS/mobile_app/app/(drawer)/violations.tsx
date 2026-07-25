@@ -15,10 +15,11 @@ import {
   Alert,
   Platform,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { Href, useRouter, useSegments } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import api from '../../api/axiosConfig';
+import * as ImagePicker from 'expo-image-picker';
 
 // ========== COLOR TOKENS ==========
 const COLORS = {
@@ -80,6 +81,7 @@ const STATUS_FILTERS: { label: string; value: StatusFilter }[] = [
 // ========== SCREEN ==========
 export default function ViolationsScreen() {
   const router = useRouter();
+  const segments = useSegments();
   const [loading, setLoading] = useState(true);
   const [violations, setViolations] = useState<Violation[]>([]);
   const [filtered, setFiltered] = useState<Violation[]>([]);
@@ -87,6 +89,8 @@ export default function ViolationsScreen() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('');
   const [refreshing, setRefreshing] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
 
   const [formData, setFormData] = useState({
     driver_name: '',
@@ -98,6 +102,49 @@ export default function ViolationsScreen() {
     penalty_amount: '',
   });
   const [submitting, setSubmitting] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [inputMethod, setInputMethod] = useState<'manual' | 'ocr'>('manual');
+  const [ocrNotice, setOcrNotice] = useState('');
+  const [selectedRecord, setSelectedRecord] = useState<Violation | null>(null);
+
+  const scanTicket = async (source: 'camera' | 'gallery') => {
+    const permission = source === 'camera'
+      ? await ImagePicker.requestCameraPermissionsAsync()
+      : await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Permission required', `Allow ${source === 'camera' ? 'camera' : 'photo library'} access to scan a ticket.`);
+      return;
+    }
+    const result = source === 'camera'
+      ? await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.9, allowsEditing: true })
+      : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.9, allowsEditing: true });
+    if (result.canceled || !result.assets[0]) return;
+
+    setScanning(true);
+    setOcrNotice('Reading ticket…');
+    try {
+      const asset = result.assets[0];
+      const body = new FormData();
+      body.append('ticket', { uri: asset.uri, name: asset.fileName || 'ticket.jpg', type: asset.mimeType || 'image/jpeg' } as any);
+      const response = await api.post('scan_ticket.php', body, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 60000 });
+      const fields = response.data.fields || {};
+      setFormData(current => ({
+        ...current,
+        driver_name: fields.driver_name || current.driver_name,
+        license_number: fields.license_number || current.license_number,
+        plate_number: fields.plate_number || current.plate_number,
+        vehicle_type: fields.vehicle_type || current.vehicle_type,
+        violation_type: fields.violation_type || current.violation_type,
+        location: fields.location || current.location,
+        penalty_amount: fields.penalty_amount || current.penalty_amount,
+      }));
+      setInputMethod('ocr');
+      setOcrNotice(`${response.data.recognized_fields || 0} fields detected · ${Math.round((response.data.confidence || 0) * 100)}% text confidence. Review all values.`);
+    } catch (error: any) {
+      setOcrNotice('');
+      Alert.alert('Ticket scan failed', error.response?.data?.error || 'The ticket could not be read. Try a clearer, well-lit photo.');
+    } finally { setScanning(false); }
+  };
 
   // ===== FETCH VIOLATIONS =====
   const fetchViolations = async () => {
@@ -124,6 +171,7 @@ export default function ViolationsScreen() {
         }));
         setViolations(data);
         setFiltered(data);
+        setPage(1);
       }
     } catch (error) {
       console.error('Fetch violations error:', error);
@@ -150,6 +198,9 @@ export default function ViolationsScreen() {
     setStatusFilter('');
   };
 
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const visibleRecords = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
   // ===== ADD VIOLATION =====
   const handleAddViolation = async () => {
     const { driver_name, license_number, plate_number, vehicle_type, violation_type, location, penalty_amount } = formData;
@@ -159,7 +210,7 @@ export default function ViolationsScreen() {
     }
     setSubmitting(true);
     try {
-      const response = await api.post('add_violation.php', {
+      const response = await api.post('add_violations.php', {
         driver_name,
         license_number,
         plate_number,
@@ -167,11 +218,14 @@ export default function ViolationsScreen() {
         violation_type,
         location,
         penalty_amount: parseFloat(penalty_amount),
+        input_method: inputMethod,
       });
       if (response.data.success) {
         Alert.alert('Success', 'Violation added successfully.');
         setModalVisible(false);
         setFormData({ driver_name: '', license_number: '', plate_number: '', vehicle_type: 'Car', violation_type: '', location: '', penalty_amount: '' });
+        setInputMethod('manual');
+        setOcrNotice('');
         fetchViolations();
       } else {
         Alert.alert('Error', response.data.error || 'Failed to add violation.');
@@ -182,6 +236,30 @@ export default function ViolationsScreen() {
       setSubmitting(false);
     }
   };
+
+  const openPayment = (item: Violation) => {
+    const route = segments.includes('(treasurer)' as never)
+      ? `/(treasurer)/payments?violation_id=${item.id}`
+      : `/(drawer)/payments?violation_id=${item.id}`;
+    router.push(route as Href);
+  };
+
+  const cancelViolation = (item: Violation) => Alert.alert(
+    'Cancel Violation',
+    `Cancel ticket ${item.ticketNumber}? This removes it from pending collections.`,
+    [
+      { text: 'Keep Record', style: 'cancel' },
+      { text: 'Cancel Violation', style: 'destructive', onPress: async () => {
+        try {
+          await api.post('update_violation_status.php', { violation_id: item.id, status: 'cancelled' });
+          Alert.alert('Updated', 'The violation has been cancelled.');
+          fetchViolations();
+        } catch (error: any) {
+          Alert.alert('Unable to cancel', error.response?.data?.error || 'Please try again.');
+        }
+      } },
+    ],
+  );
 
   // ========== RENDER HELPERS ==========
   const renderSummaryCell = (icon: React.ReactNode, label: string, value: number, isLast: boolean) => (
@@ -219,15 +297,15 @@ export default function ViolationsScreen() {
       </View>
 
       <View style={styles.actionRow}>
-        <TouchableOpacity style={styles.actionButtonOutline}>
+        <TouchableOpacity style={styles.actionButtonOutline} onPress={() => setSelectedRecord(item)}>
           <Text style={styles.actionTextOutline}>View</Text>
         </TouchableOpacity>
         {(item.status === 'pending' || item.status === 'overdue') && (
           <>
-            <TouchableOpacity style={styles.payButton}>
+            <TouchableOpacity style={styles.payButton} onPress={() => openPayment(item)}>
               <Text style={styles.payButtonText}>Pay</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.cancelButton}>
+            <TouchableOpacity style={styles.cancelButton} onPress={() => cancelViolation(item)}>
               <Text style={styles.cancelButtonText}>Cancel</Text>
             </TouchableOpacity>
           </>
@@ -324,7 +402,7 @@ export default function ViolationsScreen() {
 
         {/* Violations list */}
         <FlatList
-          data={filtered}
+          data={visibleRecords}
           renderItem={renderViolationItem}
           keyExtractor={item => item.id.toString()}
           scrollEnabled={false}
@@ -341,6 +419,19 @@ export default function ViolationsScreen() {
             </View>
           }
         />
+        {filtered.length > PAGE_SIZE && (
+          <View style={styles.pagination}>
+            <TouchableOpacity disabled={page === 1} onPress={() => setPage(value => Math.max(1, value - 1))} style={[styles.pageButton, page === 1 && styles.pageButtonDisabled]}>
+              <Ionicons name="chevron-back" size={16} color={page === 1 ? COLORS.textTertiary : '#FFF'} />
+              <Text style={[styles.pageButtonText, page === 1 && styles.pageButtonTextDisabled]}>Previous</Text>
+            </TouchableOpacity>
+            <Text style={styles.pageLabel}>Page {page} of {totalPages}</Text>
+            <TouchableOpacity disabled={page === totalPages} onPress={() => setPage(value => Math.min(totalPages, value + 1))} style={[styles.pageButton, page === totalPages && styles.pageButtonDisabled]}>
+              <Text style={[styles.pageButtonText, page === totalPages && styles.pageButtonTextDisabled]}>Next</Text>
+              <Ionicons name="chevron-forward" size={16} color={page === totalPages ? COLORS.textTertiary : '#FFF'} />
+            </TouchableOpacity>
+          </View>
+        )}
       </ScrollView>
 
       {/* Floating Add button */}
@@ -355,8 +446,8 @@ export default function ViolationsScreen() {
           <View style={styles.modalContent}>
             <View style={styles.modalHeaderRow}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.modalTitle}>Manual Violation Input</Text>
-                <Text style={styles.modalSub}>For manually encoded paper ticket records</Text>
+                <Text style={styles.modalTitle}>Add Violation</Text>
+                <Text style={styles.modalSub}>Scan a paper ticket or enter the details manually.</Text>
               </View>
               <TouchableOpacity onPress={() => setModalVisible(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                 <Ionicons name="close" size={22} color={COLORS.textTertiary} />
@@ -364,6 +455,15 @@ export default function ViolationsScreen() {
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false}>
+              <View style={styles.scanPanel}>
+                <View style={{ flex: 1 }}><Text style={styles.scanTitle}>OCR Ticket Scanner</Text><Text style={styles.scanSub}>Use a flat, well-lit image with the full ticket visible.</Text></View>
+                {scanning && <ActivityIndicator color={COLORS.primary} />}
+              </View>
+              <View style={styles.scanActions}>
+                <TouchableOpacity disabled={scanning} style={styles.scanPrimary} onPress={() => scanTicket('camera')}><Ionicons name="camera-outline" size={17} color="#FFF" /><Text style={styles.scanPrimaryText}>Take Photo</Text></TouchableOpacity>
+                <TouchableOpacity disabled={scanning} style={styles.scanSecondary} onPress={() => scanTicket('gallery')}><Ionicons name="images-outline" size={17} color={COLORS.primary} /><Text style={styles.scanSecondaryText}>Gallery</Text></TouchableOpacity>
+              </View>
+              {!!ocrNotice && <View style={styles.ocrNotice}><Ionicons name="warning-outline" size={16} color={COLORS.warning} /><Text style={styles.ocrNoticeText}>{ocrNotice}</Text></View>}
               <Text style={styles.modalLabel}>Driver Name</Text>
               <TextInput
                 style={styles.modalInput}
@@ -433,6 +533,11 @@ export default function ViolationsScreen() {
             </View>
           </View>
         </View>
+      </Modal>
+      <Modal animationType="slide" transparent visible={!!selectedRecord} onRequestClose={() => setSelectedRecord(null)}>
+        <View style={styles.modalOverlay}><View style={styles.detailSheet}><View style={styles.modalHeaderRow}><View style={{ flex: 1 }}><Text style={styles.modalTitle}>{selectedRecord?.ticketNumber}</Text><Text style={styles.modalSub}>Complete violation information</Text></View><TouchableOpacity onPress={() => setSelectedRecord(null)}><Ionicons name="close" size={22} color={COLORS.textTertiary} /></TouchableOpacity></View><ScrollView>{selectedRecord && [
+          ['Driver', selectedRecord.driverName], ['License Number', selectedRecord.licenseNumber], ['Plate Number', selectedRecord.plateNumber], ['Vehicle', selectedRecord.vehicleType], ['Violation', selectedRecord.violationType], ['Location', selectedRecord.location], ['Date & Time', `${selectedRecord.date} ${selectedRecord.time}`], ['Penalty', formatCurrency(selectedRecord.penalty)], ['Status', selectedRecord.status.toUpperCase()],
+        ].map(([label, value]) => <View key={label} style={styles.detailRow}><Text style={styles.detailLabel}>{label}</Text><Text style={styles.detailValue}>{value}</Text></View>)}</ScrollView></View></View>
       </Modal>
     </SafeAreaView>
   );
@@ -525,6 +630,12 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: 13, color: COLORS.textSecondary, textAlign: 'center', marginTop: 10, lineHeight: 18, paddingHorizontal: 20 },
   emptyClearButton: { marginTop: 14, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8, backgroundColor: COLORS.primary + '14' },
   emptyClearButtonText: { fontSize: 12, fontWeight: '700', color: COLORS.primary },
+  pagination: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 18 },
+  pageButton: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: COLORS.primary, paddingHorizontal: 13, paddingVertical: 9, borderRadius: 9 },
+  pageButtonDisabled: { backgroundColor: '#E2E8F0' },
+  pageButtonText: { color: '#FFF', fontSize: 12, fontWeight: '700' },
+  pageButtonTextDisabled: { color: COLORS.textTertiary },
+  pageLabel: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '700' },
 
   fab: {
     position: 'absolute', right: 20, bottom: 24,
@@ -538,9 +649,23 @@ const styles = StyleSheet.create({
   modalContent: {
     backgroundColor: COLORS.surface, borderRadius: 20, padding: 22, width: '90%', maxHeight: '82%',
   },
+  detailSheet: { backgroundColor: COLORS.surface, borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: 22, width: '100%', maxHeight: '82%', position: 'absolute', bottom: 0 },
+  detailRow: { paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  detailLabel: { color: COLORS.textTertiary, fontSize: 10, fontWeight: '800', textTransform: 'uppercase', marginBottom: 4 },
+  detailValue: { color: COLORS.textPrimary, fontSize: 14, lineHeight: 20 },
   modalHeaderRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 16 },
   modalTitle: { fontSize: 18, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 2 },
   modalSub: { fontSize: 12, color: COLORS.textSecondary },
+  scanPanel: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#EAF6F5', borderRadius: 12, padding: 12, marginBottom: 10, borderWidth: 1, borderColor: '#B9DDDA' },
+  scanTitle: { fontSize: 13, fontWeight: '800', color: COLORS.primary },
+  scanSub: { fontSize: 10, color: COLORS.textSecondary, marginTop: 3, lineHeight: 14 },
+  scanActions: { flexDirection: 'row', gap: 9, marginBottom: 4 },
+  scanPrimary: { flex: 1, flexDirection: 'row', gap: 6, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.primary, borderRadius: 10, paddingVertical: 11 },
+  scanPrimaryText: { color: '#FFF', fontSize: 12, fontWeight: '800' },
+  scanSecondary: { flex: 1, flexDirection: 'row', gap: 6, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FFF', borderRadius: 10, paddingVertical: 11, borderWidth: 1, borderColor: COLORS.primary },
+  scanSecondaryText: { color: COLORS.primary, fontSize: 12, fontWeight: '800' },
+  ocrNotice: { flexDirection: 'row', gap: 7, alignItems: 'flex-start', backgroundColor: '#FFF7E8', padding: 10, borderRadius: 10, marginTop: 8 },
+  ocrNoticeText: { flex: 1, color: '#7C5310', fontSize: 10, lineHeight: 15 },
   modalLabel: { fontSize: 13, fontWeight: '600', color: COLORS.textPrimary, marginTop: 12, marginBottom: 6 },
   modalInput: {
     backgroundColor: COLORS.bg, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10,

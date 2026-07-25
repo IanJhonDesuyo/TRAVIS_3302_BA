@@ -1,13 +1,14 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Drawer } from 'expo-router/drawer';
 import {
   DrawerContentScrollView,
   DrawerItem,
 } from '@react-navigation/drawer';
 import { View, Text, StyleSheet, Dimensions, TouchableOpacity, Modal, Platform, Alert, Image, ImageBackground } from 'react-native';
-import { useRouter, usePathname, Href } from 'expo-router';
+import { useRouter, usePathname, Href, Redirect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import api, { APP_ROOT_URL } from '../../api/axiosConfig';
+import { clearStoredUser, getStoredUser, isTreasurerRole, TravisUser } from '../../utils/session';
 
 const { width } = Dimensions.get('window');
 
@@ -39,7 +40,7 @@ const softShadow = {
 };
 
 // ========== CUSTOM DRAWER CONTENT ==========
-function CustomDrawerContent(props: any) {
+function CustomDrawerContent(props: any & { user: TravisUser }) {
   const router = useRouter();
   const pathname = usePathname();
   const [logoutModalVisible, setLogoutModalVisible] = useState(false);
@@ -95,6 +96,7 @@ function CustomDrawerContent(props: any) {
     } catch (error) {
       console.error('Logout error:', error);
     } finally {
+      await clearStoredUser();
       router.replace('/login' as Href);
     }
   };
@@ -127,6 +129,7 @@ function CustomDrawerContent(props: any) {
           icon="grid-outline"
           route="/dashboard"
         />
+        <DrawerItemWithIcon label="Live Monitoring" icon="videocam-outline" route="/monitoring" />
 
         {/* ===== ENFORCEMENT ===== */}
         <SectionHeader title="ENFORCEMENT" />
@@ -177,11 +180,11 @@ function CustomDrawerContent(props: any) {
             activeOpacity={0.7}
           >
             <View style={styles.userAvatar}>
-              <Text style={styles.userAvatarText}>ZR</Text>
+              <Text style={styles.userAvatarText}>{props.user.full_name.split(/\s+/).map((part: string) => part[0]).slice(0, 2).join('').toUpperCase()}</Text>
             </View>
             <View style={styles.userInfo}>
-              <Text style={styles.userName}>Zeth Ramzy</Text>
-              <Text style={styles.userRole}>Administrator</Text>
+              <Text style={styles.userName}>{props.user.full_name}</Text>
+              <Text style={styles.userRole}>{props.user.role}</Text>
             </View>
             <Ionicons name="log-out-outline" size={17} color={COLORS.textTertiary} />
           </TouchableOpacity>
@@ -227,6 +230,11 @@ function CustomDrawerContent(props: any) {
 
 // ========== MAIN DRAWER LAYOUT ==========
 export default function DrawerLayout() {
+  const [user, setUser] = useState<TravisUser | null | undefined>(undefined);
+  useEffect(() => { getStoredUser().then(setUser); }, []);
+  if (user === undefined) return <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.header }} />;
+  if (!user) return <Redirect href="/(auth)/login" />;
+  if (isTreasurerRole(user.role)) return <Redirect href={'/(treasurer)/dashboard' as Href} />;
   return (
     <ImageBackground
       source={{ uri: `${APP_ROOT_URL}assets/images/nasugbu-municipal-hall.jpg` }}
@@ -235,7 +243,7 @@ export default function DrawerLayout() {
     >
       <View pointerEvents="none" style={styles.appOverlay} />
       <Drawer
-      drawerContent={(props) => <CustomDrawerContent {...props} />}
+      drawerContent={(props) => <CustomDrawerContent {...props} user={user} />}
       screenOptions={{
         headerShown: true,
         headerStyle: {
@@ -269,6 +277,7 @@ export default function DrawerLayout() {
           headerTitle: 'Dashboard',
         }}
       />
+      <Drawer.Screen name="monitoring" options={{ title: 'Live Monitoring', headerTitle: 'Live Monitoring' }} />
 
       {/* ENFORCEMENT */}
       <Drawer.Screen
