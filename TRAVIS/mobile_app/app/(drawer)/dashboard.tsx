@@ -655,68 +655,67 @@ export default function DashboardScreen() {
               </View>
 
               <Text style={styles.sectionLabel}>MONTHLY VIOLATION TRENDS</Text>
-              <View style={styles.panel}>
-                <Text style={styles.feedSubtitle}>Current year</Text>
+              <View style={[styles.panel, styles.analyticsCard]}>
+                <View style={styles.chartHeader}>
+                  <View style={styles.chartTitleGroup}>
+                    <View style={[styles.chartIcon, { backgroundColor: '#E6F5F2' }]}><Ionicons name="trending-up" size={18} color={COLORS.primary} /></View>
+                    <View><Text style={styles.chartTitle}>Violation activity</Text><Text style={styles.chartSubtitle}>Monthly records · {new Date().getFullYear()}</Text></View>
+                  </View>
+                  {monthlyTrend.data.length > 0 && <View style={styles.chartMetricPill}><Text style={styles.chartMetricValue}>{monthlyTrend.data.reduce((sum, value) => sum + value, 0)}</Text><Text style={styles.chartMetricLabel}>TOTAL</Text></View>}
+                </View>
                 {monthlyTrend.data.length > 0 ? (
-                  <LineChart
-                    data={{ labels: monthlyTrend.labels, datasets: [{ data: monthlyTrend.data }] }}
-                    width={chartWidth - 32}
-                    height={150}
-                    chartConfig={{
-                      backgroundColor: COLORS.surface,
-                      backgroundGradientFrom: COLORS.surface,
-                      backgroundGradientTo: COLORS.surface,
-                      decimalPlaces: 0,
-                      color: (opacity = 1) => `rgba(37, 99, 235, ${opacity})`,
-                      labelColor: (opacity = 1) => `rgba(100, 116, 139, ${opacity})`,
-                      style: { borderRadius: 16 },
-                      propsForDots: { r: '3', strokeWidth: '2', stroke: COLORS.primary },
-                      propsForBackgroundLines: { stroke: COLORS.border },
-                    }}
-                    bezier
-                    style={styles.chart}
-                    withInnerLines
-                    withOuterLines={false}
-                  />
+                  <View style={styles.chartViewport}><LineChart
+                      data={{ labels: monthlyTrend.labels, datasets: [{ data: monthlyTrend.data, strokeWidth: 3 }] }}
+                      width={chartWidth - 30}
+                      height={220}
+                      chartConfig={{
+                        backgroundColor: '#FFFDF7', backgroundGradientFrom: '#FFFDF7', backgroundGradientTo: '#FFFDF7',
+                        decimalPlaces: 0,
+                        color: (opacity = 1) => `rgba(8, 125, 120, ${opacity})`,
+                        labelColor: (opacity = 1) => `rgba(82, 107, 100, ${opacity})`,
+                        fillShadowGradientFrom: COLORS.primary, fillShadowGradientFromOpacity: .24,
+                        fillShadowGradientTo: '#FFFDF7', fillShadowGradientToOpacity: .02,
+                        propsForDots: { r: '4', strokeWidth: '3', stroke: '#FFFDF7' },
+                        propsForBackgroundLines: { stroke: 'rgba(16,47,73,.10)', strokeDasharray: '4 6' },
+                      }}
+                      bezier withShadow segments={4} style={styles.chart} withOuterLines={false}
+                    /></View>
                 ) : (
-                  <Text style={styles.emptyStateText}>No data available.</Text>
+                  <View style={styles.chartEmpty}><Ionicons name="analytics-outline" size={28} color={COLORS.neutral} /><Text style={styles.chartEmptyTitle}>No trend data yet</Text><Text style={styles.chartEmptyText}>Monthly violations will appear after records are added.</Text></View>
                 )}
-                <Text style={styles.chartInterpretation}>
-                  {monthlyTrend.data.length > 0 ? `Highest month: ${Math.max(...monthlyTrend.data)} violations.` : 'No data yet.'}
-                </Text>
+                {monthlyTrend.data.length > 0 && <View style={styles.chartInsight}><Ionicons name="sparkles-outline" size={15} color={COLORS.primary} /><Text style={styles.chartInterpretation}>Peak activity reached <Text style={styles.chartInsightStrong}>{Math.max(...monthlyTrend.data)} violations</Text> in {monthlyTrend.labels[monthlyTrend.data.indexOf(Math.max(...monthlyTrend.data))]}.</Text></View>}
               </View>
 
               <Text style={[styles.sectionLabel, { marginTop: 24 }]}>TOP VIOLATION TYPES</Text>
-              <View style={styles.panel}>
-                <Text style={styles.feedSubtitle}>All time</Text>
+              <View style={[styles.panel, styles.analyticsCard]}>
+                <View style={styles.chartHeader}>
+                  <View style={styles.chartTitleGroup}>
+                    <View style={[styles.chartIcon, { backgroundColor: '#FFF2DF' }]}><Ionicons name="podium-outline" size={18} color={COLORS.warning} /></View>
+                    <View><Text style={styles.chartTitle}>Most recorded offenses</Text><Text style={styles.chartSubtitle}>Ranked by total citations</Text></View>
+                  </View>
+                </View>
                 {topViolations.data.length > 0 ? (
-                  <BarChart
-                    data={{ labels: topViolations.labels, datasets: [{ data: topViolations.data }] }}
-                    width={chartWidth - 32}
-                    height={200}
+                  <View style={styles.chartViewport}><BarChart
+                    data={{ labels: topViolations.labels.map(label => label.length > 10 ? `${label.slice(0, 9)}…` : label), datasets: [{ data: topViolations.data }] }}
+                    width={chartWidth - 30}
+                    height={230}
                     yAxisLabel=""
                     yAxisSuffix=""
                     fromZero
                     chartConfig={{
-                      backgroundColor: COLORS.surface,
-                      backgroundGradientFrom: COLORS.surface,
-                      backgroundGradientTo: COLORS.surface,
+                      backgroundColor: '#FFFDF7', backgroundGradientFrom: '#FFFDF7', backgroundGradientTo: '#FFFDF7',
                       decimalPlaces: 0,
-                      color: (opacity = 1) => `rgba(37, 99, 235, ${opacity})`,
-                      labelColor: (opacity = 1) => `rgba(100, 116, 139, ${opacity})`,
-                      style: { borderRadius: 16 },
-                      barPercentage: 0.55,
-                      propsForBackgroundLines: { stroke: COLORS.border },
+                      color: (opacity = 1) => `rgba(235, 148, 31, ${opacity})`,
+                      labelColor: (opacity = 1) => `rgba(82, 107, 100, ${opacity})`,
+                      barPercentage: .62,
+                      propsForBackgroundLines: { stroke: 'rgba(16,47,73,.10)', strokeDasharray: '4 6' },
                     }}
-                    style={styles.chart}
-                    verticalLabelRotation={30}
-                  />
+                    style={styles.chart} verticalLabelRotation={0} showValuesOnTopOfBars withInnerLines segments={4}
+                  /></View>
                 ) : (
-                  <Text style={styles.emptyStateText}>No violation data.</Text>
+                  <View style={styles.chartEmpty}><Ionicons name="bar-chart-outline" size={28} color={COLORS.neutral} /><Text style={styles.chartEmptyTitle}>No ranking data yet</Text><Text style={styles.chartEmptyText}>Top violation types will appear as citations are recorded.</Text></View>
                 )}
-                <Text style={styles.chartInterpretation}>
-                  {topViolations.data.length > 0 ? `Top violation: ${topViolations.labels[0]} with ${topViolations.data[0]} records.` : 'No data yet.'}
-                </Text>
+                {topViolations.data.length > 0 && <View style={[styles.chartInsight, styles.chartInsightAmber]}><Ionicons name="ribbon-outline" size={15} color={COLORS.warning} /><Text style={styles.chartInterpretation}><Text style={styles.chartInsightStrong}>{topViolations.labels[0]}</Text> currently ranks first with {topViolations.data[0]} records.</Text></View>}
               </View>
             </>
           )}
@@ -912,8 +911,24 @@ const styles = StyleSheet.create({
   dateFilterText: { fontSize: 12, fontWeight: '600', color: COLORS.textTertiary },
   dateFilterTextActive: { color: COLORS.primary },
 
-  chart: { marginVertical: 8, marginLeft: -16, borderRadius: 16 },
-  chartInterpretation: { fontSize: 12, color: COLORS.textSecondary, marginTop: 10, lineHeight: 17 },
+  analyticsCard: { padding: 15, overflow: 'hidden' },
+  chartHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  chartTitleGroup: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+  chartIcon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginRight: 10 },
+  chartTitle: { fontSize: 14, fontWeight: '800', color: COLORS.textPrimary },
+  chartSubtitle: { fontSize: 10, color: COLORS.textTertiary, marginTop: 2 },
+  chartMetricPill: { minWidth: 54, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10, backgroundColor: '#E6F5F2', alignItems: 'center' },
+  chartMetricValue: { color: COLORS.primary, fontSize: 15, fontWeight: '900', fontFamily: mono },
+  chartMetricLabel: { color: COLORS.textTertiary, fontSize: 7, fontWeight: '800', letterSpacing: .7, marginTop: 1 },
+  chartViewport: { marginHorizontal: -15, overflow: 'hidden' },
+  chart: { marginVertical: 2, marginLeft: -8, borderRadius: 16 },
+  chartInsight: { flexDirection: 'row', alignItems: 'flex-start', gap: 7, backgroundColor: '#EAF6F3', borderRadius: 11, padding: 10, marginTop: 8 },
+  chartInsightAmber: { backgroundColor: '#FFF5E7' },
+  chartInterpretation: { flex: 1, fontSize: 11, color: COLORS.textSecondary, lineHeight: 16 },
+  chartInsightStrong: { color: COLORS.textPrimary, fontWeight: '800' },
+  chartEmpty: { alignItems: 'center', justifyContent: 'center', minHeight: 180, padding: 24 },
+  chartEmptyTitle: { color: COLORS.textPrimary, fontSize: 13, fontWeight: '800', marginTop: 9 },
+  chartEmptyText: { color: COLORS.textTertiary, fontSize: 10, textAlign: 'center', lineHeight: 15, marginTop: 4 },
 
   bottomTabBar: {
     position: 'absolute', left: 20, right: 20, bottom: 20,

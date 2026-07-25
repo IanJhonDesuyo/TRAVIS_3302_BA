@@ -208,6 +208,23 @@ page_start('Payment History', 'history', 'Search receipt, plate...', 'Recorded p
   <?php endif; ?>
 </div>
 
+<style>
+.receipt-document-header,.receipt-document-footer{display:none}
+@media print{
+  @page{size:A4 portrait;margin:18mm}
+  body.admin-dashboard .modal.show .modal-dialog{max-width:180mm!important;margin:0 auto!important}
+  body.admin-dashboard .modal.show .modal-content{border:0!important;font-family:Arial,sans-serif!important}
+  body.admin-dashboard .modal.show .modal-header,body.admin-dashboard .modal.show .modal-footer{display:none!important}
+  .receipt-document-header,.receipt-document-footer{display:block!important}
+  .receipt-document-header{text-align:center;border-bottom:2px solid #102f49;padding-bottom:12px;margin-bottom:18px}
+  .receipt-document-header .republic{font:11px Georgia,serif;letter-spacing:.08em}
+  .receipt-document-header h2{font:700 20px Georgia,serif!important;color:#102f49!important;margin:4px 0!important}
+  .receipt-document-header p{font-size:11px;margin:2px 0;color:#374151!important}
+  .receipt-document-footer{border-top:1px solid #d1d5db;margin-top:24px;padding-top:10px;text-align:center;font-size:10px;color:#4b5563!important}
+  .receipt-signature{width:240px;border-top:1px solid #111827;margin:48px 0 0 auto;padding-top:5px;text-align:center;font-size:11px}
+}
+</style>
+
 <?php foreach ($history as $h): ?>
   <div class="modal fade" id="receipt<?= (int)$h['payment_id'] ?>" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
@@ -217,6 +234,13 @@ page_start('Payment History', 'history', 'Search receipt, plate...', 'Recorded p
           <button class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body">
+          <header class="receipt-document-header">
+            <div class="republic">Republic of the Philippines</div>
+            <h2>Municipality of Nasugbu</h2>
+            <p>Municipal Treasurer's Office · Traffic Management Office</p>
+            <p><strong>OFFICIAL PAYMENT RECEIPT</strong></p>
+            <p>Receipt No. <?= esc(payment_reference((int)$h['payment_id'])) ?></p>
+          </header>
           <div class="row g-3">
             <div class="col-6"><strong>Ticket Number</strong><br><?= esc($h['ticket_number']) ?></div>
             <div class="col-6"><strong>Plate Number</strong><br><?= esc($h['plate_number']) ?></div>
@@ -229,6 +253,10 @@ page_start('Payment History', 'history', 'Search receipt, plate...', 'Recorded p
             <?php if (!empty($h['notes'])): ?>
               <div class="col-12"><strong>Notes</strong><br><?= nl2br(esc($h['notes'])) ?></div>
             <?php endif; ?>
+          </div>
+          <div class="receipt-document-footer">
+            <div class="receipt-signature"><?= esc($h['received_by_name'] ?? 'Treasury Personnel') ?><br>Collecting Officer</div>
+            <p class="mt-4 mb-0">This computer-generated receipt is valid subject to verification in the official TRAVIS payment ledger.</p>
           </div>
         </div>
         <div class="modal-footer">

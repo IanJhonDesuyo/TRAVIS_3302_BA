@@ -699,8 +699,21 @@ div[style*="border-radius: 999px"]:not(.tag){
 }
 
 /* Print styles */
+.official-print-header,.official-print-footer{display:none}
 @media print {
+  @page { size: A4 landscape; margin: 14mm 12mm 16mm; }
   .sidebar, .topbar, .btn, .report-generator, .report-history, .no-print { display: none !important; }
+  .content > *:not(#reportPreview){display:none!important}
+  #reportPreview{display:block!important;padding:0!important;border:0!important}
+  .official-print-header,.official-print-footer{display:block!important}
+  .official-print-header{text-align:center;border-bottom:2px solid #17324d;padding-bottom:10px;margin-bottom:16px}
+  .official-print-header .republic{font:11px Georgia,serif;letter-spacing:.08em;text-transform:uppercase}
+  .official-print-header h1{font:700 20px Georgia,serif;margin:3px 0;color:#102f49!important}
+  .official-print-header p{font:11px Arial,sans-serif;margin:2px 0;color:#374151!important}
+  .official-print-meta{display:grid;grid-template-columns:1fr 1fr;gap:4px 24px;margin-top:12px;text-align:left;font:11px Arial,sans-serif}
+  .official-print-footer{margin-top:24px;page-break-inside:avoid;font:11px Arial,sans-serif}
+  .official-signatures{display:grid;grid-template-columns:1fr 1fr;gap:80px;margin-top:38px}
+  .official-signatures div{border-top:1px solid #111827;padding-top:5px;text-align:center}
   .report-table-scroll { max-height: none; overflow: visible; border: 0; }
   .report-table-scroll thead th { position: static; background: #f8f9fa !important; color: #1a2a3a !important; }
   body { background: #fff !important; color: #1a2a3a !important; }
@@ -718,6 +731,12 @@ div[style*="border-radius: 999px"]:not(.tag){
   .table td, .table th { border-color: #dee2e6 !important; }
   .border { border-color: #dee2e6 !important; }
   .fs-5 { color: #1a2a3a !important; }
+  #reportPreview>.section-head{display:none!important}
+  #reportPreview .row{margin-bottom:14px!important}
+  #reportPreview .border{padding:8px!important;border-radius:0!important}
+  #reportPreview table{font-size:9px}
+  #reportPreview thead{display:table-header-group}
+  #reportPreview tr{page-break-inside:avoid}
 }
 </style>
 
@@ -804,7 +823,19 @@ div[style*="border-radius: 999px"]:not(.tag){
 </div>
 
 <?php if ($reportTitle !== ''): ?>
-  <div class="section-card mb-4" id="reportPreview">
+  <div class="section-card mb-4 print-area" id="reportPreview">
+    <header class="official-print-header">
+      <div class="republic">Republic of the Philippines</div>
+      <h1>Municipality of Nasugbu</h1>
+      <p>Traffic Management Office</p>
+      <p><strong>Traffic Violation Recognition and AI Surveillance (TRAVIS)</strong></p>
+      <div class="official-print-meta">
+        <div><strong>Report:</strong> <?= esc($reportTitle) ?></div>
+        <div><strong>Date generated:</strong> <?= esc(date('F j, Y g:i A')) ?></div>
+        <div><strong>Covered period:</strong> <?= esc(date('F j, Y', strtotime($dateFrom))) ?> – <?= esc(date('F j, Y', strtotime($dateTo))) ?></div>
+        <div><strong>Prepared by:</strong> <?= esc($_SESSION['full_name'] ?? 'TRAVIS Administrator') ?></div>
+      </div>
+    </header>
     <div class="section-head flex-wrap gap-2">
       <div>
         <h5 class="mb-1"><?= esc($reportTitle) ?></h5>
@@ -861,6 +892,10 @@ div[style*="border-radius: 999px"]:not(.tag){
       </div>
       <small class="text-muted d-block mt-2">Showing <?= num(count($previewRows)) ?> record(s). Preview and export are limited to 1,000 records.</small>
     <?php endif; ?>
+    <footer class="official-print-footer">
+      <p>I certify that this report was generated from the official TRAVIS records for the period stated above.</p>
+      <div class="official-signatures"><div>Prepared by / Date</div><div>Reviewed and Approved by / Date</div></div>
+    </footer>
   </div>
 <?php endif; ?>
 

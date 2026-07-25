@@ -96,6 +96,10 @@ if ($selectedViolationId > 0) {
 $pendingSearch = trim((string)($_GET['pending_search'] ?? ''));
 $paymentSearch = trim((string)($_GET['payment_search'] ?? ''));
 $methodFilter = trim((string)($_GET['method'] ?? ''));
+$requestedReceiptId = max(0, (int)($_GET['receipt_id'] ?? 0));
+if ($requestedReceiptId > 0) {
+    $autoPrintPaymentId = $requestedReceiptId;
+}
 
 $pendingWhere = "WHERE v.status IN ('pending', 'overdue')";
 $pendingParams = [];
@@ -676,7 +680,7 @@ div[style*="border-radius: 999px"]:not(.tag){
   <?php else: ?>
     <div class="table-responsive table-scroll">
       <table class="table align-middle">
-        <thead><tr><th>Reference</th><th>Ticket</th><th>Driver / Plate</th><th>Violation</th><th>Amount</th><th>Method</th><th>Date</th><th>Status</th><th>Received By</th></tr></thead>
+        <thead><tr><th>Reference</th><th>Ticket</th><th>Driver / Plate</th><th>Violation</th><th>Amount</th><th>Method</th><th>Date</th><th>Status</th><th>Received By</th><th class="text-end no-print">Receipt</th></tr></thead>
         <tbody>
           <?php foreach ($payments as $p): ?>
             <tr>
@@ -689,6 +693,15 @@ div[style*="border-radius: 999px"]:not(.tag){
               <td class="text-muted"><?= esc($p['payment_date']) ?></td>
               <td><span class="tag <?= tag_class($p['payment_status']) ?>"><?= esc(ucfirst($p['payment_status'])) ?></span></td>
               <td><?= esc($p['received_by_name'] ?? 'Not recorded') ?></td>
+              <td class="text-end no-print">
+                <?php if (strtolower((string)$p['payment_status']) === 'completed'): ?>
+                  <a class="btn btn-sm btn-light" href="<?= esc(app_url('payments.php?' . http_build_query(['receipt_id' => (int)$p['payment_id'], 'payment_search' => $paymentSearch, 'method' => $methodFilter]))) ?>">
+                    <i class="bi bi-receipt me-1"></i>Print
+                  </a>
+                <?php else: ?>
+                  <span class="text-muted">—</span>
+                <?php endif; ?>
+              </td>
             </tr>
           <?php endforeach; ?>
         </tbody>
@@ -711,10 +724,13 @@ div[style*="border-radius: 999px"]:not(.tag){
   ?>
   <?php if ($printReceipt): ?>
     <div id="treasurerReceiptSheet" class="treasurer-receipt-sheet" aria-hidden="true">
-      <div class="receipt-office">Municipality of Nasugbu</div>
-      <h2>Official Payment Receipt</h2>
-      <div class="receipt-reference"><?= esc(payment_reference((int)$printReceipt['payment_id'])) ?></div>
-      <hr>
+      <header class="receipt-header">
+        <div class="receipt-republic">Republic of the Philippines</div>
+        <div class="receipt-office">Municipality of Nasugbu</div>
+        <div class="receipt-department">Traffic Management Office</div>
+        <h2>Official Payment Receipt</h2>
+        <div class="receipt-reference">Receipt No. <?= esc(payment_reference((int)$printReceipt['payment_id'])) ?></div>
+      </header>
       <div class="receipt-grid">
         <div><strong>Ticket Number</strong><span><?= esc($printReceipt['ticket_number']) ?></span></div>
         <div><strong>Plate Number</strong><span><?= esc($printReceipt['plate_number']) ?></span></div>
@@ -725,20 +741,35 @@ div[style*="border-radius: 999px"]:not(.tag){
         <div><strong>Payment Date</strong><span><?= esc($printReceipt['payment_date']) ?></span></div>
         <div><strong>Received By</strong><span><?= esc($printReceipt['received_by_name'] ?? 'Treasury Personnel') ?></span></div>
       </div>
+      <div class="receipt-total"><span>Total Amount Paid</span><strong><?= peso($printReceipt['amount_paid']) ?></strong></div>
+      <p class="receipt-certification">Payment received in settlement of the traffic violation stated above. This computer-generated receipt is valid subject to verification in the official TRAVIS payment ledger.</p>
+      <div class="receipt-signatures"><div><span><?= esc($printReceipt['received_by_name'] ?? 'Treasury Personnel') ?></span><small>Collecting Officer</small></div><div><span>&nbsp;</span><small>Payor's Signature</small></div></div>
+      <footer>TRAVIS · Traffic Violation Recognition and AI Surveillance</footer>
     </div>
     <style>
-      .treasurer-receipt-sheet{position:fixed;left:0;top:0;width:800px;max-width:100%;padding:2.5rem;background:#fff;color:#111827;visibility:hidden;z-index:-1}
-      .treasurer-receipt-sheet .receipt-office{text-transform:uppercase;letter-spacing:.12em;color:#087d78;font-weight:700}
-      .treasurer-receipt-sheet h2{margin:.35rem 0 .15rem;color:#102f49}
-      .treasurer-receipt-sheet .receipt-reference{color:#526b64;margin-bottom:1rem}
-      .treasurer-receipt-sheet .receipt-grid{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem 2rem}
-      .treasurer-receipt-sheet .receipt-grid div{display:flex;flex-direction:column;gap:.25rem}
-      .treasurer-receipt-sheet strong{color:#10202c}
+      .treasurer-receipt-sheet{position:fixed;left:0;top:0;width:720px;max-width:100%;padding:2.5rem;background:#fff;color:#111827;visibility:hidden;z-index:-1;font-family:Arial,sans-serif}
+      .receipt-header{text-align:center;border-bottom:2px solid #102f49;padding-bottom:1rem;margin-bottom:1.4rem}
+      .receipt-republic{font-family:Georgia,serif;font-size:.78rem;letter-spacing:.08em}
+      .treasurer-receipt-sheet .receipt-office{text-transform:uppercase;letter-spacing:.1em;color:#102f49;font:700 1.25rem Georgia,serif;margin-top:.2rem}
+      .receipt-department{font-size:.82rem;margin-top:.2rem}
+      .treasurer-receipt-sheet h2{margin:1rem 0 .25rem;color:#102f49;font:700 1.45rem Georgia,serif;text-transform:uppercase;letter-spacing:.05em}
+      .treasurer-receipt-sheet .receipt-reference{color:#526b64;font-size:.85rem}
+      .treasurer-receipt-sheet .receipt-grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem 2rem}
+      .treasurer-receipt-sheet .receipt-grid div{display:flex;flex-direction:column;gap:.25rem;border-bottom:1px solid #d1d5db;padding-bottom:.55rem}
+      .treasurer-receipt-sheet .receipt-grid strong{color:#52606d;font-size:.7rem;text-transform:uppercase;letter-spacing:.05em}
+      .receipt-total{display:flex;justify-content:space-between;align-items:center;margin-top:1.5rem;padding:1rem;border:2px solid #102f49;background:#f8fafc}
+      .receipt-total strong{font-size:1.35rem;color:#102f49}
+      .receipt-certification{font-size:.75rem;line-height:1.5;color:#4b5563;margin:1.25rem 0}
+      .receipt-signatures{display:grid;grid-template-columns:1fr 1fr;gap:4rem;margin-top:2.5rem;text-align:center}
+      .receipt-signatures span{display:block;border-bottom:1px solid #111827;padding-bottom:.25rem;font-weight:700}
+      .receipt-signatures small{display:block;margin-top:.35rem;color:#4b5563}
+      .treasurer-receipt-sheet footer{text-align:center;border-top:1px solid #d1d5db;margin-top:2rem;padding-top:.75rem;font-size:.68rem;color:#6b7280;letter-spacing:.06em}
       @media print{
+        @page{size:A4 portrait;margin:16mm}
         body.printing-treasurer-receipt *{visibility:hidden!important}
         body.printing-treasurer-receipt .treasurer-receipt-sheet,
         body.printing-treasurer-receipt .treasurer-receipt-sheet *{visibility:visible!important}
-        body.printing-treasurer-receipt .treasurer-receipt-sheet{position:absolute;z-index:99999}
+        body.printing-treasurer-receipt .treasurer-receipt-sheet{position:absolute;z-index:99999;left:50%;transform:translateX(-50%);width:180mm;padding:10mm}
       }
     </style>
     <script>

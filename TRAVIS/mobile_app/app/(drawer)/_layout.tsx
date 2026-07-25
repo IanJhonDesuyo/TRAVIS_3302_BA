@@ -131,6 +131,9 @@ function CustomDrawerContent(props: any & { user: TravisUser }) {
         />
         <DrawerItemWithIcon label="Live Monitoring" icon="videocam-outline" route="/monitoring" />
 
+        <SectionHeader title="INTELLIGENCE" />
+        <DrawerItemWithIcon label="Decision Support" icon="bulb-outline" route="/decision-support" />
+
         {/* ===== ENFORCEMENT ===== */}
         <SectionHeader title="ENFORCEMENT" />
         <DrawerItemWithIcon
@@ -278,6 +281,7 @@ export default function DrawerLayout() {
         }}
       />
       <Drawer.Screen name="monitoring" options={{ title: 'Live Monitoring', headerTitle: 'Live Monitoring' }} />
+      <Drawer.Screen name="decision-support" options={{ title: 'Decision Support', headerTitle: 'Decision Support' }} />
 
       {/* ENFORCEMENT */}
       <Drawer.Screen

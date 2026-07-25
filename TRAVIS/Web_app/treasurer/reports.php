@@ -87,6 +87,30 @@ $generateFailed = $justGenerated && empty($previewRows);
 page_start('Collection Reports', 'reports', 'Search reports...', 'Generate and export payment collection reports', false);
 ?>
 
+<style>
+.collection-print-header,.collection-print-footer{display:none}
+@media print{
+  @page{size:A4 landscape;margin:14mm 12mm 16mm}
+  body.admin-dashboard .content>*:not(.print-area){display:none!important}
+  body.admin-dashboard .print-area{display:block!important;border:0!important;padding:0!important}
+  .collection-print-header,.collection-print-footer{display:block!important}
+  .collection-print-header{text-align:center;border-bottom:2px solid #17324d;padding-bottom:10px;margin-bottom:16px;color:#111827!important}
+  .collection-print-header .republic{font:11px Georgia,serif;letter-spacing:.08em;text-transform:uppercase}
+  .collection-print-header h1{font:700 20px Georgia,serif;margin:3px 0;color:#102f49!important}
+  .collection-print-header p{font:11px Arial,sans-serif;margin:2px 0;color:#374151!important}
+  .collection-print-meta{display:grid;grid-template-columns:1fr 1fr;gap:4px 24px;text-align:left;margin-top:12px;font:11px Arial,sans-serif}
+  .print-area>.section-head{display:none!important}
+  .print-area .table-responsive{overflow:visible!important;max-height:none!important}
+  .print-area table{font-size:10px;color:#111827!important}
+  .print-area thead{display:table-header-group}
+  .print-area thead th{background:#e9eef2!important;color:#102f49!important;border-bottom:2px solid #102f49!important}
+  .print-area tr{page-break-inside:avoid}
+  .collection-print-footer{font:11px Arial,sans-serif;margin-top:24px;page-break-inside:avoid;color:#111827!important}
+  .collection-signatures{display:grid;grid-template-columns:1fr 1fr;gap:80px;margin-top:38px}
+  .collection-signatures div{border-top:1px solid #111827;padding-top:5px;text-align:center}
+}
+</style>
+
 
 <div class="row g-3 mb-4">
   <div class="col-sm-6 col-xl-3"><div class="stat-card"><div class="stat-icon tone-primary"><i class="bi bi-calendar-day"></i></div><div class="stat-label">Daily Collections</div><div class="stat-value"><?= short_money($dailyCollections) ?></div><small class="text-muted">Today</small></div></div>
@@ -122,6 +146,18 @@ page_start('Collection Reports', 'reports', 'Search reports...', 'Generate and e
 </div>
 
 <div class="section-card mb-4 print-area">
+  <header class="collection-print-header">
+    <div class="republic">Republic of the Philippines</div>
+    <h1>Municipality of Nasugbu</h1>
+    <p>Municipal Treasurer's Office · Traffic Management Office</p>
+    <p><strong>Official Collection Report</strong></p>
+    <div class="collection-print-meta">
+      <div><strong>Report type:</strong> <?= esc(ucwords(str_replace('_', ' ', $reportType))) ?></div>
+      <div><strong>Date generated:</strong> <?= esc(date('F j, Y g:i A')) ?></div>
+      <div><strong>Covered period:</strong> <?= esc(date('F j, Y', strtotime($dateFrom))) ?> – <?= esc(date('F j, Y', strtotime($dateTo))) ?></div>
+      <div><strong>Prepared by:</strong> <?= esc($_SESSION['full_name'] ?? 'Treasury Personnel') ?></div>
+    </div>
+  </header>
   <div class="section-head"><h6 class="mb-0">Report Preview</h6><small class="text-muted"><?= esc($dateFrom) ?> to <?= esc($dateTo) ?></small></div>
   <?php if (!$previewRows): ?>
     <?php empty_state('No completed payments were found for the selected range.'); ?>
@@ -147,6 +183,10 @@ page_start('Collection Reports', 'reports', 'Search reports...', 'Generate and e
       </table>
     </div>
   <?php endif; ?>
+  <footer class="collection-print-footer">
+    <p>I certify that the collections shown above agree with the payment records maintained in TRAVIS for the stated period.</p>
+    <div class="collection-signatures"><div>Prepared by / Date</div><div>Municipal Treasurer / Date</div></div>
+  </footer>
 </div>
 
 <div class="row g-3">
@@ -171,13 +211,8 @@ const trendData = <?= json_encode(array_map(fn($r) => (float)$r['total'], $weekl
 const typeLabels = <?= json_encode(array_column($violationTypeBreakdown, 'violation_type')) ?>;
 const typeData = <?= json_encode(array_map('intval', array_column($violationTypeBreakdown, 'total'))) ?>;
 
-<<<<<<< HEAD
-Chart.defaults.font.family = "'Inter', sans-serif";
-Chart.defaults.color = '#64748b';
-=======
 Chart.defaults.font.family = "'Poppins', sans-serif";
 Chart.defaults.color = '#526b64';
->>>>>>> a81f72a (added landing page, updated ui design)
 
 const trendCtx = document.getElementById('chartTrend').getContext('2d');
 const trendGrad = trendCtx.createLinearGradient(0, 0, 0, 260);
@@ -195,10 +230,6 @@ new Chart(trendCtx, {
 
 new Chart(document.getElementById('chartTypes'), {
   type: 'polarArea',
-<<<<<<< HEAD
-  data: { labels: typeLabels, datasets: [{ data: typeData, backgroundColor: ['rgba(20,184,166,.7)','rgba(30,58,138,.7)','rgba(245,158,11,.7)','rgba(220,38,38,.7)','rgba(59,130,246,.7)','rgba(100,116,139,.6)','rgba(168,85,247,.6)','rgba(236,72,153,.6)'], borderWidth: 2, borderColor: '#fff' }] },
-  options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { usePointStyle: true, font: { size: 11 } } } } }
-=======
   data: { labels: typeLabels, datasets: [{ data: typeData, backgroundColor: ['rgba(8,125,120,.82)','rgba(235,148,31,.82)','rgba(21,150,111,.78)','rgba(200,75,69,.78)','rgba(62,124,146,.78)','rgba(120,169,159,.78)','rgba(200,120,32,.72)','rgba(80,110,103,.72)'], borderWidth: 2, borderColor: '#fffdf7' }] },
   options: {
     responsive: true,
@@ -217,7 +248,6 @@ new Chart(document.getElementById('chartTypes'), {
       }
     }
   }
->>>>>>> a81f72a (added landing page, updated ui design)
 });
 </script>
 
