@@ -133,6 +133,7 @@
     `ticket_number` VARCHAR(80) NOT NULL,
     `driver_name` VARCHAR(150) NOT NULL,
     `license_number` VARCHAR(80) NOT NULL,
+    `has_no_license` TINYINT(1) NOT NULL DEFAULT 0,
     `plate_number` VARCHAR(50) NOT NULL,
     `vehicle_type` ENUM('Motorcycle','Car','SUV','Truck','Bus','Other') NOT NULL,
     `violation_type` VARCHAR(120) NOT NULL,
@@ -162,7 +163,7 @@
     `receipt_reference` VARCHAR(120) NULL,
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`payment_id`),
-    KEY `idx_payments_violation_id` (`violation_id`),
+    UNIQUE KEY `uq_payments_violation_id` (`violation_id`),
     KEY `idx_payments_received_by` (`received_by`),
     CONSTRAINT `fk_payments_violation` FOREIGN KEY (`violation_id`) REFERENCES `violations`(`violation_id`) ON DELETE CASCADE ON UPDATE CASCADE,
     CONSTRAINT `fk_payments_received_by` FOREIGN KEY (`received_by`) REFERENCES `users`(`user_id`) ON DELETE SET NULL ON UPDATE CASCADE

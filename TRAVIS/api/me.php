@@ -2,20 +2,22 @@
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
 
-session_start();
+require_once __DIR__ . '/../Web_app/auth/session.php';
+travis_session_start();
 
-if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
+if (!travis_is_authenticated()) {
     http_response_code(401);
     echo json_encode(['error' => 'Unauthorized']);
     exit;
 }
 
+$sessionUser = travis_current_user();
 echo json_encode([
     'success' => true,
     'user' => [
-        'user_id' => (int)$_SESSION['user_id'],
-        'full_name' => (string)$_SESSION['full_name'],
-        'email' => (string)$_SESSION['email'],
-        'role' => (string)$_SESSION['role'],
+        'user_id' => (int)$sessionUser['id'],
+        'full_name' => (string)$sessionUser['name'],
+        'email' => (string)$sessionUser['email'],
+        'role' => (string)$sessionUser['role'],
     ],
 ]);

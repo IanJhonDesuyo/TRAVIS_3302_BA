@@ -70,7 +70,8 @@ const alertTypeIcon = (type: string): keyof typeof Ionicons.glyphMap => {
   switch (type.toLowerCase()) {
     case 'congestion': return 'car-outline';
     case 'collision': return 'warning-outline';
-    case 'officer': return 'person-outline';
+    case 'officer':
+    case 'officer_absence': return 'person-remove-outline';
     case 'weather': return 'rainy-outline';
     case 'system': return 'hardware-chip-outline';
     default: return 'notifications-outline';
@@ -170,7 +171,7 @@ export default function AlertsScreen() {
       <View style={styles.alertRow}>
         <View style={styles.alertTypeRow}>
           <Ionicons name={alertTypeIcon(item.alert_type)} size={15} color={severityColor(item.severity)} />
-          <Text style={styles.alertType}>{item.alert_type.toUpperCase()}</Text>
+          <Text style={styles.alertType}>{item.alert_type.replace(/_/g, ' ').toUpperCase()}</Text>
         </View>
         <View style={[styles.severityBadge, { backgroundColor: severityColor(item.severity) }]}>
           <Text style={styles.severityText}>{item.severity.toUpperCase()}</Text>

@@ -21,9 +21,10 @@ export default function RootLayout() {
       <StatusBar style="light" />
 
       <Stack
-        initialRouteName="(auth)"
+        initialRouteName="index"
         screenOptions={{ headerShown: false }}
       >
+        <Stack.Screen name="index" />
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(drawer)" />
         <Stack.Screen name="(treasurer)" />

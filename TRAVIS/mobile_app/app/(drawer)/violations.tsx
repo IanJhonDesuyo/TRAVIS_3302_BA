@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   SafeAreaView,
   ScrollView,
@@ -57,6 +57,7 @@ interface Violation {
 }
 
 type StatusFilter = '' | 'pending' | 'overdue' | 'paid' | 'cancelled';
+type OffenseAnalysis = { previous_offenses: number; suggested_offense: number; maximum_offense: number; at_maximum: boolean; matched_by: string | null; last_violation_date: string | null; last_ticket_number: string | null };
 
 // ========== HELPERS ==========
 const formatCurrency = (amount: number): string => `\u20b1${amount.toLocaleString()}`;
@@ -102,10 +103,43 @@ export default function ViolationsScreen() {
     penalty_amount: '',
   });
   const [submitting, setSubmitting] = useState(false);
+  const [hasNoLicense, setHasNoLicense] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [inputMethod, setInputMethod] = useState<'manual' | 'ocr'>('manual');
   const [ocrNotice, setOcrNotice] = useState('');
   const [selectedRecord, setSelectedRecord] = useState<Violation | null>(null);
+  const [violationTypes, setViolationTypes] = useState<string[]>([]);
+  const [penaltyFees, setPenaltyFees] = useState<number[]>([]);
+  const [vehicleTypes, setVehicleTypes] = useState<string[]>([]);
+  const [offenseAnalysis, setOffenseAnalysis] = useState<OffenseAnalysis | null>(null);
+  const [analyzingOffense, setAnalyzingOffense] = useState(false);
+
+  useEffect(() => {
+    api.get('get_violation_options.php').then(response => {
+      const options = response.data?.data || {};
+      setViolationTypes(options.violation_types || []);
+      setPenaltyFees(options.penalty_fees || []);
+      setVehicleTypes(options.vehicle_types || []);
+    }).catch(() => Alert.alert('Configuration error', 'The official violation options could not be loaded.'));
+  }, []);
+
+  useEffect(() => {
+    const license = hasNoLicense ? 'NO LICENSE' : formData.license_number.trim();
+    const plate = formData.plate_number.trim();
+    if (!violationTypes.includes(formData.violation_type) || (!license && !plate)) {
+      setOffenseAnalysis(null);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setAnalyzingOffense(true);
+      try {
+        const response = await api.get('analyze_offense.php', { params: { license_number: license, plate_number: plate, violation_type: formData.violation_type } });
+        setOffenseAnalysis(response.data?.data || null);
+      } catch { setOffenseAnalysis(null); }
+      finally { setAnalyzingOffense(false); }
+    }, 450);
+    return () => clearTimeout(timer);
+  }, [formData.license_number, formData.plate_number, formData.violation_type, hasNoLicense, violationTypes]);
 
   const scanTicket = async (source: 'camera' | 'gallery') => {
     const permission = source === 'camera'
@@ -128,10 +162,13 @@ export default function ViolationsScreen() {
       body.append('ticket', { uri: asset.uri, name: asset.fileName || 'ticket.jpg', type: asset.mimeType || 'image/jpeg' } as any);
       const response = await api.post('scan_ticket.php', body, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 60000 });
       const fields = response.data.fields || {};
+      const noLicenseDetected = String(fields.license_number || '').toUpperCase() === 'NO LICENSE'
+        || String(fields.violation_type || '').toLowerCase() === "no driver's license";
+      setHasNoLicense(noLicenseDetected);
       setFormData(current => ({
         ...current,
         driver_name: fields.driver_name || current.driver_name,
-        license_number: fields.license_number || current.license_number,
+        license_number: noLicenseDetected ? '' : (fields.license_number || current.license_number),
         plate_number: fields.plate_number || current.plate_number,
         vehicle_type: fields.vehicle_type || current.vehicle_type,
         violation_type: fields.violation_type || current.violation_type,
@@ -139,7 +176,8 @@ export default function ViolationsScreen() {
         penalty_amount: fields.penalty_amount || current.penalty_amount,
       }));
       setInputMethod('ocr');
-      setOcrNotice(`${response.data.recognized_fields || 0} fields detected · ${Math.round((response.data.confidence || 0) * 100)}% text confidence. Review all values.`);
+      const warning = String(response.data.warning || '').trim();
+      setOcrNotice(warning || `${response.data.recognized_fields || 0} fields detected · ${Math.round((response.data.confidence || 0) * 100)}% text confidence. Review all values.`);
     } catch (error: any) {
       setOcrNotice('');
       Alert.alert('Ticket scan failed', error.response?.data?.error || 'The ticket could not be read. Try a clearer, well-lit photo.');
@@ -147,7 +185,7 @@ export default function ViolationsScreen() {
   };
 
   // ===== FETCH VIOLATIONS =====
-  const fetchViolations = async () => {
+  const fetchViolations = useCallback(async () => {
     try {
       setLoading(true);
       const response = await api.get('get_violations.php', {
@@ -180,12 +218,12 @@ export default function ViolationsScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [statusFilter, search]);
 
   useFocusEffect(
     useCallback(() => {
-      fetchViolations();
-    }, [statusFilter, search])
+      void fetchViolations();
+    }, [fetchViolations])
   );
 
   const onRefresh = () => {
@@ -204,15 +242,28 @@ export default function ViolationsScreen() {
   // ===== ADD VIOLATION =====
   const handleAddViolation = async () => {
     const { driver_name, license_number, plate_number, vehicle_type, violation_type, location, penalty_amount } = formData;
-    if (!driver_name || !license_number || !plate_number || !violation_type || !location || !penalty_amount) {
+    if (!driver_name.trim() || (!hasNoLicense && !license_number.trim()) || !plate_number.trim() || !location.trim()) {
       Alert.alert('Error', 'Please fill in all fields.');
+      return;
+    }
+    if (!violationTypes.includes(violation_type)) {
+      Alert.alert('Invalid violation', 'Select a violation from the official list.');
+      return;
+    }
+    if (!vehicleTypes.includes(vehicle_type)) {
+      Alert.alert('Invalid vehicle', 'Select a valid vehicle type.');
+      return;
+    }
+    if (!penaltyFees.includes(Number(penalty_amount))) {
+      Alert.alert('Invalid penalty', 'Select a penalty from the official fee list.');
       return;
     }
     setSubmitting(true);
     try {
       const response = await api.post('add_violations.php', {
         driver_name,
-        license_number,
+        license_number: hasNoLicense ? 'NO LICENSE' : license_number,
+        has_no_license: hasNoLicense,
         plate_number,
         vehicle_type,
         violation_type,
@@ -221,11 +272,16 @@ export default function ViolationsScreen() {
         input_method: inputMethod,
       });
       if (response.data.success) {
-        Alert.alert('Success', 'Violation added successfully.');
+        const offense = response.data.offense_analysis;
+        Alert.alert('Violation saved', offense?.previous_offenses > 0
+          ? `${response.data.ticket_number} was recorded as suggested offense #${offense.suggested_offense}. ${offense.previous_offenses} previous matching offense(s) found.`
+          : `${response.data.ticket_number} was recorded as a first offense.`);
         setModalVisible(false);
         setFormData({ driver_name: '', license_number: '', plate_number: '', vehicle_type: 'Car', violation_type: '', location: '', penalty_amount: '' });
+        setHasNoLicense(false);
         setInputMethod('manual');
         setOcrNotice('');
+        setOffenseAnalysis(null);
         fetchViolations();
       } else {
         Alert.alert('Error', response.data.error || 'Failed to add violation.');
@@ -474,12 +530,22 @@ export default function ViolationsScreen() {
               />
               <Text style={styles.modalLabel}>License Number</Text>
               <TextInput
-                style={styles.modalInput}
-                placeholder="License number"
+                style={[styles.modalInput, hasNoLicense && { opacity: 0.55 }]}
+                placeholder={hasNoLicense ? 'NO LICENSE' : 'License number'}
                 placeholderTextColor={COLORS.textTertiary}
-                value={formData.license_number}
+                value={hasNoLicense ? 'NO LICENSE' : formData.license_number}
                 onChangeText={text => setFormData({ ...formData, license_number: text })}
+                editable={!hasNoLicense}
               />
+              <TouchableOpacity
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}
+                onPress={() => setHasNoLicense(value => !value)}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: hasNoLicense }}
+              >
+                <Ionicons name={hasNoLicense ? 'checkbox' : 'square-outline'} size={22} color={COLORS.primary} />
+                <Text style={{ color: COLORS.textSecondary }}>Driver has no license</Text>
+              </TouchableOpacity>
               <Text style={styles.modalLabel}>Plate Number</Text>
               <TextInput
                 style={styles.modalInput}
@@ -496,6 +562,29 @@ export default function ViolationsScreen() {
                 value={formData.violation_type}
                 onChangeText={text => setFormData({ ...formData, violation_type: text })}
               />
+              {!!formData.violation_type && (
+                <View style={styles.optionWrap}>
+                  {violationTypes.filter(type => type.toLowerCase().includes(formData.violation_type.toLowerCase())).slice(0, 6).map(type => (
+                    <TouchableOpacity key={type} style={[styles.optionChip, formData.violation_type === type && styles.optionChipActive]} onPress={() => setFormData({ ...formData, violation_type: type })}>
+                      <Text style={[styles.optionChipText, formData.violation_type === type && styles.optionChipTextActive]}>{type}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+              {analyzingOffense && <View style={styles.analysisCard}><ActivityIndicator size="small" color={COLORS.primary} /><Text style={styles.analysisText}>Checking previous offenses…</Text></View>}
+              {!analyzingOffense && offenseAnalysis && (
+                <View style={[styles.analysisCard, offenseAnalysis.previous_offenses > 0 && styles.analysisRepeat]}>
+                  <Ionicons name={offenseAnalysis.previous_offenses > 0 ? 'warning-outline' : 'shield-checkmark-outline'} size={18} color={offenseAnalysis.previous_offenses > 0 ? COLORS.warning : COLORS.success} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.analysisTitle}>{offenseAnalysis.previous_offenses > 0 ? `Suggested offense #${offenseAnalysis.suggested_offense}` : 'No matching previous offense'}</Text>
+                    <Text style={styles.analysisText}>{offenseAnalysis.previous_offenses > 0 ? `${offenseAnalysis.previous_offenses} previous record(s), matched by ${offenseAnalysis.matched_by}. Last: ${offenseAnalysis.last_ticket_number || '—'} (${offenseAnalysis.last_violation_date || '—'}).` : 'This will be treated as a first offense.'}</Text>
+                  </View>
+                </View>
+              )}
+              <Text style={styles.modalLabel}>Vehicle Type</Text>
+              <View style={styles.optionWrap}>
+                {vehicleTypes.map(type => <TouchableOpacity key={type} style={[styles.optionChip, formData.vehicle_type === type && styles.optionChipActive]} onPress={() => setFormData({ ...formData, vehicle_type: type })}><Text style={[styles.optionChipText, formData.vehicle_type === type && styles.optionChipTextActive]}>{type}</Text></TouchableOpacity>)}
+              </View>
               <Text style={styles.modalLabel}>Location</Text>
               <TextInput
                 style={styles.modalInput}
@@ -513,6 +602,9 @@ export default function ViolationsScreen() {
                 value={formData.penalty_amount}
                 onChangeText={text => setFormData({ ...formData, penalty_amount: text })}
               />
+              <View style={styles.optionWrap}>
+                {penaltyFees.map(fee => <TouchableOpacity key={fee} style={[styles.optionChip, Number(formData.penalty_amount) === fee && styles.optionChipActive]} onPress={() => setFormData({ ...formData, penalty_amount: String(fee) })}><Text style={[styles.optionChipText, Number(formData.penalty_amount) === fee && styles.optionChipTextActive]}>₱{fee.toLocaleString()}</Text></TouchableOpacity>)}
+              </View>
             </ScrollView>
 
             <View style={styles.modalActions}>
@@ -645,11 +737,11 @@ const styles = StyleSheet.create({
   },
   fabText: { fontSize: 14, fontWeight: '700', color: '#FFFFFF', marginLeft: 6 },
 
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(15,23,42,0.5)', justifyContent: 'center', alignItems: 'center' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(15,23,42,0.66)', justifyContent: 'center', alignItems: 'center' },
   modalContent: {
-    backgroundColor: COLORS.surface, borderRadius: 20, padding: 22, width: '90%', maxHeight: '82%',
+    backgroundColor: COLORS.surface, borderRadius: 22, padding: 22, width: '90%', maxHeight: '82%', borderWidth: 1, borderColor: COLORS.border,
   },
-  detailSheet: { backgroundColor: COLORS.surface, borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: 22, width: '100%', maxHeight: '82%', position: 'absolute', bottom: 0 },
+  detailSheet: { backgroundColor: COLORS.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 22, width: '100%', maxHeight: '82%', position: 'absolute', bottom: 0, borderWidth: 1, borderColor: COLORS.border },
   detailRow: { paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: COLORS.border },
   detailLabel: { color: COLORS.textTertiary, fontSize: 10, fontWeight: '800', textTransform: 'uppercase', marginBottom: 4 },
   detailValue: { color: COLORS.textPrimary, fontSize: 14, lineHeight: 20 },
@@ -671,6 +763,15 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.bg, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10,
     borderWidth: 1, borderColor: COLORS.border, fontSize: 14, color: COLORS.textPrimary,
   },
+  optionWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 8 },
+  optionChip: { paddingHorizontal: 10, paddingVertical: 7, borderRadius: 16, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.surface },
+  optionChipActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  optionChipText: { color: COLORS.textSecondary, fontSize: 10, fontWeight: '700' },
+  optionChipTextActive: { color: '#FFF' },
+  analysisCard: { flexDirection: 'row', gap: 8, alignItems: 'center', backgroundColor: '#EAF6F5', borderWidth: 1, borderColor: '#B9DDDA', padding: 10, borderRadius: 10, marginTop: 10 },
+  analysisRepeat: { backgroundColor: '#FFF7E8', borderColor: '#F3D39B' },
+  analysisTitle: { color: COLORS.textPrimary, fontSize: 11, fontWeight: '800', marginBottom: 2 },
+  analysisText: { color: COLORS.textSecondary, fontSize: 10, lineHeight: 14 },
   modalActions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 18, gap: 10 },
   cancelModalButton: { backgroundColor: COLORS.bg, paddingHorizontal: 18, paddingVertical: 11, borderRadius: 10, borderWidth: 1, borderColor: COLORS.border },
   cancelModalButtonText: { fontSize: 13, fontWeight: '600', color: COLORS.textSecondary },

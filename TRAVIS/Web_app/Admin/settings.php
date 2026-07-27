@@ -10,6 +10,8 @@ $defaults = [
     'enable_collision_detection' => '0',
     'notify_congestion' => '1',
     'notify_collision' => '1',
+    'notify_officer_absence' => '1',
+    'officer_absence_seconds' => '180',
 ];
 $settingsMessage = '';
 $settingsError = '';
@@ -34,6 +36,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'enable_collision_detection' => isset($_POST['enable_collision_detection']) ? 1 : 0,
             'notify_congestion' => isset($_POST['notify_congestion']) ? 1 : 0,
             'notify_collision' => isset($_POST['notify_collision']) ? 1 : 0,
+            'notify_officer_absence' => isset($_POST['notify_officer_absence']) ? 1 : 0,
+            'officer_absence_seconds' => max(60, min(3600, (int)($_POST['officer_absence_seconds'] ?? 180))),
         ];
 
         if ($values['congestion_heavy_min'] <= $values['congestion_light_max']) {
@@ -516,6 +520,17 @@ div[style*="border-radius: 999px"]:not(.tag){
       <div class="form-check form-switch mb-2">
         <input class="form-check-input" name="notify_collision" type="checkbox" <?= $settings['notify_collision'] === '1' ? 'checked' : '' ?>>
         <label class="form-check-label">Potential collision alerts</label>
+      </div>
+
+      <div class="form-check form-switch mb-2">
+        <input class="form-check-input" name="notify_officer_absence" type="checkbox" <?= $settings['notify_officer_absence'] === '1' ? 'checked' : '' ?>>
+        <label class="form-check-label">Officer absence alerts</label>
+      </div>
+
+      <div class="mt-3">
+        <label class="form-label small fw-semibold">Officer absence delay (seconds)</label>
+        <input type="number" min="60" max="3600" step="30" name="officer_absence_seconds" class="form-control" value="<?= esc($settings['officer_absence_seconds']) ?>" required>
+        <small class="text-muted">An alert is created only after continuous absence for this period.</small>
       </div>
 
     </div>

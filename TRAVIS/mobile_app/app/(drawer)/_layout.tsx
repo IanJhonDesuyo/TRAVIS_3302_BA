@@ -4,11 +4,13 @@ import {
   DrawerContentScrollView,
   DrawerItem,
 } from '@react-navigation/drawer';
-import { View, Text, StyleSheet, Dimensions, TouchableOpacity, Modal, Platform, Alert, Image, ImageBackground } from 'react-native';
+import { View, Text, StyleSheet, Dimensions, TouchableOpacity, Modal, Platform, Image, ImageBackground } from 'react-native';
 import { useRouter, usePathname, Href, Redirect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import api, { APP_ROOT_URL } from '../../api/axiosConfig';
 import { clearStoredUser, getStoredUser, isTreasurerRole, TravisUser } from '../../utils/session';
+import { MunicipalHeaderActions, MunicipalHeaderTitle } from '../../components/MunicipalMobileHeader';
+import ActionableAlertCard from '../../components/ActionableAlertCard';
 
 const { width } = Dimensions.get('window');
 
@@ -66,7 +68,7 @@ function CustomDrawerContent(props: any & { user: TravisUser }) {
           <Ionicons
             name={icon as any}
             size={18}
-            color={active ? COLORS.header : '#D9E3DE'}
+            color={active ? '#FFD18C' : '#8BC9C2'}
           />
         )}
         onPress={() => router.push(route as Href)}
@@ -97,7 +99,7 @@ function CustomDrawerContent(props: any & { user: TravisUser }) {
       console.error('Logout error:', error);
     } finally {
       await clearStoredUser();
-      router.replace('/login' as Href);
+      router.replace('/' as Href);
     }
   };
 
@@ -189,7 +191,7 @@ function CustomDrawerContent(props: any & { user: TravisUser }) {
               <Text style={styles.userName}>{props.user.full_name}</Text>
               <Text style={styles.userRole}>{props.user.role}</Text>
             </View>
-            <Ionicons name="log-out-outline" size={17} color={COLORS.textTertiary} />
+            <Ionicons name="log-out-outline" size={17} color="#8BC9C2" />
           </TouchableOpacity>
         </View>
       </DrawerContentScrollView>
@@ -236,7 +238,7 @@ export default function DrawerLayout() {
   const [user, setUser] = useState<TravisUser | null | undefined>(undefined);
   useEffect(() => { getStoredUser().then(setUser); }, []);
   if (user === undefined) return <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.header }} />;
-  if (!user) return <Redirect href="/(auth)/login" />;
+  if (!user) return <Redirect href="/" />;
   if (isTreasurerRole(user.role)) return <Redirect href={'/(treasurer)/dashboard' as Href} />;
   return (
     <ImageBackground
@@ -249,15 +251,10 @@ export default function DrawerLayout() {
       drawerContent={(props) => <CustomDrawerContent {...props} user={user} />}
       screenOptions={{
         headerShown: true,
-        headerStyle: {
-          backgroundColor: COLORS.header,
-        },
-        headerTintColor: '#FFFFFF',
-        headerTitleStyle: {
-          fontWeight: '700',
-          color: '#FFFFFF',
-          letterSpacing: 0.3,
-        },
+        headerStyle: { backgroundColor: '#F3F1EA' },
+        headerTintColor: '#102F49',
+        headerTitle: () => <MunicipalHeaderTitle portal="Command Center" />,
+        headerRight: () => <MunicipalHeaderActions notificationRoute={'/(drawer)/alerts' as Href} userName={user.full_name} />,
         drawerActiveBackgroundColor: COLORS.warning,
         drawerActiveTintColor: COLORS.header,
         drawerInactiveTintColor: '#D9E3DE',
@@ -265,7 +262,7 @@ export default function DrawerLayout() {
         drawerStyle: {
           width: width * 0.8,
           maxWidth: 300,
-          backgroundColor: COLORS.header,
+          backgroundColor: '#073643',
         },
         sceneStyle: { backgroundColor: 'transparent' },
         overlayColor: 'rgba(15, 23, 42, 0.5)',
@@ -277,32 +274,28 @@ export default function DrawerLayout() {
         name="dashboard"
         options={{
           title: 'Dashboard',
-          headerTitle: 'Dashboard',
         }}
       />
-      <Drawer.Screen name="monitoring" options={{ title: 'Live Monitoring', headerTitle: 'Live Monitoring' }} />
-      <Drawer.Screen name="decision-support" options={{ title: 'Decision Support', headerTitle: 'Decision Support' }} />
+      <Drawer.Screen name="monitoring" options={{ title: 'Live Monitoring' }} />
+      <Drawer.Screen name="decision-support" options={{ title: 'Decision Support' }} />
 
       {/* ENFORCEMENT */}
       <Drawer.Screen
         name="violations"
         options={{
           title: 'Violations',
-          headerTitle: 'Violations',
         }}
       />
       <Drawer.Screen
         name="payments"
         options={{
           title: 'Payments',
-          headerTitle: 'Payments',
         }}
       />
       <Drawer.Screen
         name="alerts"
         options={{
           title: 'Alerts',
-          headerTitle: 'Alerts',
         }}
       />
 
@@ -311,31 +304,28 @@ export default function DrawerLayout() {
         name="reports"
         options={{
           title: 'Reports',
-          headerTitle: 'Reports',
         }}
       />
       <Drawer.Screen
         name="users"
         options={{
           title: 'User Management',
-          headerTitle: 'User Management',
         }}
       />
       <Drawer.Screen
         name="public-website"
         options={{
           title: 'Public Website',
-          headerTitle: 'Public Website',
         }}
       />
       <Drawer.Screen
         name="settings"
         options={{
           title: 'Settings',
-          headerTitle: 'Settings',
         }}
       />
       </Drawer>
+      <ActionableAlertCard />
     </ImageBackground>
   );
 }
@@ -351,17 +341,19 @@ const styles = StyleSheet.create({
     paddingTop: 0,
     paddingBottom: 20,
     flexGrow: 1,
-    backgroundColor: COLORS.header,
+    backgroundColor: '#073643',
   },
 
   drawerHeader: {
     paddingVertical: 22,
     paddingHorizontal: 20,
-    backgroundColor: COLORS.header,
+    backgroundColor: '#082E3B',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(139,201,194,.14)',
     marginBottom: 8,
   },
   brandRow: { flexDirection: 'row', alignItems: 'center' },
-  brandSeal: { width: 38, height: 38, marginRight: 11 },
+  brandSeal: { width: 42, height: 42, borderRadius: 21, borderWidth: 2, borderColor: 'rgba(255,255,255,.86)', marginRight: 11 },
   logoText: {
     fontSize: 18,
     fontWeight: '800',
@@ -383,31 +375,34 @@ const styles = StyleSheet.create({
   sectionHeader: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#91AAA1',
+    color: '#7FB4AF',
     letterSpacing: 1,
     textTransform: 'uppercase',
   },
 
   drawerItem: {
-    borderRadius: 12,
+    borderRadius: 11,
+    borderWidth: 1,
+    borderColor: 'transparent',
     marginHorizontal: 12,
     marginVertical: 1,
   },
 
   activeDrawerItem: {
-    backgroundColor: COLORS.warning,
-    borderRadius: 12,
+    backgroundColor: 'rgba(235,148,31,.25)',
+    borderColor: 'rgba(244,174,70,.30)',
+    borderRadius: 11,
   },
 
   drawerLabel: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#D9E3DE',
+    color: '#D5E6E4',
     marginLeft: -8,
   },
 
   activeDrawerLabel: {
-    color: COLORS.header,
+    color: '#FFFFFF',
     fontWeight: '700',
   },
 
@@ -425,9 +420,9 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 14,
     borderRadius: 14,
-    backgroundColor: COLORS.surface,
+    backgroundColor: 'rgba(255,255,255,.08)',
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: 'rgba(139,201,194,.16)',
     ...softShadow,
   },
 
@@ -453,24 +448,26 @@ const styles = StyleSheet.create({
   userName: {
     fontSize: 13,
     fontWeight: '700',
-    color: COLORS.textPrimary,
+    color: '#FFFFFF',
   },
 
   userRole: {
     fontSize: 11,
-    color: COLORS.textTertiary,
+    color: '#9FC1BD',
     marginTop: 1,
   },
 
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.6)',
+    backgroundColor: 'rgba(15, 23, 42, 0.66)',
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 30,
   },
   modalContent: {
     backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
     borderRadius: 20,
     padding: 22,
     width: '100%',

@@ -2,16 +2,15 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/db_connect.php';
-
-if (session_status() !== PHP_SESSION_ACTIVE) {
-    session_start();
-}
+require_once __DIR__ . '/../auth/session.php';
+travis_session_start();
 
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('Pragma: no-cache');
 header('Expires: 0');
 
-if (empty($_SESSION['user']['id'])) {
+if (!travis_is_authenticated()) {
+    $_SESSION = [];
     header('Location: ../auth/index.php');
     exit;
 }
@@ -110,6 +109,35 @@ function esc(mixed $value): string {
 
 function peso(mixed $amount): string {
     return '₱' . number_format((float)($amount ?? 0), 2);
+}
+
+function payment_method_label(string $method): string {
+    return match ($method) {
+        'cash' => 'Cash',
+        'card' => 'Card',
+        'gcash', 'mobile_wallet' => 'Mobile Wallet (GCash)',
+        'bank_transfer', 'online' => 'Online / Bank Transfer',
+        'cheque' => 'Cheque',
+        'other' => 'Other',
+        default => ucfirst(str_replace('_', ' ', $method)),
+    };
+}
+
+function payment_method_options(): array {
+    return [
+        'cash' => 'Cash',
+        'card' => 'Card',
+        'online' => 'Online / Bank Transfer',
+        'bank_transfer' => 'Online / Bank Transfer',
+        'cheque' => 'Cheque',
+        'mobile_wallet' => 'Mobile Wallet (GCash)',
+        'gcash' => 'Mobile Wallet (GCash)',
+        'other' => 'Other',
+    ];
+}
+
+function payment_reference(int $paymentId): string {
+    return 'OR-' . date('Y') . '-' . str_pad((string)$paymentId, 6, '0', STR_PAD_LEFT);
 }
 
 function num(mixed $value): string {
@@ -215,6 +243,13 @@ function traffic_violation_types(): array {
 
 function traffic_penalty_fees(): array {
     return [100, 200, 300, 500, 1000, 1500, 2000, 2500, 3000, 5000];
+}
+
+function traffic_violation_category(string $type): string {
+    if (in_array($type, ["No Driver's License", "Failure to Carry Driver's License", "Invalid / Delinquent Driver's License"], true)) return 'driver-license';
+    if (in_array($type, ['Unregistered Motor Vehicle', 'OR / CR Not Carried'], true)) return 'vehicle-registration';
+    if ($type === 'Coding Violation') return 'coding';
+    return strtolower(trim((string)preg_replace('/[^a-z0-9]+/i', '-', $type), '-'));
 }
 
 function initials(string $name): string {

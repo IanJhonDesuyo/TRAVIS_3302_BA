@@ -144,7 +144,7 @@ page_start('Dashboard', 'dashboard', 'Search violations, receipts, plates...', '
     <div class="section-card h-100">
       <div class="section-head">
         <h6 class="mb-0">Recent Payments</h6>
-        <a class="small fw-semibold text-decoration-none" style="color:var(--teal-dark)" href="<?= esc(app_url('history.php')) ?>">View all</a>
+        <a class="small fw-semibold text-decoration-none" style="color:var(--teal-dark)" href="<?= esc(app_url('payments.php')) ?>">View all</a>
       </div>
       <?php if (!$recentPayments): ?>
         <?php empty_state('No payments have been recorded yet.'); ?>

@@ -17,6 +17,12 @@ if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
     exit;
 }
 
+if (strcasecmp(trim((string)($_SESSION['role'] ?? '')), 'Administrator') !== 0) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'error' => 'Only administrators can generate reports']);
+    exit;
+}
+
 require_once '../Web_app/db_connect.php';
 
 $input = json_decode(file_get_contents('php://input'), true);

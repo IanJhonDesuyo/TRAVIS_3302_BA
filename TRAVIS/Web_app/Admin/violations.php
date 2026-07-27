@@ -36,7 +36,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($action === 'add_violation') {
         $driver = violation_post('driver_name');
-        $license = violation_post('license_number');
+        $hasNoLicense = isset($_POST['has_no_license']);
+        $license = $hasNoLicense ? 'NO LICENSE' : strtoupper(violation_post('license_number'));
         $plate = strtoupper(violation_post('plate_number'));
         $vehicle = violation_post('vehicle_type');
         $type = violation_post('violation_type');
@@ -47,6 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $allowedViolations = traffic_violation_types();
         $allowedFees = array_map('floatval', traffic_penalty_fees());
+        $allowedVehicles = ['Motorcycle', 'Car', 'SUV', 'Truck', 'Bus', 'Other'];
 
         if (
             $driver === '' || $license === '' || $plate === '' ||
@@ -58,6 +60,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif (!in_array($type, $allowedViolations, true)) {
             $message = 'Please select a valid violation from the traffic ticket list.';
             $messageType = 'danger';
+        } elseif (!in_array($vehicle, $allowedVehicles, true)) {
+            $message = 'Please select a valid vehicle type.';
+            $messageType = 'danger';
         } elseif (!in_array($amount, $allowedFees, true)) {
             $message = 'Please select a valid penalty fee from the available amounts.';
             $messageType = 'danger';
@@ -66,25 +71,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $stmt = $conn->prepare("
                 INSERT INTO violations (
-                    ticket_number, driver_name, license_number, plate_number,
+                    ticket_number, driver_name, license_number, has_no_license, plate_number,
                     vehicle_type, violation_type, violation_location,
                     violation_date, violation_time, penalty_amount,
-                    input_method, status
+                    encoded_by, input_method, status
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'manual', 'pending')
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'manual', 'pending')
             ");
 
+            $encodedBy = (int)($_SESSION['user']['id'] ?? 0);
+
             $stmt->bind_param(
-                'sssssssssd',
-                $ticket, $driver, $license, $plate, $vehicle,
-                $type, $location, $date, $time, $amount
+                'sssissssssdi',
+                $ticket, $driver, $license, $hasNoLicense, $plate, $vehicle,
+                $type, $location, $date, $time, $amount, $encodedBy
             );
 
-            if ($stmt->execute()) {
-                $message = 'Violation record added successfully. Ticket No.: ' . $ticket;
-                $messageType = 'success';
-            } else {
-                $message = 'Failed to add the violation record.';
+            try {
+                if ($stmt->execute()) {
+                    $message = 'Violation record added successfully. Ticket No.: ' . $ticket;
+                    $messageType = 'success';
+                } else {
+                    throw new RuntimeException($stmt->error ?: 'Insert failed');
+                }
+            } catch (Throwable $exception) {
+                error_log('Web violation insert failed: ' . $exception->getMessage());
+                $message = 'Failed to add the violation record. Verify the selected values and try again.';
                 $messageType = 'danger';
             }
         }
@@ -428,24 +440,6 @@ a:hover{color:#fff}
 .form-select option{background:var(--navy-800);color:#fff;}
 .form-label{color:var(--text-soft) !important}
 
-/* Modal */
-.modal-content{
-    background:var(--navy-900) !important;
-    color:#fff !important;
-    border:1px solid var(--border-glass) !important;
-}
-.modal-header{
-    border-bottom:1px solid var(--border-glass) !important;
-}
-.modal-header .btn-close{
-    filter:invert(1) brightness(200%);
-}
-.modal-footer{
-    border-top:1px solid var(--border-glass) !important;
-}
-.modal-title{color:#fff !important;}
-.modal-body strong{color:#fff !important;}
-
 /* Table scroll */
 .table-scroll{
     max-height:600px;
@@ -519,9 +513,9 @@ div[style*="border-radius: 999px"]:not(.tag){
     <h3 class="page-title">Violation Records</h3>
     <p class="page-sub">Record, review, and route unpaid traffic violations to the payment module.</p>
   </div>
-  <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addViolationModal">
+  <a class="btn btn-primary" href="#addViolationModal" data-bs-toggle="modal" data-bs-target="#addViolationModal" role="button">
     <i class="bi bi-plus-lg me-1"></i>Add Violation
-  </button>
+  </a>
 </div>
 
 <?php if ($message): ?>
@@ -605,7 +599,7 @@ div[style*="border-radius: 999px"]:not(.tag){
               <td class="fw-semibold"><?= peso($v['penalty_amount']) ?></td>
               <td><span class="tag <?= tag_class($v['status']) ?>"><?= esc(ucfirst($v['status'])) ?></span></td>
               <td class="text-end text-nowrap">
-                <button class="btn btn-sm btn-light" data-bs-toggle="modal" data-bs-target="#view<?= (int)$v['violation_id'] ?>" title="View details"><i class="bi bi-eye"></i></button>
+                <a class="btn btn-sm btn-light" href="#view<?= (int)$v['violation_id'] ?>" data-bs-toggle="modal" data-bs-target="#view<?= (int)$v['violation_id'] ?>" role="button" title="View details"><i class="bi bi-eye"></i></a>
 
                 <?php if (in_array($v['status'], ['pending', 'overdue'], true)): ?>
                   <a class="btn btn-sm btn-success" href="<?= esc(app_url('payments.php?violation_id=' . (int)$v['violation_id'])) ?>" title="Proceed to payment"><i class="bi bi-cash-coin"></i></a>
@@ -630,7 +624,7 @@ div[style*="border-radius: 999px"]:not(.tag){
       <div class="modal-content">
         <div class="modal-header">
           <div><h5 class="modal-title">Violation Details</h5><small class="text-muted"><?= esc($v['ticket_number']) ?></small></div>
-          <button class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          <a class="btn-close" href="#" data-bs-dismiss="modal" aria-label="Close"></a>
         </div>
         <div class="modal-body">
           <div class="row g-3">
@@ -649,11 +643,10 @@ div[style*="border-radius: 999px"]:not(.tag){
           </div>
         </div>
         <div class="modal-footer">
-          <button class="btn btn-light" data-bs-dismiss="modal">Close</button>
+          <a class="btn btn-light" href="#" data-bs-dismiss="modal">Close</a>
           <?php if (in_array($v['status'], ['pending', 'overdue'], true)): ?>
             <a class="btn btn-success" href="<?= esc(app_url('payments.php?violation_id=' . (int)$v['violation_id'])) ?>"><i class="bi bi-cash-coin me-1"></i>Proceed to Payment</a>
           <?php endif; ?>
-          <button class="btn btn-primary" type="button" onclick="window.print()"><i class="bi bi-printer me-1"></i>Print</button>
         </div>
       </div>
     </div>
@@ -666,16 +659,23 @@ div[style*="border-radius: 999px"]:not(.tag){
       <form method="post">
         <div class="modal-header">
           <div><h5 class="modal-title">Manual Violation Input</h5><small class="text-muted">For manually encoded paper ticket records</small></div>
-          <button class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          <a class="btn-close" href="#" data-bs-dismiss="modal" aria-label="Close"></a>
         </div>
         <div class="modal-body">
           <input type="hidden" name="action" value="add_violation">
           <div class="row g-3">
             <div class="col-md-6"><label class="form-label">Ticket Number</label><input type="text" class="form-control" value="Automatically generated" readonly><small class="text-muted">Format: TRV-YYYYMMDD-000001</small></div>
             <div class="col-md-6"><label class="form-label">Driver Name</label><input type="text" name="driver_name" class="form-control" required></div>
-            <div class="col-md-6"><label class="form-label">License Number</label><input type="text" name="license_number" class="form-control" required></div>
+            <div class="col-md-6">
+              <label class="form-label" for="licenseNumberInput">License Number</label>
+              <input type="text" id="licenseNumberInput" name="license_number" class="form-control text-uppercase" required>
+              <div class="form-check mt-2">
+                <input class="form-check-input" type="checkbox" name="has_no_license" value="1" id="noLicenseCheck">
+                <label class="form-check-label" for="noLicenseCheck">Driver has no license</label>
+              </div>
+            </div>
             <div class="col-md-6"><label class="form-label">Plate Number</label><input type="text" name="plate_number" class="form-control text-uppercase" required></div>
-            <div class="col-md-6"><label class="form-label">Vehicle Type</label><select name="vehicle_type" class="form-select" required><option value="">Select vehicle type</option><option>Motorcycle</option><option>Car</option><option>SUV</option><option>Jeepney</option><option>Tricycle</option><option>Van</option><option>Truck</option><option>Bus</option><option>Other</option></select></div>
+            <div class="col-md-6"><label class="form-label">Vehicle Type</label><select name="vehicle_type" class="form-select" required><option value="">Select vehicle type</option><option>Motorcycle</option><option>Car</option><option>SUV</option><option>Truck</option><option>Bus</option><option>Other</option></select></div>
             <div class="col-md-6">
               <label class="form-label" for="violationTypeInput">Violation Type</label>
               <input type="text" id="violationTypeInput" name="violation_type" class="form-control" list="violationTypeOptions" placeholder="Type to search ticket violations..." autocomplete="off" required>
@@ -703,7 +703,7 @@ div[style*="border-radius: 999px"]:not(.tag){
           <small class="text-muted d-block mt-3">OCR scanning will be handled by the mobile application. Mobile records saved to the same database will also appear here.</small>
         </div>
         <div class="modal-footer">
-          <button class="btn btn-light" data-bs-dismiss="modal" type="button">Cancel</button>
+          <a class="btn btn-light" href="#" data-bs-dismiss="modal">Cancel</a>
           <button class="btn btn-primary"><i class="bi bi-save me-1"></i>Save Violation</button>
         </div>
       </form>
@@ -711,4 +711,80 @@ div[style*="border-radius: 999px"]:not(.tag){
   </div>
 </div>
 
+<script>
+let violationModalBackdrop = null;
+
+function openViolationModal(modalId, event) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  const modal = document.getElementById(modalId);
+  if (!modal) return false;
+
+  document.querySelectorAll('.modal.violation-modal-open').forEach(function (openModal) {
+    closeViolationModal(openModal);
+  });
+
+  modal.style.display = 'block';
+  modal.classList.add('show', 'violation-modal-open');
+  modal.removeAttribute('aria-hidden');
+  modal.setAttribute('aria-modal', 'true');
+  modal.setAttribute('role', 'dialog');
+  document.body.classList.add('modal-open');
+  document.body.style.overflow = 'hidden';
+
+  violationModalBackdrop = document.createElement('div');
+  violationModalBackdrop.className = 'modal-backdrop fade show violation-modal-backdrop';
+  violationModalBackdrop.addEventListener('click', function () {
+    closeViolationModal(modal);
+  });
+  document.body.appendChild(violationModalBackdrop);
+
+  const focusTarget = modal.querySelector('input:not([type="hidden"]), select, textarea, button');
+  if (focusTarget) focusTarget.focus();
+  return false;
+}
+
+function closeViolationModal(modalOrChild) {
+  const modal = modalOrChild && modalOrChild.classList && modalOrChild.classList.contains('modal')
+    ? modalOrChild
+    : modalOrChild?.closest('.modal');
+  if (!modal) return false;
+
+  modal.classList.remove('show', 'violation-modal-open');
+  modal.style.display = 'none';
+  modal.setAttribute('aria-hidden', 'true');
+  modal.removeAttribute('aria-modal');
+  modal.removeAttribute('role');
+  document.querySelectorAll('.violation-modal-backdrop').forEach(function (item) { item.remove(); });
+  violationModalBackdrop = null;
+  document.body.classList.remove('modal-open');
+  document.body.style.removeProperty('overflow');
+  return false;
+}
+
+document.querySelectorAll('#addViolationModal [data-bs-dismiss="modal"], [id^="view"] [data-bs-dismiss="modal"]').forEach(function (button) {
+  button.addEventListener('click', function (event) {
+    event.preventDefault();
+    event.stopPropagation();
+    closeViolationModal(button);
+  });
+});
+
+document.addEventListener('keydown', function (event) {
+  if (event.key === 'Escape') {
+    const modal = document.querySelector('.modal.violation-modal-open');
+    if (modal) closeViolationModal(modal);
+  }
+});
+
+document.getElementById('noLicenseCheck')?.addEventListener('change', function () {
+  const input = document.getElementById('licenseNumberInput');
+  input.disabled = this.checked;
+  input.required = !this.checked;
+  input.value = this.checked ? 'NO LICENSE' : '';
+});
+</script>
 <?php page_end(); ?>

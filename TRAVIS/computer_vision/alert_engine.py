@@ -57,6 +57,8 @@ class AlertEngine:
             return "ALERT"
 
         # -------------------------
-        # Heavy but already alerted
+        # Heavy but already alerted. Do not report another ALERT until the
+        # configured cooldown expires; the API uses this state to decide
+        # whether a new notification may be created.
         # -------------------------
-        return "ALERT"
+        return "COOLDOWN"

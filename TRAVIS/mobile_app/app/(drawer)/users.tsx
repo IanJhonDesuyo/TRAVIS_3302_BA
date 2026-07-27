@@ -457,6 +457,7 @@ export default function UsersScreen() {
                 selectedValue={roleFilter}
                 onValueChange={setRoleFilter}
                 style={styles.picker}
+                itemStyle={styles.pickerItem}
                 dropdownIconColor={COLORS.primary}
               >
                 <Picker.Item label="All Roles" value="" />
@@ -469,6 +470,7 @@ export default function UsersScreen() {
                 selectedValue={statusFilter}
                 onValueChange={setStatusFilter}
                 style={styles.picker}
+                itemStyle={styles.pickerItem}
                 dropdownIconColor={COLORS.primary}
               >
                 <Picker.Item label="All Statuses" value="" />
@@ -576,6 +578,7 @@ export default function UsersScreen() {
                     selectedValue={formRole}
                     onValueChange={(value) => setFormRole(value)}
                     style={styles.picker}
+                    itemStyle={styles.pickerItem}
                     dropdownIconColor={COLORS.primary}
                   >
                     <Picker.Item label="Administrator" value="Administrator" />
@@ -591,6 +594,7 @@ export default function UsersScreen() {
                     selectedValue={formStatus}
                     onValueChange={(value) => setFormStatus(value)}
                     style={styles.picker}
+                    itemStyle={styles.pickerItem}
                     dropdownIconColor={COLORS.primary}
                   >
                     <Picker.Item label="Active" value="active" />
@@ -703,6 +707,7 @@ export default function UsersScreen() {
                     selectedValue={formRole}
                     onValueChange={(value) => setFormRole(value)}
                     style={styles.picker}
+                    itemStyle={styles.pickerItem}
                     dropdownIconColor={COLORS.primary}
                   >
                     <Picker.Item label="Administrator" value="Administrator" />
@@ -718,6 +723,7 @@ export default function UsersScreen() {
                     selectedValue={formStatus}
                     onValueChange={(value) => setFormStatus(value)}
                     style={styles.picker}
+                    itemStyle={styles.pickerItem}
                     dropdownIconColor={COLORS.primary}
                   >
                     <Picker.Item label="Active" value="active" />
@@ -874,9 +880,10 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, fontSize: 14, color: COLORS.textPrimary, height: 46 },
   pickerWrapper: {
     backgroundColor: COLORS.bg, borderRadius: 12, borderWidth: 1, borderColor: COLORS.border,
-    height: 46, justifyContent: 'center', marginBottom: 8, overflow: 'hidden',
+    minHeight: 56, justifyContent: 'center', marginBottom: 8,
   },
-  picker: { height: 46, width: '100%', color: COLORS.textPrimary },
+  picker: { minHeight: 56, width: '100%', color: COLORS.textPrimary, fontSize: 16 },
+  pickerItem: { color: COLORS.textPrimary, fontSize: 16, height: 56 },
   clearButton: {
     backgroundColor: COLORS.bg, borderWidth: 1, borderColor: COLORS.border,
     paddingVertical: 10, borderRadius: 12, alignItems: 'center', marginBottom: 4,
@@ -923,10 +930,10 @@ const styles = StyleSheet.create({
   actionText: { fontSize: 11, fontWeight: '700', color: COLORS.textPrimary, marginLeft: 4 },
 
   modalOverlay: {
-    flex: 1, backgroundColor: 'rgba(15,23,42,0.6)', justifyContent: 'center', alignItems: 'center',
+    flex: 1, backgroundColor: 'rgba(15,23,42,0.66)', justifyContent: 'center', alignItems: 'center',
   },
   modalContent: {
-    backgroundColor: COLORS.surface, borderRadius: 22, width: '92%', maxHeight: '85%', paddingBottom: 20,
+    backgroundColor: COLORS.surface, borderRadius: 22, width: '92%', maxHeight: '85%', paddingBottom: 20, borderWidth: 1, borderColor: COLORS.border, overflow: 'hidden',
   },
   modalHeader: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',

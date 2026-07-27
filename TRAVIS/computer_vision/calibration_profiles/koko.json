@@ -1,0 +1,51 @@
+{
+    "profile_name": "koko",
+    "road_roi": [
+        [
+            0,
+            0
+        ],
+        [
+            1,
+            0
+        ],
+        [
+            1,
+            1
+        ],
+        [
+            0,
+            1
+        ]
+    ],
+    "inbound_line": [
+        [
+            0.04018775215459726,
+            0.729811320754717
+        ],
+        [
+            0.39383997111505314,
+            0.7316002795248078
+        ]
+    ],
+    "outbound_line": [
+        [
+            0.5646379177720915,
+            0.7226554856743536
+        ],
+        [
+            0.9554638074755498,
+            0.7316002795248078
+        ]
+    ],
+    "officer_zone": [],
+    "officer": {
+        "enabled": false,
+        "presence_frames": 3,
+        "absence_frames": 15
+    },
+    "collision": {
+        "enabled": false,
+        "cooldown_seconds": 30
+    }
+}

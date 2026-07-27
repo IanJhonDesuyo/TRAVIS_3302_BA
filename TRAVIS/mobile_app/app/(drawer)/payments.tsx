@@ -19,6 +19,7 @@ import { useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import api from '../../api/axiosConfig';
+import * as Print from 'expo-print';
 
 // ========== COLOR TOKENS ==========
 const COLORS = {
@@ -57,6 +58,7 @@ interface Violation {
 
 interface Payment {
   payment_id: number;
+  receipt_reference?: string;
   ticket_number: string;
   driver_name: string;
   plate_number: string;
@@ -111,13 +113,15 @@ export default function PaymentsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [pendingViolations, setPendingViolations] = useState<Violation[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
-  const [stats, setStats] = useState({ collectedToday: 0, pendingCount: 0, pendingAmount: 0 });
+  const [stats, setStats] = useState({ collectedToday: 0, collectedThisWeek: 0, collectedThisMonth: 0, pendingCount: 0, pendingAmount: 0 });
   const [pendingSearch, setPendingSearch] = useState('');
   const [paymentSearch, setPaymentSearch] = useState('');
   const [selectedViolation, setSelectedViolation] = useState<Violation | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [handledPaymentLink, setHandledPaymentLink] = useState<string | null>(null);
+  const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
+  const [printingReceipt, setPrintingReceipt] = useState(false);
 
   useEffect(() => {
     if (!violation_id || handledPaymentLink === violation_id || pendingViolations.length === 0) return;
@@ -153,6 +157,8 @@ export default function PaymentsScreen() {
         const d = statsRes.data.data;
         setStats({
           collectedToday: d.collected_today || 0,
+          collectedThisWeek: d.collected_this_week || 0,
+          collectedThisMonth: d.collected_this_month || 0,
           pendingCount: d.pending_violations || 0,
           pendingAmount: d.pending_amount || 0,
         });
@@ -200,6 +206,24 @@ export default function PaymentsScreen() {
     } finally {
       setProcessing(false);
     }
+  };
+
+  const printReceipt = async () => {
+    if (!selectedPayment) return;
+    const payment = selectedPayment;
+    const reference = payment.receipt_reference || `PAY-${String(payment.payment_id).padStart(6, '0')}`;
+    const safe = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[character] || character));
+    const details = [
+      ['Ticket Number', payment.ticket_number], ['Driver', payment.driver_name], ['Plate Number', payment.plate_number],
+      ['Violation', payment.violation_type], ['Payment Method', methodLabel(payment.payment_method)],
+      ['Payment Date', payment.payment_date], ['Collecting Officer', payment.received_by_name || 'Not recorded'],
+    ];
+    const rows = details.map(([label, value]) => `<div class="row"><span>${safe(label)}</span><b>${safe(value)}</b></div>`).join('');
+    const html = `<!doctype html><html><head><meta charset="utf-8"><style>@page{size:A5 portrait;margin:14mm}body{font-family:Arial,sans-serif;color:#10202c;margin:0}.head{text-align:center;border-bottom:2px solid #102f49;padding-bottom:12px}.republic{font:10px Georgia,serif;letter-spacing:.1em}.head h1{font:700 20px Georgia,serif;color:#102f49;margin:4px}.head p{font-size:10px;margin:2px;color:#526b64}.title{text-align:center;margin:18px 0}.title strong{display:block;color:#087d78;letter-spacing:.08em}.title span{display:block;font-size:17px;font-weight:700;margin-top:5px}.row{display:flex;justify-content:space-between;gap:18px;padding:9px 0;border-bottom:1px solid #dce5e2;font-size:11px}.row b{text-align:right}.total{display:flex;justify-content:space-between;background:#102f49;color:#fff;padding:14px;border-radius:10px;margin-top:16px;font-weight:700}.note{text-align:center;color:#526b64;font-size:9px;line-height:1.5;margin-top:16px}.signatures{display:grid;grid-template-columns:1fr 1fr;gap:35px;margin-top:38px}.signature{text-align:center;border-top:1px solid #10202c;padding-top:5px;font-size:9px}</style></head><body><div class="head"><div class="republic">REPUBLIC OF THE PHILIPPINES</div><h1>Municipality of Nasugbu</h1><p>Municipal Treasurer's Office · Traffic Management Office</p></div><div class="title"><strong>OFFICIAL PAYMENT RECEIPT</strong><span>${safe(reference)}</span></div>${rows}<div class="total"><span>TOTAL AMOUNT PAID</span><span>&#8369;${Number(payment.amount_paid).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div><p class="note">Payment received in settlement of the traffic violation stated above. This receipt is subject to verification in the official TRAVIS payment ledger.</p><div class="signatures"><div class="signature">Collecting Officer / Date</div><div class="signature">Payor / Date</div></div></body></html>`;
+    setPrintingReceipt(true);
+    try { await Print.printAsync({ html }); }
+    catch { Alert.alert('Print unavailable', 'The receipt could not be sent to the system print service.'); }
+    finally { setPrintingReceipt(false); }
   };
 
   // ===== FILTERS =====
@@ -288,6 +312,10 @@ export default function PaymentsScreen() {
         <Text style={styles.paymentAmount}>{formatCurrency(item.amount_paid)}</Text>
       </View>
       <Text style={styles.paymentMeta}>{item.payment_date} · Received by {item.received_by_name || 'N/A'}</Text>
+      <TouchableOpacity style={styles.receiptButton} onPress={() => setSelectedPayment(item)}>
+        <Ionicons name="receipt-outline" size={14} color={COLORS.primary} />
+        <Text style={styles.receiptButtonText}>View Receipt</Text>
+      </TouchableOpacity>
     </View>
   );
 
@@ -326,8 +354,8 @@ export default function PaymentsScreen() {
         {/* Summary panel */}
         <View style={styles.summaryPanel}>
           {renderSummaryCell(<Ionicons name="cash-outline" size={16} color={COLORS.success} />, 'Collected Today', shortCurrency(stats.collectedToday), false)}
-          {renderSummaryCell(<Ionicons name="calendar-outline" size={16} color={COLORS.primary} />, 'This Week', '—', false)}
-          {renderSummaryCell(<Ionicons name="stats-chart-outline" size={16} color={COLORS.primary} />, 'This Month', '—', false)}
+          {renderSummaryCell(<Ionicons name="calendar-outline" size={16} color={COLORS.primary} />, 'This Week', shortCurrency(stats.collectedThisWeek), false)}
+          {renderSummaryCell(<Ionicons name="stats-chart-outline" size={16} color={COLORS.primary} />, 'This Month', shortCurrency(stats.collectedThisMonth), false)}
           {renderSummaryCell(<Ionicons name="alert-circle-outline" size={16} color={COLORS.warning} />, `${stats.pendingCount} Unpaid`, shortCurrency(stats.pendingAmount), true)}
         </View>
 
@@ -484,6 +512,22 @@ export default function PaymentsScreen() {
           </View>
         </View>
       </Modal>
+      <Modal animationType="slide" transparent visible={!!selectedPayment} onRequestClose={() => setSelectedPayment(null)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.receiptSheet}>
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1 }}><Text style={styles.modalTitle}>Official Payment Receipt</Text><Text style={styles.modalSub}>{selectedPayment?.receipt_reference || `PAY-${String(selectedPayment?.payment_id || '').padStart(6, '0')}`}</Text></View>
+              <TouchableOpacity onPress={() => setSelectedPayment(null)}><Ionicons name="close" size={22} color={COLORS.textTertiary} /></TouchableOpacity>
+            </View>
+            {selectedPayment && <ScrollView contentContainerStyle={styles.receiptBody}>
+              {[['Ticket Number', selectedPayment.ticket_number], ['Driver', selectedPayment.driver_name], ['Plate Number', selectedPayment.plate_number], ['Violation', selectedPayment.violation_type], ['Payment Method', methodLabel(selectedPayment.payment_method)], ['Payment Date', selectedPayment.payment_date], ['Collecting Officer', selectedPayment.received_by_name || 'Not recorded']].map(([label, value]) => <View key={label} style={styles.receiptRow}><Text style={styles.receiptLabel}>{label}</Text><Text style={styles.receiptValue}>{value}</Text></View>)}
+              <View style={styles.receiptTotal}><Text style={styles.receiptTotalLabel}>TOTAL AMOUNT PAID</Text><Text style={styles.receiptTotalValue}>{formatCurrency(selectedPayment.amount_paid)}</Text></View>
+              <Text style={styles.receiptNote}>This receipt is subject to verification in the official TRAVIS payment ledger.</Text>
+              <TouchableOpacity style={styles.printReceiptButton} onPress={printReceipt} disabled={printingReceipt}>{printingReceipt ? <ActivityIndicator color="#FFF" /> : <Ionicons name="print-outline" size={18} color="#FFF" />}<Text style={styles.printReceiptText}>Print Receipt</Text></TouchableOpacity>
+            </ScrollView>}
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -574,12 +618,25 @@ const styles = StyleSheet.create({
   methodText: { fontSize: 12, color: COLORS.textSecondary, marginLeft: 6 },
   paymentAmount: { fontSize: 15, fontWeight: '700', color: COLORS.textPrimary, fontFamily: mono },
   paymentMeta: { fontSize: 11, color: COLORS.textTertiary, marginTop: 8 },
+  receiptButton: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 5, borderWidth: 1, borderColor: COLORS.border, borderRadius: 9, paddingHorizontal: 10, paddingVertical: 7, marginTop: 10 },
+  receiptButtonText: { color: COLORS.primary, fontSize: 11, fontWeight: '800' },
 
   emptyState: { alignItems: 'center', paddingVertical: 30 },
   emptyText: { fontSize: 13, color: COLORS.textSecondary, textAlign: 'center', marginTop: 8, lineHeight: 18 },
 
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(15,23,42,0.5)', justifyContent: 'center', alignItems: 'center' },
-  modalContent: { backgroundColor: COLORS.surface, borderRadius: 20, width: '92%', maxHeight: '85%' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(15,23,42,0.66)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 16 },
+  receiptSheet: { backgroundColor: COLORS.surface, borderRadius: 22, width: '92%', maxHeight: '88%', borderWidth: 1, borderColor: COLORS.border, overflow: 'hidden' },
+  receiptBody: { padding: 20 },
+  receiptRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  receiptLabel: { color: COLORS.textTertiary, fontSize: 11 },
+  receiptValue: { flex: 1, color: COLORS.textPrimary, fontSize: 11, fontWeight: '800', textAlign: 'right' },
+  receiptTotal: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: COLORS.header, borderRadius: 12, padding: 14, marginTop: 16 },
+  receiptTotalLabel: { color: '#C5D5E0', fontSize: 10, fontWeight: '800' },
+  receiptTotalValue: { color: '#FFF', fontSize: 18, fontWeight: '900' },
+  receiptNote: { color: COLORS.textTertiary, fontSize: 10, lineHeight: 15, textAlign: 'center', marginVertical: 14 },
+  printReceiptButton: { height: 46, backgroundColor: COLORS.primary, borderRadius: 11, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  printReceiptText: { color: '#FFF', fontWeight: '900', fontSize: 12 },
+  modalContent: { backgroundColor: COLORS.surface, borderRadius: 22, width: '92%', maxHeight: '85%', borderWidth: 1, borderColor: COLORS.border, overflow: 'hidden' },
   modalHeader: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
     padding: 20, borderBottomWidth: 1, borderBottomColor: COLORS.border,

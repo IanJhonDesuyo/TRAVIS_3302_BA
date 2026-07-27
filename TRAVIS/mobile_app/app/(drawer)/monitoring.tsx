@@ -11,8 +11,11 @@ type MonitorStatus = {
   analysis_status?: string; ai_status?: string; message?: string; vehicle_count?: number;
   inbound_count?: number; outbound_count?: number; congestion_level?: string;
   officer_presence?: string; potential_collision?: string; alert_status?: string; recorded_at?: string;
+  stream_owner?: string; calibration_profile?: string;
+  runtime_settings?: { congestion_light_max: number; congestion_heavy_min: number; confidence_threshold: number; enable_officer_detection: boolean; enable_collision_detection: boolean };
 };
 type MonitorLog = { recorded_at: string; vehicle_count: number; inbound_count: number; outbound_count: number; congestion_level: string; alert_generated: number };
+type CalibrationProfile = { file: string; name: string };
 const COLORS = { navy: '#0A1A30', teal: '#087D78', green: '#15966F', amber: '#EB941F', red: '#C84B45', bg: '#F3F6F7', card: '#FFFFFF', text: '#10202C', muted: '#64748B', border: '#DDE5E7' };
 
 export default function MonitoringScreen() {
@@ -21,10 +24,15 @@ export default function MonitoringScreen() {
     uploadTitle: { color: COLORS.text, fontSize: 12, fontWeight: '800' }, uploadSub: { color: COLORS.muted, fontSize: 9, marginTop: 3 },
     uploadButton: { backgroundColor: COLORS.teal, borderRadius: 9, paddingHorizontal: 14, paddingVertical: 9 }, uploadButtonText: { color: '#FFF', fontSize: 11, fontWeight: '900' },
     progressTrack: { height: 4, borderRadius: 2, backgroundColor: '#CFE5E3', overflow: 'hidden', marginTop: 6 }, progressFill: { height: '100%', backgroundColor: COLORS.teal },
+    calibrationRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 12, paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: '#EDF1F2' },
+    calibrationLabel: { color: COLORS.muted, fontSize: 10 },
+    calibrationValue: { flex: 1, color: COLORS.text, fontSize: 10, fontWeight: '800', textAlign: 'right' },
   });
   const [status, setStatus] = useState<MonitorStatus>({});
   const [logs, setLogs] = useState<MonitorLog[]>([]);
   const [source, setSource] = useState<SourceType>('uploaded_video');
+  const [profiles, setProfiles] = useState<CalibrationProfile[]>([]);
+  const [calibrationProfile, setCalibrationProfile] = useState('');
   const [host, setHost] = useState(''); const [username, setUsername] = useState(''); const [password, setPassword] = useState(''); const [stream, setStream] = useState('stream2');
   const [hasSavedCameraPassword, setHasSavedCameraPassword] = useState(false);
   const [busy, setBusy] = useState(false); const [refreshing, setRefreshing] = useState(false); const [frameAvailable, setFrameAvailable] = useState(false);
@@ -44,6 +52,14 @@ export default function MonitoringScreen() {
   }, []);
 
   useEffect(() => { mounted.current = true; load(); const statusTimer = setInterval(load, 3000); return () => { mounted.current = false; clearInterval(statusTimer); }; }, [load]);
+  useEffect(() => {
+    api.get('get_calibration_profiles.php').then(response => {
+      const available = response.data?.data || [];
+      if (!mounted.current) return;
+      setProfiles(available);
+      setCalibrationProfile(current => current || available[0]?.file || '');
+    }).catch(() => Alert.alert('Calibration unavailable', 'Intersection configurations could not be loaded.'));
+  }, []);
   useEffect(() => {
     mlApi.get('get_camera_config.php').then(response => {
       const saved = response.data?.data;
@@ -107,7 +123,7 @@ export default function MonitoringScreen() {
     if (source === 'tapo_camera' && (!host.trim() || !username.trim() || (!password && !hasSavedCameraPassword))) { Alert.alert('Camera details required', 'Enter the Tapo camera IP, camera username, and password.'); return; }
     setBusy(true);
     try {
-      const payload: any = { source_type: source, client: 'mobile' };
+      const payload: any = { source_type: source, client: 'mobile', calibration_profile: calibrationProfile };
       if (source === 'tapo_camera') Object.assign(payload, { tapo_host: host.trim(), tapo_username: username.trim(), tapo_password: password, tapo_stream: stream });
       const response = await mlApi.post('start_analysis.php', payload);
       if (!response.data.success) throw new Error(response.data.message || 'Unable to start analysis.');
@@ -120,9 +136,17 @@ export default function MonitoringScreen() {
 
   const tone = (value?: string) => { const v = String(value || '').toLowerCase(); if (['running', 'online', 'low', 'none', 'normal', 'present'].includes(v)) return COLORS.green; if (['heavy', 'severe', 'critical', 'alert', 'yes'].includes(v)) return COLORS.red; if (['moderate', 'starting', 'warning'].includes(v)) return COLORS.amber; return COLORS.muted; };
   const metric = (label: string, value: string | number, icon: any, color = COLORS.teal) => <View style={styles.metric}><Ionicons name={icon} size={19} color={color} /><Text style={styles.metricValue}>{value}</Text><Text style={styles.metricLabel}>{label}</Text></View>;
+  const calibrationCard = <View style={styles.card}>
+    <Text style={styles.label}>Intersection configuration</Text>
+    <View style={styles.pickerWrap}><Picker selectedValue={calibrationProfile} onValueChange={setCalibrationProfile} enabled={!running && !busy && profiles.length > 0}>{profiles.length === 0 ? <Picker.Item label="No configurations available" value="" /> : profiles.map(profile => <Picker.Item key={profile.file} label={profile.name} value={profile.file} />)}</Picker></View>
+    <View style={styles.calibrationRow}><Text style={styles.calibrationLabel}>Congestion bands</Text><Text style={styles.calibrationValue}>{status.runtime_settings ? `Light ≤ ${status.runtime_settings.congestion_light_max} · Heavy ≥ ${status.runtime_settings.congestion_heavy_min}` : 'Loaded when analysis starts'}</Text></View>
+    <View style={styles.calibrationRow}><Text style={styles.calibrationLabel}>Confidence</Text><Text style={styles.calibrationValue}>{status.runtime_settings ? `${Math.round(status.runtime_settings.confidence_threshold * 100)}%` : '—'}</Text></View>
+    <View style={styles.calibrationRow}><Text style={styles.calibrationLabel}>Officer / Collision</Text><Text style={styles.calibrationValue}>{status.runtime_settings ? `${status.runtime_settings.enable_officer_detection ? 'On' : 'Off'} / ${status.runtime_settings.enable_collision_detection ? 'On' : 'Off'}` : '—'}</Text></View>
+  </View>;
 
   return <ScrollView style={styles.screen} contentContainerStyle={styles.page} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}>
     <View style={styles.hero}><View style={{ flex: 1 }}><Text style={styles.eyebrow}>AI TRAFFIC OPERATIONS</Text><Text style={styles.title}>Live Monitoring</Text><Text style={styles.heroSub}>{status.message || 'Start a source to begin AI analysis.'}</Text></View><View style={[styles.statusPill, { borderColor: tone(status.analysis_status || status.ai_status) }]}><View style={[styles.dot, { backgroundColor: tone(status.analysis_status || status.ai_status) }]} /><Text style={styles.statusText}>{status.analysis_status || status.ai_status || 'Idle'}</Text></View></View>
+    <Text style={styles.sectionTitle}>ACTIVE CALIBRATION</Text>{calibrationCard}
 
     <View style={styles.videoCard}><View style={styles.videoStage}>{running && frameSlots.map((uri, slot) => uri ? <Image key={slot} source={{ uri }} style={[styles.video, { opacity: activeFrameSlot === slot ? 1 : 0 }]} resizeMode="contain" fadeDuration={0} onLoad={() => showLoadedFrame(slot)} /> : null)}{(!running || !frameAvailable) && <View pointerEvents="none" style={styles.videoEmpty}><Ionicons name="videocam-outline" size={38} color="#78909C" /><Text style={styles.emptyTitle}>{running ? 'Connecting to AI stream…' : 'Stream is offline'}</Text><Text style={styles.emptySub}>The processed camera feed appears after analysis begins.</Text></View>}<View pointerEvents="none" style={styles.liveBadge}><View style={[styles.dot, { backgroundColor: running && frameAvailable ? COLORS.red : COLORS.muted }]} /><Text style={styles.liveText}>{running && frameAvailable ? 'LIVE AI' : 'OFFLINE'}</Text></View></View></View>
 

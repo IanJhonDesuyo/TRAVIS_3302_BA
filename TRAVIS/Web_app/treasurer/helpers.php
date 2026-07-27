@@ -2,16 +2,15 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/db_connect.php';
-
-if (session_status() !== PHP_SESSION_ACTIVE) {
-    session_start();
-}
+require_once __DIR__ . '/../auth/session.php';
+travis_session_start();
 
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('Pragma: no-cache');
 header('Expires: 0');
 
-if (empty($_SESSION['user']['id'])) {
+if (!travis_is_authenticated()) {
+    $_SESSION = [];
     header('Location: ../auth/index.php');
     exit;
 }
@@ -242,4 +241,42 @@ function payment_status_breakdown(): array {
         }
     }
     return $breakdown;
+}
+
+/**
+ * Official violation choices shared with the Admin manual ticket workflow.
+ * Keep these values identical because both portals write to the same records.
+ */
+function traffic_violation_types(): array {
+    return [
+        "No Driver's License",
+        "Failure to Carry Driver's License",
+        "Invalid / Delinquent Driver's License",
+        'Unregistered Motor Vehicle',
+        'Nuisance Muffler',
+        'Disregarding Traffic Sign / Officer',
+        'Reckless Driving',
+        'Colorum',
+        'Illegal Parking',
+        'Illegal Terminal',
+        'Obstruction',
+        'OR / CR Not Carried',
+        'No Canvas Cover',
+        'Operating Out of Line',
+        'Overloading',
+        'Overcharging',
+        'Loading / Unloading in Prohibited Zone',
+        'Refusal to Convey Passenger',
+        'Driving with Sleeveless Shirt / Shorts',
+        'Not Wearing Shoes',
+        'No Side Mirror',
+        'Arrogant Driver',
+        'Driving Under the Influence of Liquor',
+        'Coding Violation',
+        'Other Traffic Violation',
+    ];
+}
+
+function traffic_penalty_fees(): array {
+    return [100, 200, 300, 500, 1000, 1500, 2000, 2500, 3000, 5000];
 }

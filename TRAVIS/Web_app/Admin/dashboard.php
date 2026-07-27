@@ -710,11 +710,256 @@ a:hover {
     }
 }
 
+/* ==== Historical Hotspots: simplified visual hierarchy ==== */
+/* AI forecast cards: one container boundary, not a card inside a card. */
+body.municipal-portal #aiDecisionCard .ai-top-row .ai-kpi-card {
+    min-height: 300px;
+    padding: 0 !important;
+    overflow: hidden;
+    background: rgba(255, 255, 255, .82) !important;
+    border: 1px solid rgba(16, 47, 73, .16) !important;
+    border-radius: 16px !important;
+    box-shadow: 0 10px 26px rgba(16, 47, 73, .08) !important;
+}
+
+body.municipal-portal #aiDecisionCard .ai-top-row .ai-card-header {
+    min-height: 84px;
+    margin: 0 !important;
+    padding: 16px 18px !important;
+    background: rgba(247, 250, 249, .84) !important;
+    border: 0 !important;
+    border-bottom: 1px solid rgba(16, 47, 73, .10) !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+}
+
+body.municipal-portal #aiDecisionCard .ai-top-row .ai-card-icon {
+    flex: 0 0 42px;
+    width: 42px;
+    height: 42px;
+    color: #075e59 !important;
+    background: rgba(8, 125, 120, .09) !important;
+    border: 1px solid rgba(8, 125, 120, .14) !important;
+    border-radius: 12px !important;
+    box-shadow: none !important;
+}
+
+body.municipal-portal #aiDecisionCard .ai-top-row .ai-monthly-body,
+body.municipal-portal #aiDecisionCard .ai-top-row .deployment-kpi-grid {
+    padding: 20px !important;
+}
+
+body.municipal-portal #aiDecisionCard .ai-top-row .ai-model-note {
+    margin: 0 20px 20px !important;
+    padding-top: 14px;
+    border-top: 1px solid rgba(16, 47, 73, .09);
+}
+
+body.municipal-portal #aiDecisionCard .ai-actions-card {
+    padding: 0 !important;
+    overflow: hidden;
+    background: rgba(255, 255, 255, .82) !important;
+    border: 1px solid rgba(16, 47, 73, .16) !important;
+    border-radius: 16px !important;
+    box-shadow: 0 10px 26px rgba(16, 47, 73, .08) !important;
+}
+
+body.municipal-portal #aiDecisionCard .ai-actions-card .ai-card-header {
+    min-height: 78px;
+    margin: 0 !important;
+    padding: 15px 18px !important;
+    background: rgba(247, 250, 249, .84) !important;
+    border: 0 !important;
+    border-bottom: 1px solid rgba(16, 47, 73, .10) !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+}
+
+body.municipal-portal #aiDecisionCard .ai-actions-card .ai-action-grid {
+    gap: 10px !important;
+    margin: 0 !important;
+    padding: 16px 18px 18px !important;
+}
+
+body.municipal-portal #aiDecisionCard .ai-actions-card .ai-action-grid li {
+    min-height: 48px;
+    padding: 11px 13px !important;
+    background: rgba(255, 255, 255, .88) !important;
+    border: 1px solid rgba(16, 47, 73, .11) !important;
+    border-radius: 11px !important;
+    box-shadow: none !important;
+}
+
+#hotspotContent .hotspot-kpi-grid {
+    --bs-gutter-x: 1rem;
+    --bs-gutter-y: 1rem;
+}
+
+#hotspotContent .hotspot-risk-card {
+    height: 300px !important;
+    padding: 0 !important;
+    overflow: hidden;
+    background: rgba(255, 255, 255, .86) !important;
+    border: 1px solid rgba(16, 47, 73, .16) !important;
+    border-radius: 16px !important;
+    box-shadow: 0 10px 26px rgba(16, 47, 73, .08) !important;
+}
+
+#hotspotContent .hotspot-card-high { border-top: 4px solid #dc3545 !important; }
+#hotspotContent .hotspot-card-medium { border-top: 4px solid #e5a100 !important; }
+#hotspotContent .hotspot-card-low { border-top: 4px solid #1fad72 !important; }
+
+#hotspotContent .hotspot-card-head {
+    display: flex !important;
+    align-items: center !important;
+    gap: 12px !important;
+    min-height: 92px;
+    margin: 0 !important;
+    padding: 16px 18px !important;
+    background: rgba(247, 250, 249, .88) !important;
+    border: 0 !important;
+    border-bottom: 1px solid rgba(16, 47, 73, .10) !important;
+}
+
+#hotspotContent .hotspot-card-icon {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 42px;
+    width: 42px !important;
+    height: 42px !important;
+    color: #405a53 !important;
+    background: #fff !important;
+    border: 1px solid rgba(16, 47, 73, .14) !important;
+    border-radius: 12px !important;
+    box-shadow: none !important;
+}
+
+#hotspotContent .hotspot-card-head > div {
+    display: grid !important;
+    grid-template-columns: auto 1fr;
+    align-items: baseline;
+    column-gap: 9px;
+    min-width: 0;
+}
+
+#hotspotContent .hotspot-card-label {
+    grid-column: 1 / -1;
+    padding: 0 !important;
+    color: #405a53 !important;
+    background: transparent !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    font-size: .72rem !important;
+    font-weight: 800 !important;
+    letter-spacing: .06em;
+}
+
+#hotspotContent .hotspot-card-head strong {
+    font-size: 1.75rem !important;
+    line-height: 1 !important;
+}
+
+#hotspotContent .hotspot-card-head small {
+    font-size: .76rem !important;
+}
+
+#hotspotContent .hotspot-card-list {
+    flex: 1 1 auto !important;
+    min-height: 0;
+    margin: 0 !important;
+    padding: 12px !important;
+    background: rgba(247, 250, 249, .46);
+    border: 0 !important;
+    border-radius: 0 !important;
+    scrollbar-gutter: stable;
+}
+
+#hotspotContent .hotspot-card-list li {
+    min-height: 54px;
+    margin: 0 0 8px !important;
+    padding: 10px 12px !important;
+    background: rgba(255, 255, 255, .90) !important;
+    border: 1px solid rgba(16, 47, 73, .11) !important;
+    border-radius: 11px !important;
+    box-shadow: 0 3px 9px rgba(16, 47, 73, .04) !important;
+}
+
+#hotspotContent .hotspot-card-list li:last-child { margin-bottom: 0 !important; }
+
+body.municipal-portal #aiDecisionCard #hotspotContent .hotspot-risk-card {
+    background: rgba(255, 255, 255, .86) !important;
+    border-right: 1px solid rgba(16, 47, 73, .16) !important;
+    border-bottom: 1px solid rgba(16, 47, 73, .16) !important;
+    border-left: 1px solid rgba(16, 47, 73, .16) !important;
+    box-shadow: 0 10px 26px rgba(16, 47, 73, .08) !important;
+}
+
+body.municipal-portal #aiDecisionCard #hotspotContent .hotspot-card-list li {
+    background: rgba(255, 255, 255, .90) !important;
+    border: 1px solid rgba(16, 47, 73, .11) !important;
+    box-shadow: 0 3px 9px rgba(16, 47, 73, .04) !important;
+}
+
+#hotspotContent .hotspot-list-rank {
+    background: rgba(8, 125, 120, .10) !important;
+    color: #075e59 !important;
+    box-shadow: none !important;
+}
+
+@media (max-width: 991.98px) {
+    #hotspotContent .hotspot-risk-card { height: 280px !important; }
+}
+
 /* ==== Grid Layout ==== */
 .metric-grid {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 12px;
+}
+
+body.municipal-portal #currentMonitoringCard {
+    padding: 20px !important;
+    border: 1px solid rgba(16, 47, 73, .16) !important;
+    box-shadow: 0 10px 26px rgba(16, 47, 73, .07) !important;
+}
+
+body.municipal-portal #currentMonitoringCard .metric-grid {
+    display: grid !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 12px !important;
+}
+
+body.municipal-portal #currentMonitoringCard .mini-metric {
+    min-height: 88px;
+    padding: 14px 15px !important;
+    background: rgba(247, 250, 249, .72) !important;
+    border: 1px solid rgba(16, 47, 73, .12) !important;
+    border-radius: 12px !important;
+    box-shadow: none !important;
+}
+
+body.municipal-portal #currentMonitoringCard .mini-metric small {
+    color: #58706a !important;
+    font-size: .67rem !important;
+    font-weight: 800;
+}
+
+body.municipal-portal #currentMonitoringCard .mini-metric strong {
+    color: #142a35 !important;
+    font-size: 1rem !important;
+}
+
+@media (max-width: 1199.98px) {
+    body.municipal-portal #currentMonitoringCard .metric-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+}
+
+@media (max-width: 575.98px) {
+    body.municipal-portal #currentMonitoringCard .metric-grid {
+        grid-template-columns: 1fr !important;
+    }
 }
 
 /* ==== Compact Metrics ==== */

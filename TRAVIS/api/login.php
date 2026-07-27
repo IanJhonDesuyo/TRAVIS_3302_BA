@@ -2,9 +2,6 @@
 // ============================================================
 // ENABLE ERROR REPORTING (for debugging)
 // ============================================================
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
 
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
@@ -16,7 +13,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
-session_start();
+require_once __DIR__ . '/../Web_app/auth/session.php';
+travis_session_start();
 
 // ============================================================
 // DATABASE CONNECTION - DIRECT CONNECTION
@@ -79,17 +77,9 @@ if (!$user) {
 }
 
 // ============================================================
-// CHECK PASSWORD (supports both hashed and plain text)
+// CHECK PASSWORD (hashed credentials only)
 // ============================================================
-$passwordMatch = false;
-
-// Check if password is hashed (starts with $2y$)
-if (strpos($user['password'], '$2y$') === 0) {
-    $passwordMatch = password_verify($password, $user['password']);
-} else {
-    // Plain text password (for testing only!)
-    $passwordMatch = ($user['password'] === $password);
-}
+$passwordMatch = password_verify($password, (string)$user['password']);
 
 if (!$passwordMatch) {
     http_response_code(401);
@@ -109,11 +99,7 @@ if ($user['status'] !== 'active') {
 // ============================================================
 // LOGIN SUCCESS
 // ============================================================
-$_SESSION['user_id'] = $user['user_id'];
-$_SESSION['full_name'] = $user['full_name'];
-$_SESSION['email'] = $user['email'];
-$_SESSION['role'] = $user['role'];
-$_SESSION['logged_in'] = true;
+travis_login_user($user);
 
 unset($user['password']);
 

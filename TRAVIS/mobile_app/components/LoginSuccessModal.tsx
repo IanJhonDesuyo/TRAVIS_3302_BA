@@ -40,7 +40,7 @@ export default function LoginSuccessModal({
 
           <TouchableOpacity onPress={onContinue} activeOpacity={0.85} style={{ width: '100%' }}>
             <LinearGradient
-              colors={['#2563eb', '#0891b2']}
+              colors={['#087D78', '#16445D']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={styles.button}
@@ -63,7 +63,7 @@ export default function LoginSuccessModal({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.55)',
+    backgroundColor: 'rgba(15, 23, 42, 0.66)',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 24,
@@ -71,7 +71,9 @@ const styles = StyleSheet.create({
   card: {
     width: '100%',
     maxWidth: 380,
-    backgroundColor: '#ffffff',
+    backgroundColor: '#FFFDF7',
+    borderWidth: 1,
+    borderColor: 'rgba(16,47,73,.22)',
     borderRadius: 24,
     paddingVertical: 32,
     paddingHorizontal: 24,
@@ -91,24 +93,24 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 6,
-    backgroundColor: '#2563eb',
+    backgroundColor: '#087D78',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 8,
   },
   brandIconText: { color: '#fff', fontWeight: '800', fontSize: 12 },
-  brandText: { color: '#1e293b', fontWeight: '700', fontSize: 12, letterSpacing: 0.5 },
+  brandText: { color: '#102F49', fontWeight: '800', fontSize: 12, letterSpacing: 0.5 },
   checkCircle: {
     width: 72,
     height: 72,
     borderRadius: 20,
-    backgroundColor: '#d1fae5',
+    backgroundColor: '#DDF6EC',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 20,
   },
   verifiedLabel: {
-    color: '#2563eb',
+    color: '#087D78',
     fontWeight: '700',
     fontSize: 12,
     letterSpacing: 1,
@@ -117,13 +119,13 @@ const styles = StyleSheet.create({
   welcomeText: {
     fontSize: 20,
     fontWeight: '800',
-    color: '#0f172a',
+    color: '#10202C',
     textAlign: 'center',
     marginBottom: 10,
   },
   description: {
     fontSize: 13,
-    color: '#64748b',
+    color: '#526B64',
     textAlign: 'center',
     lineHeight: 19,
     marginBottom: 24,

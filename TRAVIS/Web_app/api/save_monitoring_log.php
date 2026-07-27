@@ -7,10 +7,14 @@ $notificationSettings = [
     "notify_congestion" => 1,
     "notify_collision" => 1,
     "alert_cooldown_seconds" => 300,
+    "congestion_light_max" => 5,
+    "congestion_heavy_min" => 13,
+    "enable_officer_detection" => 1,
+    "enable_collision_detection" => 0,
 ];
 $settingsTable = $conn->query("SHOW TABLES LIKE 'system_settings'");
 if ($settingsTable && $settingsTable->num_rows > 0) {
-    $settingsResult = $conn->query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('notify_congestion','notify_collision','alert_cooldown_seconds')");
+    $settingsResult = $conn->query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('notify_congestion','notify_collision','alert_cooldown_seconds','congestion_light_max','congestion_heavy_min','enable_officer_detection','enable_collision_detection')");
     while ($settingsResult && ($settingRow = $settingsResult->fetch_assoc())) {
         $notificationSettings[(string)$settingRow['setting_key']] = (int)$settingRow['setting_value'];
     }
@@ -131,6 +135,18 @@ $congestion_level = $congestion_map[$congestion_key];
 $officer_presence = $officer_map[$officer_key];
 $potential_collision = $collision_map[$collision_key];
 $incident_notes = $data["incident_notes"] ?? null;
+
+// The database settings are authoritative. Recalculate congestion from the
+// observed count and suppress disabled detectors even if a stale worker sends
+// older values after an administrator changes the configuration.
+$lightMax = max(0, min(100, (int)$notificationSettings['congestion_light_max']));
+$heavyMin = max($lightMax + 1, min(200, (int)$notificationSettings['congestion_heavy_min']));
+$congestion_level = $vehicle_count <= $lightMax ? 'low' : ($vehicle_count < $heavyMin ? 'moderate' : 'heavy');
+if ($notificationSettings['enable_officer_detection'] !== 1) $officer_presence = 'unknown';
+if ($notificationSettings['enable_collision_detection'] !== 1) {
+    $potential_collision = 'none';
+    $incident_notes = null;
+}
 
 $sql = "
 INSERT INTO camera_monitoring_logs

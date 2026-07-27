@@ -6,10 +6,8 @@ function sidebar(string $active = ''): void {
     $items = [
         'Main' => [
             ['dashboard.php', 'Dashboard', 'bi-speedometer2', 'dashboard'],
-            ['violations.php', 'Traffic Violation Records', 'bi-cone-striped', 'violations'],
-            ['payments.php', 'Payment Management', 'bi-cash-coin', 'payments'],
-            ['reports.php', 'Collection Reports', 'bi-file-earmark-bar-graph', 'reports'],
-            ['history.php', 'Payment History', 'bi-clock-history', 'history'],
+            ['violations.php', ' Violations', 'bi-cone-striped', 'violations'],
+            ['payments.php', 'Payments', 'bi-cash-coin', 'payments'],
         ],
         'Account' => [
             ['notifications.php', 'Notifications', 'bi-bell', 'notifications'],
@@ -51,6 +49,7 @@ function page_start(string $title, string $active = '', string $search = 'Search
     $styleVersion = is_file($styleFile) ? (string) filemtime($styleFile) : '1';
     echo '<link href="' . esc(asset_url('css/style.css')) . '?v=' . esc($styleVersion) . '" rel="stylesheet" />';
     echo '<style>.empty-state{border:1px dashed #d1d5db;border-radius:14px;padding:24px;text-align:center;color:#6b7280;background:#f9fafb}.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}.mini-metric{background:#fff;border:1px solid #edf2f7;border-radius:14px;padding:14px}.mini-metric small{color:#64748b}.mini-metric strong{display:block;font-size:1.3rem}.nav-link.active{background:rgba(255,255,255,.12);color:#fff}.notif-card{border:1px solid #edf2f7;border-radius:14px;padding:16px;background:#fff;margin-bottom:12px}.notif-card.tone-danger{border-left:4px solid var(--danger,#dc2626)}.notif-card.tone-warning{border-left:4px solid var(--accent,#f59e0b)}.notif-card.tone-success{border-left:4px solid var(--secondary,#16a34a)}.notif-card.tone-info{border-left:4px solid var(--primary,#1e3a8a)}.pending-row{cursor:pointer}.pending-row:hover{background:#f9fafb}.sidebar,.sidebar .nav-link,.sidebar .nav-section{font-family:"Poppins",sans-serif}.sidebar-brand{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:4px;height:84px;padding:0 20px;box-sizing:border-box}.topbar{height:84px;box-sizing:border-box;display:flex;align-items:center}.brand-logo-wordmark{font-family:"Poppins",sans-serif;font-weight:800;font-size:1.8rem;letter-spacing:.5px;line-height:1;background:linear-gradient(90deg,#fff 0%,#bfdbfe 45%,#3b82f6 100%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent;display:inline-block}.sidebar-brand small{color:#94a3b8;font-family:"Poppins",sans-serif;font-size:.72rem;letter-spacing:.3px}.treasurer-page-heading{margin-bottom:1.5rem}.treasurer-page-heading .page-title{font-size:1.5rem}.role-pill{font-size:.68rem;color:var(--muted)}</style>';
+    if (!defined('TRAVIS_ADMIN_PARITY_UI') || !TRAVIS_ADMIN_PARITY_UI) {
     echo '<style id="treasurer-portal-theme">
     body.admin-dashboard{--tp-navy-950:#060f1e;--tp-navy-900:#0a1a30;--tp-navy-800:#0f2544;--tp-border:rgba(255,255,255,.10);--tp-cyan:#4fc3f7;--tp-soft:#c9d8ea;font-family:"Poppins",sans-serif;background:radial-gradient(circle at 12% 8%,rgba(56,189,248,.09),transparent 28%),radial-gradient(circle at 88% 82%,rgba(37,99,235,.10),transparent 34%),linear-gradient(160deg,var(--tp-navy-950),var(--tp-navy-900) 48%,var(--tp-navy-800));color:#fff}
     body.admin-dashboard .topbar{background:var(--tp-navy-900)!important;border-bottom:1px solid var(--tp-border)!important;box-shadow:none}
@@ -82,17 +81,21 @@ function page_start(string $title, string $active = '', string $search = 'Search
     @media(max-width:767.98px){body.admin-dashboard .content{padding:1rem}body.admin-dashboard .section-card{padding:16px}body.admin-dashboard .treasurer-page-heading{margin-bottom:1rem}}
     @media print{body.admin-dashboard{background:#fff!important;color:#111827!important}body.admin-dashboard .sidebar,body.admin-dashboard .topbar,body.admin-dashboard .treasurer-page-heading,body.admin-dashboard .no-print{display:none!important}body.admin-dashboard .main-wrapper{width:100%!important;margin:0!important}body.admin-dashboard .content{padding:0!important}body.admin-dashboard .section-card,body.admin-dashboard .stat-card{color:#111827!important;background:#fff!important;border:1px solid #d1d5db!important;box-shadow:none!important}body.admin-dashboard .section-card h4,body.admin-dashboard .section-card h5,body.admin-dashboard .section-card h6,body.admin-dashboard .table tbody .fw-semibold{color:#111827!important}body.admin-dashboard .section-card small,body.admin-dashboard .section-card .text-muted,body.admin-dashboard .table>:not(caption)>*>*,body.admin-dashboard .table thead th{color:#374151!important;border-color:#d1d5db!important}body.admin-dashboard .modal.show .modal-content{color:#111827!important;background:#fff!important;background-color:#fff!important;border:0!important;box-shadow:none!important}body.admin-dashboard .modal.show .modal-content:before{display:none}body.admin-dashboard .modal.show .modal-title,body.admin-dashboard .modal.show h4,body.admin-dashboard .modal.show h5,body.admin-dashboard .modal.show strong{color:#111827!important}body.admin-dashboard .modal.show p,body.admin-dashboard .modal.show small,body.admin-dashboard .modal.show .text-muted{color:#374151!important}}
     </style>';
+    }
     echo '<link href="' . esc(asset_url('css/municipal-portals.css')) . '?v=' . esc($municipalStyleVersion) . '" rel="stylesheet" />';
-    echo '</head><body class="admin-dashboard municipal-portal municipal-treasurer">';
+    $bodyClass = defined('TRAVIS_ADMIN_PARITY_UI') && TRAVIS_ADMIN_PARITY_UI
+        ? 'admin-dashboard municipal-portal'
+        : 'admin-dashboard municipal-portal municipal-treasurer';
+    echo '</head><body class="' . $bodyClass . '">';
     sidebar($active);
     echo '<div class="main-wrapper"><header class="topbar">';
-    echo '<button class="btn btn-light d-lg-none" id="sidebarToggle"><i class="bi bi-list"></i></button>';
+    echo '<button type="button" class="btn sidebar-toggle-btn" id="sidebarToggle" aria-label="Toggle navigation" aria-controls="sidebar" aria-expanded="true"><i class="bi bi-list" aria-hidden="true"></i></button>';
     echo '<div class="municipal-topbar-scene"><div class="municipal-topbar-copy"><strong>Municipality of Nasugbu</strong><small>Traffic Management Office · Treasury Portal</small></div></div>';
-    echo '<div class="ms-auto d-flex align-items-center gap-3"><small class="text-muted d-none d-md-block" id="liveClock"></small>';
+    echo '<div class="ms-auto d-flex align-items-center topbar-actions"><small class="topbar-clock d-none d-md-inline-flex" id="liveClock"></small>';
     $pendingCount = scalar("SELECT COUNT(*) FROM violations WHERE status IN ('pending', 'overdue')", 0);
-    echo '<a href="' . esc(app_url('notifications.php')) . '" class="btn btn-light position-relative bell"><i class="bi bi-bell"></i>';
+    echo '<a href="' . esc(app_url('notifications.php')) . '" class="btn position-relative bell topbar-notification" aria-label="Open notifications"><i class="bi bi-bell"></i>';
     if ((int)$pendingCount > 0) echo '<span class="ping"></span>';
-    echo '</a><div class="dropdown"><button class="btn btn-light d-flex align-items-center gap-2" data-bs-toggle="dropdown"><span class="avatar">' . esc($init) . '</span><span class="d-none d-md-flex flex-column align-items-start lh-sm"><span class="small fw-semibold">' . esc($name) . '</span><span class="role-pill">' . esc($role) . '</span></span></button>';
+    echo '</a><div class="dropdown"><button class="btn topbar-profile d-flex align-items-center gap-2" data-bs-toggle="dropdown" aria-label="Open account menu"><span class="avatar">' . esc($init) . '</span><span class="d-none d-md-flex flex-column align-items-start lh-sm"><span class="small fw-semibold">' . esc($name) . '</span><span class="role-pill">' . esc($role) . '</span></span></button>';
     echo '<ul class="dropdown-menu dropdown-menu-end"><li><a class="dropdown-item" href="' . esc(app_url('profile.php')) . '"><i class="bi bi-person me-2"></i>Profile</a></li><li><hr class="dropdown-divider"></li><li><button class="dropdown-item text-danger" type="button" data-bs-toggle="modal" data-bs-target="#signOutModal"><i class="bi bi-box-arrow-right me-2"></i>Sign Out</button></li></ul></div></div></header><main class="content">';
 }
 
@@ -109,24 +112,13 @@ function page_end(bool $chart = false): void {
     $municipalStyleFile = dirname(__DIR__, 2) . '/css/municipal-portals.css';
     $municipalStyleVersion = is_file($municipalStyleFile) ? (string) filemtime($municipalStyleFile) : '1';
     echo '<link href="' . esc(asset_url('css/municipal-portals.css')) . '?v=' . esc($municipalStyleVersion) . '" rel="stylesheet" />';
-    echo '<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>';
+    $bootstrapScriptFile = dirname(__DIR__, 2) . '/assets/vendor/bootstrap/bootstrap.bundle.min.js';
+    $bootstrapScriptVersion = is_file($bootstrapScriptFile) ? (string) filemtime($bootstrapScriptFile) : '1';
+    echo '<script src="' . esc(asset_url('assets/vendor/bootstrap/bootstrap.bundle.min.js')) . '?v=' . esc($bootstrapScriptVersion) . '"></script>';
     if ($chart) echo '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>';
-    echo '<script src="' . esc(asset_url('js/app.js')) . '"></script>';
-    echo '<script>
-    (function () {
-      var toggleBtn = document.getElementById("sidebarToggle");
-      if (!toggleBtn) return;
-      if (localStorage.getItem("travisSidebarCollapsed") === "1") {
-        document.body.classList.add("sidebar-collapsed");
-      }
-      toggleBtn.addEventListener("click", function () {
-        if (window.innerWidth >= 992) {
-          document.body.classList.toggle("sidebar-collapsed");
-          localStorage.setItem("travisSidebarCollapsed", document.body.classList.contains("sidebar-collapsed") ? "1" : "0");
-        }
-      });
-    })();
-    </script>';
+    $appScriptFile = dirname(__DIR__, 2) . '/js/app.js';
+    $appScriptVersion = is_file($appScriptFile) ? (string) filemtime($appScriptFile) : '1';
+    echo '<script src="' . esc(asset_url('js/app.js')) . '?v=' . esc($appScriptVersion) . '"></script>';
     if ($showLoginSuccess) {
         echo '<script>document.addEventListener("DOMContentLoaded",function(){var element=document.getElementById("loginSuccessModal");if(element){bootstrap.Modal.getOrCreateInstance(element).show();}});</script>';
     }

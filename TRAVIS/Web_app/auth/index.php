@@ -1,7 +1,8 @@
 <?php
 declare(strict_types=1);
 
-session_start();
+require_once __DIR__ . '/session.php';
+travis_session_start();
 
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('Pragma: no-cache');
@@ -14,20 +15,6 @@ function respond_json(array $payload, int $statusCode = 200): void
     header('X-Content-Type-Options: nosniff');
     echo json_encode($payload);
     exit;
-}
-
-function verify_password(string $password, string $storedPassword): bool
-{
-    if ($storedPassword === '') {
-        return false;
-    }
-
-    $info = password_get_info($storedPassword);
-    if (($info['algo'] ?? 0) !== 0) {
-        return password_verify($password, $storedPassword);
-    }
-
-    return hash_equals($storedPassword, $password);
 }
 
 function portal_redirect_for_role(string $role, string $email = ''): string
@@ -80,7 +67,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $isValid = $user
         && strcasecmp((string)$user['status'], 'active') === 0
-        && verify_password($password, (string)$user['password']);
+        && password_verify($password, (string)$user['password']);
 
     if (!$isValid) {
         respond_json([
@@ -89,13 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ], 401);
     }
 
-    session_regenerate_id(true);
-    $_SESSION['user'] = [
-        'id' => (int)$user['user_id'],
-        'name' => (string)$user['full_name'],
-        'email' => (string)$user['email'],
-        'role' => (string)$user['role'],
-    ];
+    travis_login_user($user);
     $_SESSION['login_success'] = true;
 
     if ($remember) {
@@ -133,7 +114,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     respond_json(['success' => false, 'message' => 'Method not allowed.'], 405);
 }
 
-if (!empty($_SESSION['user']['id'])) {
+if (($_SESSION['authenticated'] ?? false) === true && !empty($_SESSION['user']['id'])) {
     header('Location: ' . portal_redirect_for_role((string)($_SESSION['user']['role'] ?? ''), (string)($_SESSION['user']['email'] ?? '')));
     exit;
 }
@@ -143,7 +124,7 @@ if (!empty($_SESSION['user']['id'])) {
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>TRAVIS Login · Municipality of Nasugbu</title>
 
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -689,6 +670,93 @@ hr {
     .logo-holder { gap: 12px; }
     .login-card-header { padding: 12px 18px; }
 }
+
+/* Production mobile browser layout */
+@media (max-width: 991.98px) {
+    html, body {
+        min-height: 100%;
+        height: auto;
+        overflow-x: hidden;
+    }
+    body {
+        display: block;
+        padding: max(14px, env(safe-area-inset-top)) 0 max(14px, env(safe-area-inset-bottom));
+        background-attachment: scroll;
+        background-position: center top;
+    }
+    .gradient-overlay {
+        background: linear-gradient(180deg, rgba(238,244,247,.80), rgba(226,236,241,.72)) !important;
+    }
+    .login-wrapper {
+        display: flex;
+        min-height: calc(100dvh - max(28px, env(safe-area-inset-top) + env(safe-area-inset-bottom)));
+        align-items: center;
+        justify-content: center;
+    }
+    .login-wrapper > .row,
+    .login-wrapper .col-lg-5,
+    .login-wrapper .col-lg-5 > div {
+        width: 100%;
+    }
+    .login-card {
+        width: 100%;
+        max-width: 440px;
+        border-radius: 24px;
+        box-shadow: 0 24px 65px rgba(6, 23, 38, .28);
+    }
+    .login-card:hover { transform: none; }
+    .login-card-header { min-height: 48px; }
+    .login-card-body { overflow: visible; }
+    .login-card .form-control {
+        min-height: 52px;
+        font-size: 16px;
+    }
+    .toggle-visibility {
+        width: 46px;
+        height: 46px;
+    }
+    .btn-signin { min-height: 50px; }
+    .forgot-link,
+    .form-check-label { min-height: 24px; display: inline-flex; align-items: center; }
+}
+
+@media (max-width: 575.98px) {
+    body { padding-right: 0; padding-left: 0; }
+    .login-wrapper { padding-right: 10px; padding-left: 10px; }
+    .login-card { border-radius: 20px; }
+    .login-card-header { padding: 10px 14px; }
+    .login-card-header .live { font-size: .58rem; }
+    .login-card-body { padding: 22px 17px 24px; }
+    .logo-holder { margin-bottom: 1.15rem; }
+    .auth-seal { width: 50px; height: 50px; }
+    .auth-agency strong { font-size: .9rem; }
+    .auth-agency small { font-size: .65rem; }
+    .login-card h2 { font-size: 1.45rem; }
+    .login-card .subtitle { margin-bottom: 1.25rem; }
+    .login-card form > .d-flex {
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+    .forgot-link { margin-left: auto; }
+    hr { margin: 1.15rem 0; }
+}
+
+@media (max-width: 360px) {
+    .login-wrapper { padding-right: 7px; padding-left: 7px; }
+    .login-card-body { padding-right: 14px; padding-left: 14px; }
+    .auth-agency small { display: none; }
+    .login-card-header .dot { width: 9px; height: 9px; }
+}
+
+@media (max-height: 700px) and (max-width: 991.98px) {
+    .login-wrapper { align-items: flex-start; }
+    .login-card-body { padding-top: 18px; padding-bottom: 20px; }
+    .logo-holder { margin-bottom: .9rem; }
+    .auth-seal { width: 46px; height: 46px; }
+    .login-card .subtitle { margin-bottom: 1rem; }
+    .login-card form .mb-4 { margin-bottom: 1rem !important; }
+    .small-footer { line-height: 1.45; }
+}
 </style>
 
 </head>
@@ -716,7 +784,7 @@ hr {
 
     <div class="kpi">
         <div class="glass">
-            <h2>1</h2>
+            <h2 id="activeCameraCount" aria-live="polite">0</h2>
             <small>Active Camera</small>
         </div>
         <div class="glass">
@@ -784,12 +852,11 @@ hr {
                 </div>
             </div>
 
-            <div class="d-flex justify-content-between align-items-center mb-4">
+            <div class="d-flex align-items-center mb-4">
                 <div class="form-check d-flex align-items-center gap-2">
                     <input class="form-check-input" type="checkbox" id="remember" name="remember">
                     <label class="form-check-label" for="remember">Remember me</label>
                 </div>
-                <a href="#" class="forgot-link">Forgot Password?</a>
             </div>
 
             <button class="btn btn-signin w-100 py-2">
@@ -824,6 +891,27 @@ document.getElementById('togglePassword').addEventListener('click', function () 
     icon.classList.toggle('bi-eye-slash');
     this.setAttribute('aria-label', isPassword ? 'Hide password' : 'Show password');
 });
+
+(function updateActiveCameraCount() {
+    var counter = document.getElementById('activeCameraCount');
+    if (!counter) return;
+
+    fetch('../api/public_camera_status.php', { cache: 'no-store' })
+        .then(function (response) {
+            if (!response.ok) throw new Error('Camera status unavailable');
+            return response.json();
+        })
+        .then(function (payload) {
+            var count = Number(payload.active_camera_count);
+            counter.textContent = Number.isFinite(count) && count > 0 ? String(Math.floor(count)) : '0';
+        })
+        .catch(function () {
+            counter.textContent = '0';
+        })
+        .finally(function () {
+            window.setTimeout(updateActiveCameraCount, 10000);
+        });
+})();
 </script>
 
 </body>

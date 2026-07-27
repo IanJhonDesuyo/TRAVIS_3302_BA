@@ -1,16 +1,16 @@
 <?php
 require_once __DIR__ . '/layout.php';
 
-$critical = scalar("SELECT COUNT(*) FROM monitoring_alerts WHERE severity='critical'", 0);
-$warning = scalar("SELECT COUNT(*) FROM monitoring_alerts WHERE severity='warning'", 0);
-$info = scalar("SELECT COUNT(*) FROM monitoring_alerts WHERE severity='info'", 0);
+$critical = scalar("SELECT COUNT(*) FROM monitoring_alerts WHERE severity='critical' AND status IN ('active','acknowledged')", 0);
+$warning = scalar("SELECT COUNT(*) FROM monitoring_alerts WHERE severity='warning' AND status IN ('active','acknowledged')", 0);
+$info = scalar("SELECT COUNT(*) FROM monitoring_alerts WHERE severity='info' AND status IN ('active','acknowledged')", 0);
 $resolved = scalar("SELECT COUNT(*) FROM monitoring_alerts WHERE status='resolved'", 0);
 
 $alerts = fetch_all("
     SELECT a.*, u.full_name AS ack_by 
     FROM monitoring_alerts a 
     LEFT JOIN users u ON u.user_id = a.acknowledged_by 
-    ORDER BY a.generated_at DESC 
+    ORDER BY FIELD(a.status, 'active', 'acknowledged', 'resolved'), a.generated_at DESC 
     LIMIT 50
 ");
 

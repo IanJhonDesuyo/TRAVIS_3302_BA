@@ -1,5 +1,6 @@
 <?php
-require_once __DIR__ . '/../db_connect.php';
+require_once __DIR__ . '/../Web_app/Admin/db_connect.php';
+require_once __DIR__ . '/service_auth.php';
 header('Content-Type: application/json');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -8,8 +9,14 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-$data = json_decode(file_get_contents('php://input'), true);
-if (!is_array($data)) $data = $_POST;
+$rawBody = (string)file_get_contents('php://input');
+travis_require_service_request($rawBody);
+$data = json_decode($rawBody, true);
+if (!is_array($data)) {
+    http_response_code(400);
+    echo json_encode(['success' => false, 'message' => 'A valid JSON request body is required']);
+    exit;
+}
 
 $cameraId = (int)($data['camera_id'] ?? 1);
 $vehicleCount = (int)($data['vehicle_count'] ?? 0);
@@ -20,6 +27,16 @@ $officer = $data['officer_presence'] ?? 'unknown';
 $collision = $data['potential_collision'] ?? 'none';
 $notes = $data['incident_notes'] ?? null;
 $alertGenerated = (int)($data['alert_generated'] ?? 0);
+
+if ($cameraId <= 0 || $vehicleCount < 0 || $inboundCount < 0 || $outboundCount < 0
+    || !in_array($congestion, ['none', 'low', 'moderate', 'heavy', 'severe'], true)
+    || !in_array($officer, ['none', 'detected', 'multiple', 'unknown'], true)
+    || !in_array($collision, ['none', 'possible', 'confirmed'], true)
+    || !in_array($alertGenerated, [0, 1], true)) {
+    http_response_code(422);
+    echo json_encode(['success' => false, 'message' => 'Invalid monitoring values']);
+    exit;
+}
 
 $stmt = $conn->prepare("INSERT INTO camera_monitoring_logs (camera_id, vehicle_count, inbound_count, outbound_count, congestion_level, officer_presence, potential_collision, incident_notes, alert_generated) VALUES (?,?,?,?,?,?,?,?,?)");
 $stmt->bind_param('iiiissssi', $cameraId, $vehicleCount, $inboundCount, $outboundCount, $congestion, $officer, $collision, $notes, $alertGenerated);

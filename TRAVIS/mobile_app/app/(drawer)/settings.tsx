@@ -13,8 +13,6 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import { useRouter } from 'expo-router';
-import { Picker } from '@react-native-picker/picker';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../../api/axiosConfig';
 
@@ -67,18 +65,15 @@ const SettingInput = ({ label, value, onChangeText, disabled = false, keyboardTy
 
 // ========== SCREEN ==========
 export default function SettingsScreen() {
-  const router = useRouter();
   const [loading, setLoading] = useState(true);
-
-  const [congestionTrigger, setCongestionTrigger] = useState('');
-  const [alertCooldown, setAlertCooldown] = useState('');
-  const [officerAbsence, setOfficerAbsence] = useState('');
-  const [collisionStationary, setCollisionStationary] = useState('');
-  const [flaskApiUrl, setFlaskApiUrl] = useState('');
-  const [rtspSource, setRtspSource] = useState('');
-  const [sessionTimeout, setSessionTimeout] = useState('');
-  const [passwordPolicy, setPasswordPolicy] = useState('');
-  const [notifications, setNotifications] = useState({ congestion: true, officer: true, collision: true });
+  const [congestionLightMax, setCongestionLightMax] = useState('5');
+  const [congestionHeavyMin, setCongestionHeavyMin] = useState('13');
+  const [alertCooldownSeconds, setAlertCooldownSeconds] = useState('300');
+  const [confidenceThreshold, setConfidenceThreshold] = useState('0.50');
+  const [officerDetection, setOfficerDetection] = useState(true);
+  const [collisionDetection, setCollisionDetection] = useState(false);
+  const [notifyCongestion, setNotifyCongestion] = useState(true);
+  const [notifyCollision, setNotifyCollision] = useState(true);
   const [saving, setSaving] = useState(false);
 
   // ===== FETCH SETTINGS =====
@@ -88,15 +83,14 @@ export default function SettingsScreen() {
       const res = await api.get('get_settings.php');
       if (res.data.success) {
         const data = res.data.data;
-        setCongestionTrigger(data.congestion_trigger || '1500');
-        setAlertCooldown(data.alert_cooldown || '15');
-        setOfficerAbsence(data.officer_absence || '30');
-        setCollisionStationary(data.collision_stationary || '10');
-        setFlaskApiUrl(data.flask_api_url || 'http://localhost:5000');
-        setRtspSource(data.rtsp_source || 'rtsp://username:password@camera-ip:554/stream1');
-        setSessionTimeout(data.session_timeout || '30');
-        setPasswordPolicy(data.password_policy || 'Strong (12+ chars)');
-        if (data.notifications) setNotifications(data.notifications);
+        setCongestionLightMax(String(data.congestion_light_max));
+        setCongestionHeavyMin(String(data.congestion_heavy_min));
+        setAlertCooldownSeconds(String(data.alert_cooldown_seconds));
+        setConfidenceThreshold(Number(data.confidence_threshold).toFixed(2));
+        setOfficerDetection(Boolean(data.enable_officer_detection));
+        setCollisionDetection(Boolean(data.enable_collision_detection));
+        setNotifyCongestion(Boolean(data.notify_congestion));
+        setNotifyCollision(Boolean(data.notify_collision));
       }
     } catch (error) {
       Alert.alert('Error', 'Failed to load settings.');
@@ -111,27 +105,46 @@ export default function SettingsScreen() {
 
   // ===== SAVE SETTINGS =====
   const saveSettings = async () => {
+    const lightMax = Number(congestionLightMax);
+    const heavyMin = Number(congestionHeavyMin);
+    const cooldown = Number(alertCooldownSeconds);
+    const confidence = Number(confidenceThreshold);
+    if (!Number.isInteger(lightMax) || lightMax < 0 || lightMax > 100) {
+      Alert.alert('Invalid setting', 'Light congestion maximum must be a whole number from 0 to 100.');
+      return;
+    }
+    if (!Number.isInteger(heavyMin) || heavyMin < 1 || heavyMin > 200 || heavyMin <= lightMax) {
+      Alert.alert('Invalid setting', 'Heavy congestion must be a whole number above the light maximum, up to 200.');
+      return;
+    }
+    if (!Number.isInteger(cooldown) || cooldown < 0 || cooldown > 86400) {
+      Alert.alert('Invalid setting', 'Alert cooldown must be a whole number from 0 to 86,400 seconds.');
+      return;
+    }
+    if (!Number.isFinite(confidence) || confidence < 0.1 || confidence > 1) {
+      Alert.alert('Invalid setting', 'Confidence threshold must be from 0.10 to 1.00.');
+      return;
+    }
     setSaving(true);
     try {
       const payload = {
-        congestion_trigger: congestionTrigger,
-        alert_cooldown: alertCooldown,
-        officer_absence: officerAbsence,
-        collision_stationary: collisionStationary,
-        flask_api_url: flaskApiUrl,
-        rtsp_source: rtspSource,
-        session_timeout: sessionTimeout,
-        password_policy: passwordPolicy,
-        notifications,
+        congestion_light_max: lightMax,
+        congestion_heavy_min: heavyMin,
+        alert_cooldown_seconds: cooldown,
+        confidence_threshold: confidence,
+        enable_officer_detection: officerDetection,
+        enable_collision_detection: collisionDetection,
+        notify_congestion: notifyCongestion,
+        notify_collision: notifyCollision,
       };
       const res = await api.post('update_settings.php', payload);
       if (res.data.success) {
-        Alert.alert('Success', 'Settings saved.');
+        Alert.alert('Settings saved', res.data.message || 'Your changes were saved.');
       } else {
         Alert.alert('Error', res.data.error || 'Failed to save.');
       }
-    } catch (error) {
-      Alert.alert('Error', 'Network error.');
+    } catch (error: any) {
+      Alert.alert('Unable to save', error?.response?.data?.error || 'Check your connection and try again.');
     } finally {
       setSaving(false);
     }
@@ -159,27 +172,33 @@ export default function SettingsScreen() {
             </View>
             <View>
               <Text style={styles.brandName}>SYSTEM SETTINGS</Text>
-              <Text style={styles.brandSubtitle}>CV thresholds, notifications, integrations, and security</Text>
+              <Text style={styles.brandSubtitle}>Detection thresholds and notification preferences</Text>
             </View>
           </View>
         </View>
 
         {/* Traffic Thresholds */}
         <SectionCard title="Traffic Thresholds">
-          <SettingInput label="Congestion Trigger (vehicles/hr)" value={congestionTrigger} onChangeText={setCongestionTrigger} keyboardType="numeric" />
-          <SettingInput label="Alert Cooldown (minutes)" value={alertCooldown} onChangeText={setAlertCooldown} keyboardType="numeric" />
-          <SettingInput label="Officer Absence Threshold (minutes)" value={officerAbsence} onChangeText={setOfficerAbsence} keyboardType="numeric" />
-          <SettingInput label="Potential Collision Stationary Threshold (seconds)" value={collisionStationary} onChangeText={setCollisionStationary} keyboardType="numeric" />
+          <SettingInput label="Light Congestion Maximum (visible vehicles)" value={congestionLightMax} onChangeText={setCongestionLightMax} keyboardType="number-pad" />
+          <SettingInput label="Heavy Congestion Starts At (visible vehicles)" value={congestionHeavyMin} onChangeText={setCongestionHeavyMin} keyboardType="number-pad" />
+          <SettingInput label="Alert Cooldown (seconds)" value={alertCooldownSeconds} onChangeText={setAlertCooldownSeconds} keyboardType="number-pad" />
         </SectionCard>
 
         {/* Computer Vision Integration */}
         <SectionCard title="Computer Vision Integration">
-          <SettingInput label="Flask API URL" value={flaskApiUrl} onChangeText={setFlaskApiUrl} />
-          <SettingInput label="RTSP Camera Source" value={rtspSource} onChangeText={setRtspSource} />
+          <SettingInput label="Confidence Threshold (0.10–1.00)" value={confidenceThreshold} onChangeText={setConfidenceThreshold} keyboardType="decimal-pad" />
+          <View style={styles.switchRow}>
+            <Text style={styles.switchLabel}>Officer presence detection</Text>
+            <Switch value={officerDetection} onValueChange={setOfficerDetection} trackColor={{ false: COLORS.border, true: COLORS.primary }} thumbColor="#fff" />
+          </View>
+          <View style={[styles.switchRow, { borderBottomWidth: 0 }]}>
+            <Text style={styles.switchLabel}>Potential collision detection</Text>
+            <Switch value={collisionDetection} onValueChange={setCollisionDetection} trackColor={{ false: COLORS.border, true: COLORS.primary }} thumbColor="#fff" />
+          </View>
           <View style={styles.helperRow}>
             <Ionicons name="hardware-chip-outline" size={13} color={COLORS.textTertiary} style={{ marginRight: 6 }} />
             <Text style={styles.helperText}>
-              These fields are placeholders for later integration with Tapo C210, YOLOv8, and OpenCV.
+              Detection changes apply the next time analysis starts. Camera source remains in Live Monitoring.
             </Text>
           </View>
         </SectionCard>
@@ -192,20 +211,8 @@ export default function SettingsScreen() {
               <Text style={styles.switchLabel}>Critical congestion alerts</Text>
             </View>
             <Switch
-              value={notifications.congestion}
-              onValueChange={(val) => setNotifications({ ...notifications, congestion: val })}
-              trackColor={{ false: COLORS.border, true: COLORS.primary }}
-              thumbColor="#fff"
-            />
-          </View>
-          <View style={styles.switchRow}>
-            <View style={styles.switchLabelCol}>
-              <View style={[styles.switchDot, { backgroundColor: COLORS.warning }]} />
-              <Text style={styles.switchLabel}>Officer absence alerts</Text>
-            </View>
-            <Switch
-              value={notifications.officer}
-              onValueChange={(val) => setNotifications({ ...notifications, officer: val })}
+              value={notifyCongestion}
+              onValueChange={setNotifyCongestion}
               trackColor={{ false: COLORS.border, true: COLORS.primary }}
               thumbColor="#fff"
             />
@@ -216,32 +223,18 @@ export default function SettingsScreen() {
               <Text style={styles.switchLabel}>Potential collision alerts</Text>
             </View>
             <Switch
-              value={notifications.collision}
-              onValueChange={(val) => setNotifications({ ...notifications, collision: val })}
+              value={notifyCollision}
+              onValueChange={setNotifyCollision}
               trackColor={{ false: COLORS.border, true: COLORS.primary }}
               thumbColor="#fff"
             />
           </View>
         </SectionCard>
 
-        {/* Security */}
-        <SectionCard title="Security">
-          <SettingInput label="Session Timeout (minutes)" value={sessionTimeout} onChangeText={setSessionTimeout} keyboardType="numeric" />
-          <View style={styles.settingGroup}>
-            <Text style={styles.settingLabel}>Password Policy</Text>
-            <View style={styles.pickerWrapper}>
-              <Picker
-                selectedValue={passwordPolicy}
-                onValueChange={setPasswordPolicy}
-                style={styles.picker}
-                dropdownIconColor={COLORS.primary}
-                enabled={true}
-              >
-                <Picker.Item label="Strong (12+ chars)" value="Strong (12+ chars)" />
-                <Picker.Item label="Standard (8+ chars)" value="Standard (8+ chars)" />
-              </Picker>
-            </View>
-          </View>
+        <SectionCard title="Runtime Information">
+          <View style={styles.runtimeRow}><Text style={styles.runtimeLabel}>Live Stream</Text><Text style={styles.runtimeValue}>Port 5000</Text></View>
+          <View style={styles.runtimeRow}><Text style={styles.runtimeLabel}>Detection Model</Text><Text style={styles.runtimeValue}>YOLOv8n</Text></View>
+          <View style={[styles.runtimeRow, { borderBottomWidth: 0 }]}><Text style={styles.runtimeLabel}>Settings Storage</Text><Text style={styles.runtimeValue}>Database</Text></View>
         </SectionCard>
 
         {/* Save button */}
@@ -299,11 +292,9 @@ const styles = StyleSheet.create({
   switchDot: { width: 6, height: 6, borderRadius: 3, marginRight: 10 },
   switchLabel: { fontSize: 13, color: COLORS.textPrimary, fontWeight: '500', flex: 1 },
 
-  pickerWrapper: {
-    backgroundColor: COLORS.bg, borderRadius: 12, borderWidth: 1, borderColor: COLORS.border,
-    height: 46, justifyContent: 'center', overflow: 'hidden',
-  },
-  picker: { height: 46, width: '100%', color: COLORS.textPrimary },
+  runtimeRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  runtimeLabel: { fontSize: 13, color: COLORS.textSecondary },
+  runtimeValue: { fontSize: 13, color: COLORS.textPrimary, fontWeight: '700' },
 
   saveButton: {
     flexDirection: 'row',

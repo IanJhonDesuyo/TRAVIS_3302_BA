@@ -1,92 +1,58 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Ionicons } from '@expo/vector-icons';
+import { Href, useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  ScrollView,
+  Image,
+  ImageBackground,
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
-  Modal,
-  Pressable,
-  Image,
-  ImageBackground,
-  Alert,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { Href, useRouter } from 'expo-router';
-import LoginSuccessModal from '../../components/LoginSuccessModal';
 import api, { APP_ROOT_URL } from '../../api/axiosConfig';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-
-type OrgType = 'LGU' | 'BSU';
-
-interface StatItemProps {
-  value: string;
-  label: string;
-}
-
-function StatItem({ value, label }: StatItemProps) {
-  return (
-    <View style={styles.statBox}>
-      <Text style={styles.statValue}>{value}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
-    </View>
-  );
-}
+import LoginSuccessModal from '../../components/LoginSuccessModal';
 
 export default function LoginScreen() {
   const router = useRouter();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+  const [successVisible, setSuccessVisible] = useState(false);
+  const [loggedInName, setLoggedInName] = useState('');
+  const [loggedInRole, setLoggedInRole] = useState('');
 
-  const [modalVisible, setModalVisible] = useState<boolean>(false);
-  const [selectedOrg, setSelectedOrg] = useState<OrgType>('LGU');
-  const [email, setEmail] = useState<string>('');
-  const [password, setPassword] = useState<string>('');
-  const [showPassword, setShowPassword] = useState<boolean>(false);
-  const [rememberMe, setRememberMe] = useState<boolean>(false);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [errorMsg, setErrorMsg] = useState<string>('');
-  const [successVisible, setSuccessVisible] = useState<boolean>(false);
-  const [loggedInName, setLoggedInName] = useState<string>('');
-  const [loggedInRole, setLoggedInRole] = useState<string>('');
-
-  const handleSignIn = async (): Promise<void> => {
-    if (!email || !password) {
-      setErrorMsg("Please enter both email/username and password.");
-      return;
-    }
-
-    setErrorMsg("");
+  const handleSignIn = async () => {
+    if (!email.trim() || !password) { setErrorMsg('Please enter both email/username and password.'); return; }
+    setErrorMsg('');
     setIsLoading(true);
-
     try {
-      const response = await api.post('login.php', { email, password });
-
+      const response = await api.post('login.php', { email: email.trim(), password });
       if (response.data.success) {
         const user = response.data.user;
         await AsyncStorage.setItem('travis_user', JSON.stringify(user));
         setLoggedInName(user.full_name);
         setLoggedInRole(user.role || '');
-        setModalVisible(false);
         setSuccessVisible(true);
-      } else {
-        setErrorMsg(response.data.error || 'Invalid credentials');
-      }
+      } else setErrorMsg(response.data.error || 'Invalid credentials');
     } catch (error: any) {
-      console.error('Login error:', error);
       setErrorMsg(error.response?.data?.error || 'Network error. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
+    } finally { setIsLoading(false); }
   };
 
-  const handleContinueToDashboard = (): void => {
+  const continueToDashboard = () => {
     setSuccessVisible(false);
-    const normalizedRole = loggedInRole.trim().toLowerCase();
-    const isTreasurer = normalizedRole === 'treasurer' || normalizedRole === 'treasury personnel';
-    router.replace((isTreasurer ? "/(treasurer)/dashboard" : "/(drawer)/dashboard") as Href);
+    const role = loggedInRole.trim().toLowerCase();
+    const route = role === 'treasurer' || role === 'treasury personnel' ? '/(treasurer)/dashboard' : '/(drawer)/dashboard';
+    router.replace(route as Href);
   };
 
   return (
@@ -94,411 +60,75 @@ export default function LoginScreen() {
       <View pointerEvents="none" style={styles.backgroundWash} />
       <View pointerEvents="none" style={styles.backgroundShade} />
       <SafeAreaView style={styles.safeArea}>
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-        >
-          {/* Info card */}
-          <View style={styles.infoCard}>
-            <View style={styles.brandRow}>
-              <Image source={{ uri: `${APP_ROOT_URL}assets/images/nasugbu-seal.jpg` }} style={styles.seal} />
-              <View style={{ flex: 1 }}><Text style={styles.brandName}>NASUGBU · TMO</Text><Text style={styles.brandSub}>Traffic Management Office</Text></View>
-              <View style={styles.officialDot}><Ionicons name="checkmark" size={12} color="#FFFFFF" /></View>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.safeArea}>
+          <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            <TouchableOpacity style={styles.backLink} onPress={() => router.replace('/' as Href)}><Ionicons name="arrow-back" size={17} color="#17304B" /><Text style={styles.backText}>Back to TRAVIS</Text></TouchableOpacity>
+
+            <View style={styles.card}>
+              <View style={styles.brandRow}>
+                <Image source={{ uri: `${APP_ROOT_URL}assets/images/nasugbu-seal.jpg` }} style={styles.seal} />
+                <View style={styles.brandCopy}><Text style={styles.brandName}>NASUGBU · TMO</Text><Text style={styles.brandSub}>Traffic Management Office</Text></View>
+                <View style={styles.officialDot}><Ionicons name="checkmark" size={12} color="#fff" /></View>
+              </View>
+              <Text style={styles.welcomeText}>Welcome Back</Text>
+              <Text style={styles.welcomeSub}>Authorized Personnel Only</Text>
+
+              <Text style={styles.label}>EMAIL / USERNAME</Text>
+              <View style={styles.inputWrapper}>
+                <Ionicons name="mail-outline" size={18} color="#cbd6dc" style={styles.inputIcon} />
+                <TextInput style={styles.input} placeholder="Enter email address" placeholderTextColor="#b4c0c7" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" />
+              </View>
+              <Text style={styles.label}>PASSWORD</Text>
+              <View style={styles.inputWrapper}>
+                <Ionicons name="lock-closed-outline" size={18} color="#cbd6dc" style={styles.inputIcon} />
+                <TextInput style={styles.input} placeholder="Enter password" placeholderTextColor="#b4c0c7" value={password} onChangeText={setPassword} secureTextEntry={!showPassword} />
+                <TouchableOpacity onPress={() => setShowPassword(!showPassword)} accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}><Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={19} color="#cbd6dc" /></TouchableOpacity>
+              </View>
+              {errorMsg ? <Text style={styles.errorText}>{errorMsg}</Text> : null}
+
+              <View style={styles.optionsRow}>
+                <TouchableOpacity style={styles.rememberRow} onPress={() => setRememberMe(!rememberMe)}><View style={[styles.checkbox, rememberMe && styles.checkboxChecked]}>{rememberMe && <Ionicons name="checkmark" size={12} color="#fff" />}</View><Text style={styles.rememberText}>Remember me</Text></TouchableOpacity>
+              </View>
+              <TouchableOpacity style={[styles.signInButton, isLoading && styles.disabled]} onPress={handleSignIn} disabled={isLoading}>{!isLoading && <Ionicons name="log-in-outline" size={18} color="#fff" style={styles.signInIcon} />}<Text style={styles.signInText}>{isLoading ? 'Signing In...' : 'Sign In'}</Text></TouchableOpacity>
+              <View style={styles.divider} />
+              <Text style={styles.footerText}>Traffic Violation Recognition and AI Surveillance</Text><Text style={styles.footerSub}>Powered by Artificial Intelligence</Text>
             </View>
-            <View style={styles.eyebrowRow}><View style={styles.eyebrowLine} /><Text style={styles.eyebrow}>AI SMART TRAFFIC COMMAND CENTER</Text></View>
-            <Text style={styles.title}>Plan ahead.</Text>
-            <Text style={styles.titleAccent}>Travel safer.</Text>
-            <Text style={styles.subtitle}>TRAVIS · Traffic Violation Recognition and AI Surveillance</Text>
 
-            <Text style={styles.description}>
-              Official intelligent traffic monitoring for violations, congestion,
-              collisions, and safer road conditions across Nasugbu.
-            </Text>
-
-            <View style={styles.statsRow}>
-              <StatItem value="Live" label="Traffic outlook" />
-              <StatItem value="AI" label="Monitoring" />
-              <StatItem value="24/7" label="Operations" />
-            </View>
-
-            <TouchableOpacity
-              style={styles.loginButton}
-              onPress={() => setModalVisible(true)}
-            >
-              <Ionicons name="log-in-outline" size={18} color="#fff" style={{ marginRight: 8 }} />
-              <Text style={styles.loginButtonText}>Personnel Login</Text>
-              <Ionicons name="arrow-forward" size={17} color="#fff" style={{ marginLeft: 8 }} />
-            </TouchableOpacity>
-
-            <View style={styles.footerRow}>
-              <Ionicons name="shield-checkmark-outline" size={13} color="#137B70" />
-              <Text style={styles.copyright}>
-                {'  '}Official municipal traffic information system
-              </Text>
-            </View>
-          </View>
-        </ScrollView>
-
-        {/* Login modal */}
-        <Modal
-          visible={modalVisible}
-          animationType="slide"
-          transparent
-          onRequestClose={() => setModalVisible(false)}
-        >
-          <View style={styles.modalOverlay}>
-            <Pressable style={styles.modalBackdrop} onPress={() => setModalVisible(false)} />
-
-            <KeyboardAvoidingView
-              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-              style={styles.modalWrapper}
-            >
-              <ScrollView
-                contentContainerStyle={styles.modalScrollContent}
-                keyboardShouldPersistTaps="handled"
-              >
-                <View style={styles.card}>
-                  <TouchableOpacity
-                    style={styles.closeButton}
-                    onPress={() => setModalVisible(false)}
-                  >
-                    <Ionicons name="close" size={22} color="#e2e8f0" />
-                  </TouchableOpacity>
-
-                  <View style={styles.orgRow}>
-                    <TouchableOpacity
-                      style={[styles.orgCircle, selectedOrg === 'LGU' && styles.orgCircleActive]}
-                      onPress={() => setSelectedOrg('LGU')}
-                    >
-                      <Text style={[styles.orgText, selectedOrg === 'LGU' && styles.orgTextActive]}>
-                        LGU
-                      </Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={[styles.orgCircle, selectedOrg === 'BSU' && styles.orgCircleActive]}
-                      onPress={() => setSelectedOrg('BSU')}
-                    >
-                      <Text style={[styles.orgText, selectedOrg === 'BSU' && styles.orgTextActive]}>
-                        BSU
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  <Text style={styles.welcomeText}>Welcome Back</Text>
-                  <Text style={styles.welcomeSub}>Authorized Personnel Only</Text>
-
-                  <Text style={styles.label}>Email / Username</Text>
-                  <View style={styles.inputWrapper}>
-                    <Ionicons name="mail-outline" size={18} color="#8a96a3" style={styles.inputIcon} />
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Enter email address"
-                      placeholderTextColor="#8a96a3"
-                      value={email}
-                      onChangeText={setEmail}
-                      autoCapitalize="none"
-                      keyboardType="email-address"
-                    />
-                  </View>
-
-                  <Text style={styles.label}>Password</Text>
-                  <View style={styles.inputWrapper}>
-                    <Ionicons name="lock-closed-outline" size={18} color="#8a96a3" style={styles.inputIcon} />
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Enter password"
-                      placeholderTextColor="#8a96a3"
-                      value={password}
-                      onChangeText={setPassword}
-                      secureTextEntry={!showPassword}
-                    />
-                    <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-                      <Ionicons
-                        name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                        size={18}
-                        color="#8a96a3"
-                      />
-                    </TouchableOpacity>
-                  </View>
-
-                  {errorMsg ? <Text style={styles.errorText}>{errorMsg}</Text> : null}
-
-                  <View style={styles.optionsRow}>
-                    <TouchableOpacity
-                      style={styles.rememberRow}
-                      onPress={() => setRememberMe(!rememberMe)}
-                    >
-                      <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]}>
-                        {rememberMe && <Ionicons name="checkmark" size={12} color="#fff" />}
-                      </View>
-                      <Text style={styles.rememberText}>Remember me</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity onPress={() => Alert.alert('Forgot Password', 'Contact a TRAVIS administrator to verify your account and reset your password.')}>
-                      <Text style={styles.forgotText}>Forgot Password?</Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  <TouchableOpacity
-                    style={[styles.signInButton, isLoading && styles.signInButtonDisabled]}
-                    onPress={handleSignIn}
-                    disabled={isLoading}
-                  >
-                    {!isLoading && (
-                      <Ionicons name="log-in-outline" size={18} color="#fff" style={{ marginRight: 8 }} />
-                    )}
-                    <Text style={styles.signInText}>{isLoading ? 'Signing In...' : 'Sign In'}</Text>
-                  </TouchableOpacity>
-
-                  <View style={styles.divider} />
-
-                  <Text style={styles.footerText}>
-                    Traffic Violation Recognition and AI Surveillance
-                  </Text>
-                  <Text style={styles.footerSub}>Powered by Artificial Intelligence</Text>
-                </View>
-              </ScrollView>
-            </KeyboardAvoidingView>
-          </View>
-        </Modal>
-
-        {/* Success modal - lumalabas pagkatapos ng matagumpay na login */}
-        <LoginSuccessModal
-          visible={successVisible}
-          userName={loggedInName}
-          onContinue={handleContinueToDashboard}
-        />
+            <View style={styles.footerRow}><Ionicons name="shield-checkmark-outline" size={13} color="#17304b" /><Text style={styles.copyright}>  Official municipal traffic information system</Text></View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+        <LoginSuccessModal visible={successVisible} userName={loggedInName} onContinue={continueToDashboard} />
       </SafeAreaView>
     </ImageBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  background: { flex: 1 },
-  backgroundWash: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(247,244,235,0.82)' },
-  backgroundShade: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(247,244,235,0.10)' },
-  safeArea: { flex: 1 },
-  scrollContent: {
-    flexGrow: 1,
-    alignItems: 'center',
-    justifyContent: 'center', paddingHorizontal: 18, paddingVertical: 28,
-  },
-
-  infoCard: {
-    width: '100%',
-    maxWidth: 420,
-    backgroundColor: 'rgba(247,244,235,0.90)',
-    borderRadius: 22, padding: 22,
-    borderWidth: 1,
-    borderColor: 'rgba(11,39,66,0.14)',
-    shadowColor: '#071B2E', shadowOffset: { width: 0, height: 16 }, shadowOpacity: 0.20, shadowRadius: 28, elevation: 10,
-  },
-  brandRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 34 },
-  seal: { width: 52, height: 52, borderRadius: 26, borderWidth: 3, borderColor: '#FFFFFF', marginRight: 11 },
-  brandName: { color: '#0B2742', fontSize: 14, fontWeight: '900', letterSpacing: .4 },
-  brandSub: { color: '#60716B', fontSize: 10, marginTop: 3 },
-  officialDot: { width: 25, height: 25, borderRadius: 13, backgroundColor: '#137B70', alignItems: 'center', justifyContent: 'center' },
-  eyebrowRow: { flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 12 },
-  eyebrowLine: { width: 28, height: 3, backgroundColor: '#EA9625' },
-  eyebrow: { color: '#137B70', fontSize: 9, fontWeight: '900', letterSpacing: 1.1, flexShrink: 1 },
-  badge: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#22d3ee',
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 6,
-    marginBottom: 14,
-  },
-  badgeText: { color: '#0b3b45', fontWeight: '600', fontSize: 11 },
-  title: {
-    fontSize: 42, fontWeight: '900', color: '#0B2742', letterSpacing: -1.8, lineHeight: 44,
-  },
-  titleAccent: { fontSize: 42, fontWeight: '900', color: '#137B70', letterSpacing: -1.8, lineHeight: 44 },
-  subtitle: {
-    fontSize: 10, color: '#137B70', marginTop: 14, marginBottom: 10, fontWeight: '800', letterSpacing: .2,
-  },
-  description: {
-    fontSize: 13,
-    color: '#475D56', lineHeight: 20,
-    marginBottom: 20,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 24,
-  },
-  statBox: {
-    flex: 1,
-    backgroundColor: 'rgba(255,255,255,0.58)',
-    borderRadius: 10,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginHorizontal: 4,
-  },
-  statValue: { color: '#0B2742', fontSize: 17, fontWeight: '900' },
-  statLabel: {
-    color: '#60716B',
-    fontSize: 10,
-    textAlign: 'center',
-    marginTop: 4,
-  },
-  loginButton: {
-    flexDirection: 'row',
-    backgroundColor: '#0B2742', borderRadius: 8,
-    paddingVertical: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 18, borderBottomWidth: 5, borderBottomColor: '#EA9625',
-  },
-  loginButtonText: { color: '#fff', fontWeight: '700', fontSize: 15 },
-  footerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  copyright: {
-    color: '#60716B',
-    fontSize: 10,
-    textAlign: 'center',
-  },
-
-  modalOverlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-  },
-  modalBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  modalWrapper: {
-    maxHeight: '90%',
-  },
-  modalScrollContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 30,
-  },
-
-  card: {
-    width: '100%',
-    backgroundColor: '#4b5866',
-    borderRadius: 20,
-    padding: 24,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
-    marginTop: 12,
-  },
-  closeButton: {
-    position: 'absolute',
-    top: 14,
-    right: 14,
-    zIndex: 10,
-    padding: 4,
-  },
-  orgRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginBottom: 16,
-  },
-  orgCircle: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginHorizontal: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.25)',
-  },
-  orgCircleActive: {
-    backgroundColor: '#2563eb',
-    borderColor: '#2563eb',
-  },
-  orgText: { color: '#e2e8f0', fontWeight: '700', fontSize: 13 },
-  orgTextActive: { color: '#fff' },
-  welcomeText: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#fff',
-    textAlign: 'center',
-    marginBottom: 2,
-  },
-  welcomeSub: {
-    fontSize: 12,
-    color: '#e2e8f0',
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  label: { color: '#e2e8f0', fontSize: 13, marginBottom: 6, marginTop: 10 },
-  inputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-  },
-  inputIcon: { marginRight: 8 },
-  input: {
-    flex: 1,
-    color: '#fff',
-    paddingVertical: 12,
-    fontSize: 14,
-  },
-  errorText: {
-    color: '#fca5a5',
-    fontSize: 12,
-    marginTop: 10,
-  },
-  optionsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 14,
-    marginBottom: 20,
-  },
-  rememberRow: { flexDirection: 'row', alignItems: 'center' },
-  checkbox: {
-    width: 16,
-    height: 16,
-    borderRadius: 3,
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    marginRight: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  checkboxChecked: { backgroundColor: '#2563eb', borderColor: '#2563eb' },
-  rememberText: { color: '#e2e8f0', fontSize: 12 },
-  forgotText: { color: '#67e8f9', fontSize: 12, fontWeight: '600' },
-  signInButton: {
-    flexDirection: 'row',
-    backgroundColor: '#2563eb',
-    borderRadius: 10,
-    paddingVertical: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  signInButtonDisabled: {
-    opacity: 0.7,
-  },
-  signInText: { color: '#fff', fontWeight: '700', fontSize: 15 },
-  divider: {
-    height: 1,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    marginVertical: 18,
-  },
-  footerText: {
-    color: '#e2e8f0',
-    fontSize: 11,
-    textAlign: 'center',
-  },
-  footerSub: {
-    color: '#94a3b8',
-    fontSize: 11,
-    textAlign: 'center',
-    marginTop: 2,
-  },
+  background: { flex: 1 }, safeArea: { flex: 1 },
+  backgroundWash: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(232,241,246,.68)' },
+  backgroundShade: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(12,31,52,.08)' },
+  scrollContent: { flexGrow: 1, paddingHorizontal: 18, paddingTop: 18, paddingBottom: 28 },
+  backLink: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 18, paddingHorizontal: 12, height: 38, borderRadius: 11, backgroundColor: 'rgba(255,255,255,.88)', borderWidth: 1, borderColor: 'rgba(23,48,75,.14)' },
+  backText: { color: '#17304B', fontSize: 11, fontWeight: '800' },
+  livePill: { alignSelf: 'flex-end', flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 11, height: 29, borderRadius: 15, backgroundColor: 'rgba(19,45,68,.62)', borderWidth: 1, borderColor: 'rgba(255,255,255,.24)' },
+  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#2ed66f' }, liveText: { color: '#fff', fontSize: 9, fontWeight: '800', letterSpacing: .7 },
+  heroPanel: { marginTop: 18, marginBottom: 18, padding: 20, borderRadius: 22, backgroundColor: 'rgba(247,250,251,.78)', borderWidth: 1, borderColor: 'rgba(23,48,75,.13)' },
+  eyebrowRow: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 11, paddingVertical: 7, borderRadius: 18, backgroundColor: 'rgba(232,238,244,.86)', borderWidth: 1, borderColor: 'rgba(23,35,79,.16)' },
+  eyebrow: { color: '#17234f', fontSize: 9, fontWeight: '900', letterSpacing: .8 },
+  title: { marginTop: 14, color: '#101a43', fontSize: 48, lineHeight: 52, fontWeight: '900', letterSpacing: -2 },
+  heroSubtitle: { marginTop: 2, color: '#17234f', fontSize: 16, lineHeight: 21, fontWeight: '800' },
+  description: { marginTop: 12, color: '#405877', fontSize: 12.5, lineHeight: 19 },
+  statsRow: { flexDirection: 'row', gap: 8, marginTop: 18 }, statBox: { flex: 1, minHeight: 68, alignItems: 'center', justifyContent: 'center', padding: 8, borderRadius: 13, backgroundColor: 'rgba(255,255,255,.78)', borderWidth: 1, borderColor: 'rgba(23,48,75,.09)' },
+  statValue: { color: '#17234f', fontSize: 16, fontWeight: '900' }, statLabel: { marginTop: 4, color: '#5d7090', fontSize: 8.5, textAlign: 'center', textTransform: 'uppercase' },
+  card: { padding: 22, borderRadius: 24, backgroundColor: 'rgba(28,49,70,.72)', borderWidth: 1, borderColor: 'rgba(255,255,255,.32)', shadowColor: '#071728', shadowOffset: { width: 0, height: 18 }, shadowOpacity: .28, shadowRadius: 28, elevation: 12 },
+  brandRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 22 }, seal: { width: 48, height: 48, borderRadius: 24, borderWidth: 3, borderColor: 'rgba(255,255,255,.9)', marginRight: 11 }, brandCopy: { flex: 1 },
+  brandName: { color: '#fff', fontSize: 15, fontWeight: '900', letterSpacing: .2 }, brandSub: { color: '#d4dde2', fontSize: 10, marginTop: 3 }, officialDot: { width: 25, height: 25, borderRadius: 13, backgroundColor: '#16897f', alignItems: 'center', justifyContent: 'center' },
+  welcomeText: { color: '#fff', fontSize: 26, fontWeight: '900', textAlign: 'center' }, welcomeSub: { color: '#d7dfe4', fontSize: 12, textAlign: 'center', marginTop: 3, marginBottom: 20 },
+  label: { color: '#eef3f5', fontSize: 10, fontWeight: '800', letterSpacing: .5, marginTop: 12, marginBottom: 7 },
+  inputWrapper: { minHeight: 52, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 13, borderRadius: 12, backgroundColor: 'rgba(255,255,255,.10)', borderWidth: 1.5, borderColor: 'rgba(14,30,78,.78)' }, inputIcon: { marginRight: 9 }, input: { flex: 1, color: '#fff', fontSize: 14, paddingVertical: 12 },
+  errorText: { color: '#ffd0d0', fontSize: 12, marginTop: 10 }, optionsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 15, marginBottom: 20 }, rememberRow: { flexDirection: 'row', alignItems: 'center' },
+  checkbox: { width: 17, height: 17, marginRight: 7, alignItems: 'center', justifyContent: 'center', borderRadius: 4, borderWidth: 1, borderColor: '#d7e0e5' }, checkboxChecked: { backgroundColor: '#16897f', borderColor: '#16897f' }, rememberText: { color: '#eef3f5', fontSize: 12 },
+  signInButton: { minHeight: 50, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: '#25377c' }, disabled: { opacity: .65 }, signInIcon: { marginRight: 8 }, signInText: { color: '#fff', fontSize: 15, fontWeight: '800' },
+  divider: { height: 1, marginVertical: 20, backgroundColor: 'rgba(255,255,255,.16)' }, footerText: { color: '#e5ecef', fontSize: 10.5, textAlign: 'center' }, footerSub: { color: '#b9c5cc', fontSize: 10, textAlign: 'center', marginTop: 3 },
+  footerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 17 }, copyright: { color: '#17304b', fontSize: 10, fontWeight: '600' },
 });

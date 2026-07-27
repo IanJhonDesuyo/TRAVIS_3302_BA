@@ -25,6 +25,9 @@ $stmt = $pdo->prepare("SELECT COUNT(*) as count FROM violations WHERE status IN 
 $stmt->execute();
 $pendingViolations = $stmt->fetchColumn();
 
+$stmt = $pdo->query("SELECT COALESCE(SUM(penalty_amount), 0) FROM violations WHERE status IN ('pending', 'overdue')");
+$pendingAmount = $stmt->fetchColumn();
+
 // Get paid violations today
 $stmt = $pdo->prepare("SELECT COUNT(*) as count FROM payments WHERE DATE(payment_date) = ?");
 $stmt->execute([$today]);
@@ -34,6 +37,12 @@ $paidToday = $stmt->fetchColumn();
 $stmt = $pdo->prepare("SELECT COALESCE(SUM(amount_paid), 0) as total FROM payments WHERE DATE(payment_date) = ?");
 $stmt->execute([$today]);
 $collectedToday = $stmt->fetchColumn();
+
+$stmt = $pdo->query("SELECT COALESCE(SUM(amount_paid), 0) FROM payments WHERE payment_status = 'completed' AND YEARWEEK(payment_date, 1) = YEARWEEK(CURDATE(), 1)");
+$collectedThisWeek = $stmt->fetchColumn();
+
+$stmt = $pdo->query("SELECT COALESCE(SUM(amount_paid), 0) FROM payments WHERE payment_status = 'completed' AND YEAR(payment_date) = YEAR(CURDATE()) AND MONTH(payment_date) = MONTH(CURDATE())");
+$collectedThisMonth = $stmt->fetchColumn();
 
 // Get active alerts
 $stmt = $pdo->prepare("SELECT COUNT(*) as count FROM monitoring_alerts WHERE status = 'active'");
@@ -55,8 +64,11 @@ echo json_encode([
     'data' => [
         'violations_today' => (int)$violationsToday,
         'pending_violations' => (int)$pendingViolations,
+        'pending_amount' => (float)$pendingAmount,
         'paid_today' => (int)$paidToday,
         'collected_today' => (float)$collectedToday,
+        'collected_this_week' => (float)$collectedThisWeek,
+        'collected_this_month' => (float)$collectedThisMonth,
         'active_alerts' => (int)$activeAlerts,
         'online_cameras' => (int)$onlineCameras,
         'total_cameras' => (int)$totalCameras

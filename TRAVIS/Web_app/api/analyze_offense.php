@@ -5,7 +5,7 @@ require_once dirname(__DIR__) . '/Admin/helpers.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
-$license = trim((string)($_GET['license_number'] ?? ''));
+$license = strtoupper(trim((string)($_GET['license_number'] ?? '')));
 $plate = strtoupper(trim((string)($_GET['plate_number'] ?? '')));
 $violationType = trim((string)($_GET['violation_type'] ?? ''));
 
@@ -20,7 +20,7 @@ if ($license === '' && $plate === '') {
     exit;
 }
 
-if ($license !== '') {
+if ($license !== '' && $license !== 'NO LICENSE') {
     $stmt = $conn->prepare("SELECT violation_type, violation_date, ticket_number FROM violations WHERE license_number = ? AND status <> 'cancelled' ORDER BY violation_date DESC, violation_id DESC");
     $stmt->bind_param('s', $license);
     $matchedBy = 'license number';

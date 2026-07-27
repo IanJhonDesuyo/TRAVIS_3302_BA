@@ -15,11 +15,14 @@ import {
   Platform,
   Modal,
 } from 'react-native';
-import { useRouter } from 'expo-router';
 import { Picker } from '@react-native-picker/picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import api from '../../api/axiosConfig';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
+import { getStoredUser } from '../../utils/session';
+import { buildOfficialReportHtml } from '../../utils/officialReport';
 
 // ========== COLOR TOKENS ==========
 const COLORS = {
@@ -101,8 +104,6 @@ const statusOptions: { [key: string]: { [key: string]: string } } = {
 
 // ========== SCREEN ==========
 export default function ReportsScreen() {
-  const router = useRouter();
-
   const [reportType, setReportType] = useState<'violations' | 'payments' | 'monitoring'>('violations');
   const [dateFrom, setDateFrom] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [dateTo, setDateTo] = useState(new Date());
@@ -122,6 +123,9 @@ export default function ReportsScreen() {
   const [previewPage, setPreviewPage] = useState(1);
   const [selectedRecord, setSelectedRecord] = useState<ReportRecord | null>(null);
   const [showAllHistory, setShowAllHistory] = useState(false);
+  const [preparedBy, setPreparedBy] = useState('TRAVIS Administrator');
+  const [approvedBy, setApprovedBy] = useState('');
+  const [exportingPdf, setExportingPdf] = useState(false);
   const PREVIEW_PAGE_SIZE = 8;
 
   // ===== FETCH HISTORY =====
@@ -145,6 +149,7 @@ export default function ReportsScreen() {
 
   useEffect(() => {
     fetchHistory();
+    getStoredUser().then(user => { if (user?.full_name) setPreparedBy(user.full_name); });
   }, []);
 
   // ===== GENERATE REPORT =====
@@ -169,7 +174,7 @@ export default function ReportsScreen() {
       } else {
         Alert.alert('Error', response.data.error || 'Failed to generate report.');
       }
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Network error.');
     } finally {
       setLoading(false);
@@ -200,9 +205,41 @@ export default function ReportsScreen() {
     const csv = [headers.join(','), ...rows].join('\n');
     try {
       await Share.share({ message: csv, title: `${previewData.title} CSV` });
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Unable to share CSV.');
     }
+  };
+
+  const officialHtml = () => previewData ? buildOfficialReportHtml({
+    type: reportType,
+    rows: previewData.rows,
+    summary: previewData.summary,
+    dateFrom: dateFrom.toISOString().slice(0, 10),
+    dateTo: dateTo.toISOString().slice(0, 10),
+    statusFilter,
+    locationFilter: reportType === 'payments' ? '' : locationFilter,
+    preparedBy: preparedBy.trim() || 'TRAVIS Administrator',
+    approvedBy: approvedBy.trim(),
+  }) : '';
+
+  const printOfficialReport = async () => {
+    if (!previewData) return;
+    try { await Print.printAsync({ html: officialHtml() }); }
+    catch { Alert.alert('Print unavailable', 'The system print dialog could not be opened.'); }
+  };
+
+  const shareOfficialPdf = async () => {
+    if (!previewData) return;
+    setExportingPdf(true);
+    try {
+      const file = await Print.printToFileAsync({ html: officialHtml(), base64: false });
+      if (!(await Sharing.isAvailableAsync())) {
+        Alert.alert('PDF created', `The official PDF was saved at ${file.uri}`);
+        return;
+      }
+      await Sharing.shareAsync(file.uri, { mimeType: 'application/pdf', dialogTitle: `${previewData.title} — Official PDF`, UTI: 'com.adobe.pdf' });
+    } catch { Alert.alert('PDF unavailable', 'The official PDF could not be generated.'); }
+    finally { setExportingPdf(false); }
   };
 
   const formatDateDisplay = (date: Date) => date.toLocaleDateString('en-PH', { year: 'numeric', month: '2-digit', day: '2-digit' });
@@ -306,6 +343,7 @@ export default function ReportsScreen() {
                 selectedValue={reportType}
                 onValueChange={(itemValue) => setReportType(itemValue)}
                 style={styles.picker}
+                itemStyle={styles.pickerItem}
                 dropdownIconColor={COLORS.primary}
               >
                 <Picker.Item label="Violation Report" value="violations" />
@@ -354,6 +392,7 @@ export default function ReportsScreen() {
                 selectedValue={statusFilter}
                 onValueChange={(itemValue) => setStatusFilter(itemValue)}
                 style={styles.picker}
+                itemStyle={styles.pickerItem}
                 dropdownIconColor={COLORS.primary}
               >
                 {Object.entries(statusOptions[reportType]).map(([value, label]) => (
@@ -390,10 +429,11 @@ export default function ReportsScreen() {
           <>
             <View style={styles.sectionHeaderRow}>
               <Text style={styles.sectionLabel}>{previewData.title.toUpperCase()}</Text>
-              <TouchableOpacity style={styles.exportButton} onPress={shareCSV} activeOpacity={0.7}>
-                <Ionicons name="share-outline" size={13} color={COLORS.primary} />
-                <Text style={styles.exportButtonText}>CSV</Text>
-              </TouchableOpacity>
+              <View style={styles.exportActions}>
+                <TouchableOpacity style={styles.exportButton} onPress={shareCSV} activeOpacity={0.7}><Ionicons name="share-outline" size={13} color={COLORS.primary} /><Text style={styles.exportButtonText}>CSV</Text></TouchableOpacity>
+                <TouchableOpacity style={styles.exportButton} onPress={printOfficialReport} activeOpacity={0.7}><Ionicons name="print-outline" size={13} color={COLORS.primary} /><Text style={styles.exportButtonText}>Print</Text></TouchableOpacity>
+                <TouchableOpacity style={[styles.exportButton, styles.pdfButton]} onPress={shareOfficialPdf} disabled={exportingPdf} activeOpacity={0.7}>{exportingPdf ? <ActivityIndicator size="small" color="#FFF" /> : <Ionicons name="document-text-outline" size={13} color="#FFF" />}<Text style={[styles.exportButtonText, { color: '#FFF' }]}>PDF</Text></TouchableOpacity>
+              </View>
             </View>
             <View style={styles.panel}>
               <Text style={styles.panelSub}>
@@ -401,6 +441,15 @@ export default function ReportsScreen() {
                 {statusFilter && ` · Filter: ${statusFilter}`}
                 {locationFilter && reportType !== 'payments' && ` · Location contains "${locationFilter}"`}
               </Text>
+
+              <View style={styles.certificationPanel}>
+                <View style={styles.certificationHeader}><Ionicons name="ribbon-outline" size={18} color={COLORS.primary} /><View style={{ flex: 1 }}><Text style={styles.certificationTitle}>Official Certification</Text><Text style={styles.certificationSub}>These names appear above the signature lines in the printable report.</Text></View></View>
+                <Text style={styles.label}>Prepared by</Text>
+                <TextInput style={[styles.textInput, styles.disabledInput]} value={preparedBy} editable={false} placeholder="Name of report preparer" placeholderTextColor={COLORS.textTertiary} />
+                <Text style={styles.label}>Reviewed and Approved by</Text>
+                <TextInput style={styles.textInput} value={approvedBy} onChangeText={setApprovedBy} placeholder="Approving official (optional before printing)" placeholderTextColor={COLORS.textTertiary} />
+                <Text style={styles.certificationText}>I certify that this report was generated from the official TRAVIS records for the stated period. Printed copies require signatures and dates to complete certification.</Text>
+              </View>
 
               {/* Summary */}
               <View style={styles.summaryRow}>
@@ -496,9 +545,10 @@ const styles = StyleSheet.create({
   label: { fontSize: 12, fontWeight: '700', color: COLORS.textSecondary, letterSpacing: 0.3, marginBottom: 6 },
   pickerWrapper: {
     backgroundColor: COLORS.bg, borderRadius: 12, borderWidth: 1, borderColor: COLORS.border,
-    height: 46, justifyContent: 'center', overflow: 'hidden',
+    minHeight: 56, justifyContent: 'center',
   },
-  picker: { height: 46, width: '100%', color: COLORS.textPrimary },
+  picker: { minHeight: 56, width: '100%', color: COLORS.textPrimary, fontSize: 16 },
+  pickerItem: { color: COLORS.textPrimary, fontSize: 16, height: 56 },
 
   dateRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 14, gap: 10 },
   dateGroup: { flex: 1 },
@@ -525,7 +575,15 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: COLORS.border, borderRadius: 20,
     paddingHorizontal: 12, paddingVertical: 6, ...softShadow,
   },
+  exportActions: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 6, flex: 1 },
+  pdfButton: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
   exportButtonText: { fontSize: 11, fontWeight: '700', color: COLORS.primary, marginLeft: 5, letterSpacing: 0.3 },
+
+  certificationPanel: { backgroundColor: '#EDF7F5', borderRadius: 14, borderWidth: 1, borderColor: '#B9DDDA', padding: 13, marginBottom: 14 },
+  certificationHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, marginBottom: 12 },
+  certificationTitle: { color: COLORS.textPrimary, fontSize: 13, fontWeight: '800' },
+  certificationSub: { color: COLORS.textTertiary, fontSize: 10, lineHeight: 14, marginTop: 2 },
+  certificationText: { color: COLORS.textSecondary, fontSize: 10, lineHeight: 15, marginTop: 10 },
 
   summaryRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 4 },
   summaryItem: {
@@ -572,8 +630,8 @@ const styles = StyleSheet.create({
   historyMeta: { fontSize: 10, color: COLORS.textTertiary, letterSpacing: 0.3, fontFamily: mono },
   showMoreButton: { alignItems: 'center', paddingVertical: 13, marginTop: 5 },
   showMoreText: { color: COLORS.primary, fontWeight: '800', fontSize: 12 },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(15,23,42,.55)', justifyContent: 'flex-end' },
-  detailSheet: { backgroundColor: '#FFF', maxHeight: '82%', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(15,23,42,.66)', justifyContent: 'flex-end' },
+  detailSheet: { backgroundColor: COLORS.surface, maxHeight: '82%', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, borderWidth: 1, borderColor: COLORS.border },
   detailHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   detailTitle: { fontSize: 19, fontWeight: '800', color: COLORS.textPrimary },
   detailSub: { fontSize: 11, color: COLORS.textTertiary, marginTop: 2 },

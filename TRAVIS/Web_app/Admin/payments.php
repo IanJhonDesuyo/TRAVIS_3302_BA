@@ -65,9 +65,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'recor
 
         $paymentId = $conn->insert_id;
 
-        $stmt = $conn->prepare("UPDATE violations SET status = 'paid' WHERE violation_id = ?");
+        $stmt = $conn->prepare("UPDATE violations SET status = 'paid' WHERE violation_id = ? AND status IN ('pending', 'overdue')");
         $stmt->bind_param('i', $violationId);
         $stmt->execute();
+        if ($stmt->affected_rows !== 1) {
+            throw new RuntimeException('The violation status changed while the payment was being processed.');
+        }
 
         $conn->commit();
 
@@ -521,7 +524,7 @@ div[style*="border-radius: 999px"]:not(.tag){
     <h3 class="page-title">Payment Management</h3>
     <p class="page-sub">Process unpaid violations, record collections, and review completed payment transactions.</p>
   </div>
-  <button class="btn btn-light" type="button" onclick="window.print()"><i class="bi bi-printer me-1"></i>Print Ledger</button>
+  <button class="btn btn-light" id="printPaymentLedger" type="button"><i class="bi bi-printer me-1"></i>Print Ledger</button>
 </div>
 
 <?php if ($message): ?>
@@ -656,7 +659,7 @@ div[style*="border-radius: 999px"]:not(.tag){
   <?php endif; ?>
 </div>
 
-<div class="section-card">
+<div class="section-card" id="paymentLedger">
   <div class="section-head flex-wrap gap-2">
     <div><h6 class="mb-0">Payment Transactions</h6><small class="text-muted">Completed and recorded collection history.</small></div>
 
@@ -695,9 +698,18 @@ div[style*="border-radius: 999px"]:not(.tag){
               <td><?= esc($p['received_by_name'] ?? 'Not recorded') ?></td>
               <td class="text-end no-print">
                 <?php if (strtolower((string)$p['payment_status']) === 'completed'): ?>
-                  <a class="btn btn-sm btn-light" href="<?= esc(app_url('payments.php?' . http_build_query(['receipt_id' => (int)$p['payment_id'], 'payment_search' => $paymentSearch, 'method' => $methodFilter]))) ?>">
+                  <button class="btn btn-sm btn-light payment-receipt-button" type="button"
+                    data-reference="<?= esc(payment_reference((int)$p['payment_id'])) ?>"
+                    data-ticket="<?= esc($p['ticket_number']) ?>"
+                    data-plate="<?= esc($p['plate_number']) ?>"
+                    data-driver="<?= esc($p['driver_name']) ?>"
+                    data-violation="<?= esc($p['violation_type']) ?>"
+                    data-amount="<?= esc(peso($p['amount_paid'])) ?>"
+                    data-method="<?= esc(payment_method_label($p['payment_method'])) ?>"
+                    data-date="<?= esc($p['payment_date']) ?>"
+                    data-received-by="<?= esc($p['received_by_name'] ?? 'Not recorded') ?>">
                     <i class="bi bi-receipt me-1"></i>Print
-                  </a>
+                  </button>
                 <?php else: ?>
                   <span class="text-muted">—</span>
                 <?php endif; ?>
@@ -709,6 +721,78 @@ div[style*="border-radius: 999px"]:not(.tag){
     </div>
   <?php endif; ?>
 </div>
+
+<style>
+  @media print {
+    body.printing-payment-ledger * { visibility: hidden !important; }
+    body.printing-payment-ledger #paymentLedger,
+    body.printing-payment-ledger #paymentLedger * { visibility: visible !important; }
+    body.printing-payment-ledger #paymentLedger {
+      position: absolute;
+      inset: 0 auto auto 0;
+      width: 100%;
+      max-height: none !important;
+      overflow: visible !important;
+      color: #111827 !important;
+      background: #fff !important;
+      border: 0 !important;
+      box-shadow: none !important;
+    }
+    body.printing-payment-ledger #paymentLedger .table-responsive,
+    body.printing-payment-ledger #paymentLedger .table-scroll {
+      max-height: none !important;
+      overflow: visible !important;
+    }
+    body.printing-payment-ledger #paymentLedger .no-print,
+    body.printing-payment-ledger #paymentLedger form { display: none !important; }
+  }
+</style>
+<script>
+  document.getElementById('printPaymentLedger')?.addEventListener('click', function () {
+    document.body.classList.add('printing-payment-ledger');
+    var cleanup = function () {
+      document.body.classList.remove('printing-payment-ledger');
+      window.removeEventListener('afterprint', cleanup);
+    };
+    window.addEventListener('afterprint', cleanup);
+    window.print();
+    window.setTimeout(cleanup, 2000);
+  });
+</script>
+<script>
+  document.querySelectorAll('.payment-receipt-button').forEach(function (button) {
+    button.addEventListener('click', function () {
+      var data = button.dataset;
+      var escapeHtml = function (value) {
+        return String(value || '').replace(/[&<>"']/g, function (character) {
+          return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[character];
+        });
+      };
+      var field = function (label, value) {
+        return '<div class="field"><strong>' + label + '</strong><span>' + escapeHtml(value) + '</span></div>';
+      };
+      var frame = document.createElement('iframe');
+      frame.setAttribute('title', 'Payment receipt print frame');
+      frame.style.position = 'fixed';
+      frame.style.width = '1px';
+      frame.style.height = '1px';
+      frame.style.opacity = '0';
+      frame.style.pointerEvents = 'none';
+      document.body.appendChild(frame);
+      var receiptDocument = frame.contentWindow.document;
+      receiptDocument.open();
+      receiptDocument.write('<!doctype html><html><head><title>' + escapeHtml(data.reference) + '</title><style>' +
+        '@page{size:A4 portrait;margin:16mm}*{box-sizing:border-box}body{margin:0;color:#111827;font-family:Arial,sans-serif}.receipt{width:180mm;margin:auto;padding:10mm}.header{text-align:center;border-bottom:2px solid #102f49;padding-bottom:16px;margin-bottom:22px}.republic{font-family:Georgia,serif;font-size:12px;letter-spacing:.08em}.office{text-transform:uppercase;letter-spacing:.1em;color:#102f49;font:700 20px Georgia,serif;margin-top:4px}.department{font-size:13px;margin-top:3px}h1{margin:16px 0 4px;color:#102f49;font:700 23px Georgia,serif;text-transform:uppercase;letter-spacing:.05em}.reference{color:#526b64;font-size:13px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px 32px}.field{display:flex;flex-direction:column;gap:5px;border-bottom:1px solid #d1d5db;padding-bottom:9px}.field strong{color:#52606d;font-size:11px;text-transform:uppercase;letter-spacing:.05em}.total{display:flex;justify-content:space-between;align-items:center;margin-top:24px;padding:16px;border:2px solid #102f49;background:#f8fafc}.total strong{font-size:22px;color:#102f49}.cert{font-size:12px;line-height:1.5;color:#4b5563;margin:20px 0}.signatures{display:grid;grid-template-columns:1fr 1fr;gap:64px;margin-top:48px;text-align:center}.signatures span{display:block;border-bottom:1px solid #111827;padding-bottom:5px;font-weight:700}.signatures small{display:block;margin-top:6px;color:#4b5563}footer{text-align:center;border-top:1px solid #d1d5db;margin-top:34px;padding-top:12px;font-size:10px;color:#6b7280;letter-spacing:.06em}' +
+        '</style></head><body><main class="receipt"><header class="header"><div class="republic">Republic of the Philippines</div><div class="office">Municipality of Nasugbu</div><div class="department">Traffic Management Office</div><h1>Official Payment Receipt</h1><div class="reference">Receipt No. ' + escapeHtml(data.reference) + '</div></header><section class="grid">' +
+        field('Ticket Number', data.ticket) + field('Plate Number', data.plate) + field('Driver', data.driver) + field('Violation', data.violation) + field('Amount Paid', data.amount) + field('Payment Method', data.method) + field('Payment Date', data.date) + field('Received By', data.receivedBy) +
+        '</section><div class="total"><span>Total Amount Paid</span><strong>' + escapeHtml(data.amount) + '</strong></div><p class="cert">Payment received in settlement of the traffic violation stated above. This computer-generated receipt is valid subject to verification in the official TRAVIS payment ledger.</p><div class="signatures"><div><span>' + escapeHtml(data.receivedBy) + '</span><small>Collecting Officer</small></div><div><span>&nbsp;</span><small>Payor\'s Signature</small></div></div><footer>TRAVIS · Traffic Violation Recognition and AI Surveillance</footer></main></body></html>');
+      receiptDocument.close();
+      frame.contentWindow.focus();
+      frame.contentWindow.print();
+      window.setTimeout(function () { frame.remove(); }, 2000);
+    });
+  });
+</script>
 
 <?php if (!empty($autoPrintPaymentId)): ?>
   <?php
@@ -747,7 +831,7 @@ div[style*="border-radius: 999px"]:not(.tag){
       <footer>TRAVIS · Traffic Violation Recognition and AI Surveillance</footer>
     </div>
     <style>
-      .treasurer-receipt-sheet{position:fixed;left:0;top:0;width:720px;max-width:100%;padding:2.5rem;background:#fff;color:#111827;visibility:hidden;z-index:-1;font-family:Arial,sans-serif}
+      .treasurer-receipt-sheet{display:none!important;position:fixed;left:0;top:0;width:720px;max-width:100%;padding:2.5rem;background:#fff;color:#111827;visibility:hidden;z-index:-1;font-family:Arial,sans-serif}
       .receipt-header{text-align:center;border-bottom:2px solid #102f49;padding-bottom:1rem;margin-bottom:1.4rem}
       .receipt-republic{font-family:Georgia,serif;font-size:.78rem;letter-spacing:.08em}
       .treasurer-receipt-sheet .receipt-office{text-transform:uppercase;letter-spacing:.1em;color:#102f49;font:700 1.25rem Georgia,serif;margin-top:.2rem}
@@ -769,7 +853,7 @@ div[style*="border-radius: 999px"]:not(.tag){
         body.printing-treasurer-receipt *{visibility:hidden!important}
         body.printing-treasurer-receipt .treasurer-receipt-sheet,
         body.printing-treasurer-receipt .treasurer-receipt-sheet *{visibility:visible!important}
-        body.printing-treasurer-receipt .treasurer-receipt-sheet{position:absolute;z-index:99999;left:50%;transform:translateX(-50%);width:180mm;padding:10mm}
+        body.printing-treasurer-receipt .treasurer-receipt-sheet{display:block!important;position:absolute;z-index:99999;left:50%;transform:translateX(-50%);width:180mm;padding:10mm}
       }
     </style>
     <script>
@@ -780,7 +864,8 @@ div[style*="border-radius: 999px"]:not(.tag){
           window.removeEventListener('afterprint', cleanup);
         };
         window.addEventListener('afterprint', cleanup);
-        window.print();
+        // Allow the receipt and its print styles to finish rendering first.
+        window.setTimeout(function () { window.print(); }, 100);
         window.setTimeout(cleanup, 2000);
       });
     </script>

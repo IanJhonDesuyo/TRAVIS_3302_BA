@@ -127,7 +127,6 @@ direction_counter = DirectionCounter(INBOUND_LINE, OUTBOUND_LINE)
 collision_enabled = bool(
     selected_source.enable_collision
     or config.ENABLE_COLLISION_DETECTION
-    or calibration.collision_enabled
 )
 collision_detector = CollisionDetector(
     frame_size=(width, height),
@@ -139,7 +138,6 @@ officer_detection_enabled = bool(
     and (
         selected_source.enable_officer_detection
         or config.ENABLE_OFFICER_DETECTION
-        or calibration.officer_enabled
     )
 )
 officer_detector = OfficerPresenceDetector(
