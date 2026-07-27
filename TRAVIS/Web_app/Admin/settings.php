@@ -346,6 +346,7 @@ a:hover{color:#fff}
 .form-check-input{
     width:44px;
     height:24px;
+    margin:0 !important;
     background:rgba(255,255,255,.06);
     border:1px solid var(--border-glass);
     border-radius:999px;

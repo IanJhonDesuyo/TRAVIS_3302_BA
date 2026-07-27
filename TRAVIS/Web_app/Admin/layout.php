@@ -29,7 +29,7 @@ function sidebar(string $active = ''): void {
         echo '<div class="nav-section">' . esc($section) . '</div><ul class="nav flex-column">';
         foreach ($links as [$href,$label,$icon,$key]) {
             $class = $active === $key ? 'nav-link active' : 'nav-link';
-            echo '<li><a class="' . $class . '" href="' . esc($href) . '"><i class="bi ' . esc($icon) . '"></i> ' . esc($label) . '</a></li>';
+            echo '<li><a class="' . $class . '" href="' . esc($href) . '" title="' . esc($label) . '"><i class="bi ' . esc($icon) . '"></i> <span class="nav-label">' . esc($label) . '</span></a></li>';
         }
         echo '</ul>';
     }
@@ -55,9 +55,10 @@ function page_start(string $title, string $active = '', string $search = 'Search
     echo '<link href="' . esc(asset_url('css/style.css')) . '?v=' . esc($styleVersion) . '" rel="stylesheet" />';
     echo '<style>.empty-state{border:1px dashed #d1d5db;border-radius:14px;padding:24px;text-align:center;color:#6b7280;background:#f9fafb}.camera-stage{min-height:420px;background:linear-gradient(135deg,#0f172a,#1e3a8a);border-radius:18px;display:flex;align-items:center;justify-content:center;color:#fff;position:relative;overflow:hidden}.camera-stage video{width:100%;height:100%;max-height:480px;object-fit:contain;background:#000}.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}.mini-metric{background:#fff;border:1px solid #edf2f7;border-radius:14px;padding:14px}.mini-metric small{color:#64748b}.mini-metric strong{display:block;font-size:1.3rem}.nav-link.active{background:rgba(255,255,255,.12);color:#fff}.sidebar,.sidebar .nav-link,.sidebar .nav-section{font-family:"Poppins",sans-serif}.sidebar-brand{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:4px;height:84px;padding:0 20px;box-sizing:border-box}.topbar{height:84px;box-sizing:border-box;display:flex;align-items:center}.brand-logo-wordmark{font-family:"Poppins",sans-serif;font-weight:800;font-size:1.8rem;letter-spacing:.5px;line-height:1;background:linear-gradient(90deg,#ffffff 0%,#bfdbfe 45%,#3b82f6 100%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent;display:inline-block}.sidebar-brand small{color:#94a3b8;font-family:"Poppins",sans-serif;font-size:.72rem;letter-spacing:.3px}</style>';
     echo '<link href="' . esc(asset_url('css/municipal-portals.css')) . '?v=' . esc($municipalStyleVersion) . '" rel="stylesheet" />';
+    echo '<style>#sidebarToggle{background:#f0f4f8 !important;border:1px solid #d0d8e0 !important;color:#1a2a3a !important;opacity:1 !important;}#sidebarToggle:hover{background:#e4eaf0 !important;color:#0a1a30 !important;}</style>';
     echo '</head><body class="admin-dashboard municipal-portal">';
     sidebar($active);
-    echo '<div class="main-wrapper"><header class="topbar"><button class="btn btn-light d-lg-none" id="sidebarToggle"><i class="bi bi-list"></i></button>';
+    echo '<div class="main-wrapper"><header class="topbar"><button class="btn btn-light" id="sidebarToggle"><i class="bi bi-list"></i></button>';
     echo '<div class="municipal-topbar-scene"><div class="municipal-topbar-copy"><strong>Municipality of Nasugbu</strong><small>Traffic Management Office · Public Service Portal</small></div></div>';
     echo '<div class="ms-auto d-flex align-items-center gap-3"><small class="text-muted d-none d-md-block" id="liveClock"></small>';
     $alertCount = scalar("SELECT COUNT(*) FROM monitoring_alerts WHERE status = 'active'", 0);
@@ -83,6 +84,19 @@ function page_end(bool $chart = false): void {
     echo '<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>';
     if ($chart) echo '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>';
     echo '<script src="' . esc(asset_url('js/app.js')) . '"></script>';
+    echo '<script>
+    (function () {
+      var toggleBtn = document.getElementById("sidebarToggle");
+      if (!toggleBtn) return;
+      if (localStorage.getItem("travisSidebarCollapsed") === "1") {
+        document.body.classList.add("sidebar-collapsed");
+      }
+      toggleBtn.addEventListener("click", function () {
+        document.body.classList.toggle("sidebar-collapsed");
+        localStorage.setItem("travisSidebarCollapsed", document.body.classList.contains("sidebar-collapsed") ? "1" : "0");
+      });
+    })();
+    </script>';
     if ($showLoginSuccess) {
         echo '<script>document.addEventListener("DOMContentLoaded",function(){var element=document.getElementById("loginSuccessModal");if(element){bootstrap.Modal.getOrCreateInstance(element).show();}});</script>';
     }

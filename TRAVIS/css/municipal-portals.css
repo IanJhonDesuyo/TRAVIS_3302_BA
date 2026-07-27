@@ -1,13 +1,13 @@
 :root {
-  --municipal-navy: #102f49;
-  --municipal-navy-deep: #0b263b;
+  --municipal-navy: #0b2742;
+  --municipal-navy-deep: #071b2e;
   --municipal-ink: #10202c;
-  --municipal-teal: #087d78;
+  --municipal-teal: #137b70;
   --municipal-teal-light: #169b91;
-  --municipal-orange: #eb941f;
-  --municipal-cream: #f7f5ee;
-  --municipal-muted: #61716d;
-  --municipal-border: rgba(16, 47, 73, .14);
+  --municipal-orange: #ea9625;
+  --municipal-cream: #f7f4eb;
+  --municipal-muted: #60716b;
+  --municipal-border: rgba(11, 39, 66, .14);
 }
 
 body.municipal-portal {
@@ -52,66 +52,93 @@ body.municipal-portal::before {
 }
 
 body.municipal-portal .sidebar {
-  background: linear-gradient(180deg, var(--municipal-navy) 0%, #0d3b51 62%, #075f5b 135%) !important;
-  border-right: 1px solid rgba(255, 255, 255, .08) !important;
-  box-shadow: 8px 0 30px rgba(16, 47, 73, .18) !important;
+  background: #ffffff !important;
+  border-right: 1px solid var(--municipal-border) !important;
+  box-shadow: 1px 0 0 rgba(11, 39, 66, .04) !important;
 }
 
 body.municipal-portal .sidebar-brand {
   display: flex !important;
-  height: 100px !important;
-  padding: 15px 17px !important;
+  height: 78px !important;
+  padding: 0 18px !important;
   flex-direction: row !important;
   align-items: center !important;
   justify-content: flex-start !important;
   gap: 11px !important;
   text-align: left !important;
-  background: rgba(255, 255, 255, .045) !important;
-  border-bottom: 1px solid rgba(255, 255, 255, .11) !important;
+  background: #ffffff !important;
+  border-bottom: 1px solid var(--municipal-border) !important;
 }
 
 body.municipal-portal .municipal-seal {
-  width: 47px;
-  height: 47px;
-  flex: 0 0 47px;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
   object-fit: cover;
-  border: 2px solid rgba(255, 255, 255, .92);
+  border: 2px solid var(--municipal-border);
   border-radius: 50%;
-  box-shadow: 0 5px 14px rgba(0, 0, 0, .2);
+  box-shadow: none;
 }
 
 body.municipal-portal .municipal-brand-copy { min-width: 0; }
 body.municipal-portal .brand-logo-wordmark {
-  color: #fff !important;
+  color: var(--municipal-navy) !important;
   background: none !important;
   -webkit-text-fill-color: currentColor !important;
-  font-size: 1rem !important;
-  letter-spacing: .02em !important;
+  font-size: .96rem !important;
+  font-weight: 700 !important;
+  letter-spacing: .01em !important;
   white-space: nowrap;
 }
 body.municipal-portal .sidebar-brand small {
   display: block;
-  margin-top: 4px;
-  color: #a9c6c3 !important;
-  font-size: .62rem !important;
+  margin-top: 3px;
+  color: var(--municipal-muted) !important;
+  font-size: .7rem !important;
+  font-weight: 500 !important;
   white-space: nowrap;
 }
 
-body.municipal-portal .nav-section { color: rgba(196, 223, 218, .62) !important; }
+body.municipal-portal .nav-section {
+  color: var(--municipal-muted) !important;
+  opacity: 1;
+  font-size: .66rem !important;
+  font-weight: 600 !important;
+  letter-spacing: .06em !important;
+  padding: .75rem .75rem .2rem !important;
+}
+body.municipal-portal .sidebar-brand + .nav-section {
+  margin-top: 10px !important;
+}
 body.municipal-portal .sidebar .nav-link {
-  color: rgba(239, 247, 244, .84) !important;
+  color: #3d4f5c !important;
   border: 1px solid transparent !important;
+  border-radius: 8px !important;
+  font-weight: 500 !important;
+  font-size: .92rem !important;
+  padding: .58rem .85rem !important;
+  margin: 3px .5rem !important;
+  transition: background-color .15s ease, color .15s ease !important;
+}
+body.municipal-portal .sidebar .nav-link i {
+  font-size: 1.05rem !important;
+}
+body.municipal-portal .sidebar-footer {
+  padding: .75rem .9rem 1rem !important;
+  font-size: .65rem !important;
+  color: var(--municipal-muted) !important;
 }
 body.municipal-portal .sidebar .nav-link:hover {
-  color: #fff !important;
-  border-color: rgba(255, 255, 255, .09) !important;
-  background: rgba(255, 255, 255, .08) !important;
+  color: var(--municipal-navy) !important;
+  border-color: transparent !important;
+  background: rgba(11, 39, 66, .05) !important;
 }
 body.municipal-portal .sidebar .nav-link.active {
-  color: var(--municipal-ink) !important;
-  border-color: rgba(255, 255, 255, .18) !important;
-  background: linear-gradient(135deg, #f1a33a, var(--municipal-orange)) !important;
-  box-shadow: 0 9px 24px rgba(4, 30, 43, .25) !important;
+  color: var(--municipal-navy) !important;
+  border-color: transparent !important;
+  background: rgba(234, 150, 37, .13) !important;
+  font-weight: 600 !important;
+  box-shadow: inset 3px 0 0 var(--municipal-orange) !important;
 }
 
 body.municipal-portal .topbar {
@@ -137,6 +164,61 @@ body.municipal-portal .topbar .search .form-control {
 }
 body.municipal-portal .topbar .search .form-control::placeholder { color: #7a8985 !important; }
 body.municipal-portal .topbar .search i { color: var(--municipal-muted) !important; }
+
+/* Global override: neutralizes leftover dark "navy glass" per-page topbar theme
+   (found across Admin pages) so icons/text stay visible on the light topbar */
+body.municipal-portal .topbar input,
+body.municipal-portal .app-topbar input,
+body.municipal-portal .top-header input,
+body.municipal-portal .dashboard-topbar input,
+body.municipal-portal .navbar-top input {
+  background: rgba(16, 47, 73, .05) !important;
+  border: 1px solid var(--municipal-border) !important;
+  color: var(--municipal-ink) !important;
+  box-shadow: none !important;
+}
+body.municipal-portal .topbar input::placeholder,
+body.municipal-portal .app-topbar input::placeholder,
+body.municipal-portal .top-header input::placeholder,
+body.municipal-portal .dashboard-topbar input::placeholder,
+body.municipal-portal .navbar-top input::placeholder {
+  color: rgba(16, 47, 73, .5) !important;
+}
+body.municipal-portal .topbar .bi-search,
+body.municipal-portal .app-topbar .bi-search,
+body.municipal-portal .top-header .bi-search,
+body.municipal-portal .dashboard-topbar .bi-search,
+body.municipal-portal .navbar-top .bi-search {
+  color: var(--municipal-muted) !important;
+}
+body.municipal-portal .topbar .bi-bell,
+body.municipal-portal .app-topbar .bi-bell,
+body.municipal-portal .top-header .bi-bell,
+body.municipal-portal .dashboard-topbar .bi-bell,
+body.municipal-portal .navbar-top .bi-bell,
+body.municipal-portal .topbar .notif-icon,
+body.municipal-portal .app-topbar .notif-icon {
+  color: var(--municipal-ink) !important;
+}
+body.municipal-portal .topbar .btn-icon,
+body.municipal-portal .app-topbar .btn-icon,
+body.municipal-portal .top-header .btn-icon,
+body.municipal-portal .dashboard-topbar .btn-icon {
+  background: rgba(16, 47, 73, .05) !important;
+  border: 1px solid var(--municipal-border) !important;
+}
+body.municipal-portal .topbar .datetime,
+body.municipal-portal .app-topbar .datetime,
+body.municipal-portal .top-header .datetime,
+body.municipal-portal .dashboard-topbar .datetime {
+  color: var(--municipal-muted) !important;
+}
+body.municipal-portal .topbar .user-name,
+body.municipal-portal .app-topbar .user-name,
+body.municipal-portal .top-header .user-name,
+body.municipal-portal .dashboard-topbar .user-name {
+  color: var(--municipal-ink) !important;
+}
 
 body.municipal-portal .municipal-topbar-scene {
   position: relative;
@@ -734,10 +816,8 @@ body.municipal-portal .auth-prompt .auth-prompt-icon {
   body.municipal-portal .modal .modal-footer { padding-left: 1rem !important; padding-right: 1rem !important; }
 }
 
-@media (min-width: 992px) {
-  body.municipal-portal.sidebar-collapsed .municipal-brand-copy { display: none; }
-  body.municipal-portal.sidebar-collapsed .municipal-seal { width: 44px; height: 44px; flex-basis: 44px; }
-}
+body.municipal-portal.sidebar-collapsed .municipal-brand-copy { display: none; }
+body.municipal-portal.sidebar-collapsed .municipal-seal { width: 44px; height: 44px; flex-basis: 44px; }
 
 @media (max-width: 767.98px) {
   body.municipal-portal .content {
