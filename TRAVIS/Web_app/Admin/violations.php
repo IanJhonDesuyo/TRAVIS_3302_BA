@@ -40,15 +40,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $license = $hasNoLicense ? 'NO LICENSE' : strtoupper(violation_post('license_number'));
         $plate = strtoupper(violation_post('plate_number'));
         $vehicle = violation_post('vehicle_type');
-        $type = violation_post('violation_type');
+        $submittedTypes = is_array($_POST['violation_type'] ?? null) ? $_POST['violation_type'] : [violation_post('violation_type')];
+        $submittedAmounts = is_array($_POST['penalty_amount'] ?? null) ? $_POST['penalty_amount'] : [violation_post('penalty_amount', '0')];
         $location = violation_post('violation_location');
         $date = violation_post('violation_date');
         $time = violation_post('violation_time');
-        $amount = (float)violation_post('penalty_amount', '0');
 
         $allowedViolations = traffic_violation_types();
         $allowedFees = array_map('floatval', traffic_penalty_fees());
         $allowedVehicles = ['Motorcycle', 'Car', 'SUV', 'Truck', 'Bus', 'Other'];
+        $items = [];
+        foreach ($submittedTypes as $index => $submittedType) {
+            $itemType = trim((string)$submittedType);
+            $itemAmount = (float)($submittedAmounts[$index] ?? 0);
+            if ($itemType !== '') $items[$itemType] = $itemAmount;
+        }
+        $type = implode(', ', array_keys($items));
+        $amount = array_sum($items);
 
         if (
             $driver === '' || $license === '' || $plate === '' ||
@@ -57,14 +65,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ) {
             $message = 'Please complete all required fields and enter a valid penalty amount.';
             $messageType = 'danger';
-        } elseif (!in_array($type, $allowedViolations, true)) {
-            $message = 'Please select a valid violation from the traffic ticket list.';
+        } elseif (!$items || array_diff(array_keys($items), $allowedViolations)) {
+            $message = 'Please select one or more valid violations from the traffic ticket list.';
             $messageType = 'danger';
         } elseif (!in_array($vehicle, $allowedVehicles, true)) {
             $message = 'Please select a valid vehicle type.';
             $messageType = 'danger';
-        } elseif (!in_array($amount, $allowedFees, true)) {
-            $message = 'Please select a valid penalty fee from the available amounts.';
+        } elseif (array_filter($items, static fn(float $fee): bool => !in_array($fee, $allowedFees, true))) {
+            $message = 'Please select a valid penalty fee for every violation.';
             $messageType = 'danger';
         } else {
             $ticket = generateTicketNumber($conn);
@@ -88,13 +96,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             );
 
             try {
+                $conn->begin_transaction();
                 if ($stmt->execute()) {
-                    $message = 'Violation record added successfully. Ticket No.: ' . $ticket;
+                    $violationId = (int)$conn->insert_id;
+                    $itemStmt = $conn->prepare('INSERT INTO violation_items (violation_id, violation_type, penalty_amount) VALUES (?, ?, ?)');
+                    foreach ($items as $itemType => $itemAmount) {
+                        $itemStmt->bind_param('isd', $violationId, $itemType, $itemAmount);
+                        $itemStmt->execute();
+                    }
+                    $conn->commit();
+                    $message = count($items) . ' violation(s) recorded successfully. Ticket No.: ' . $ticket;
                     $messageType = 'success';
                 } else {
                     throw new RuntimeException($stmt->error ?: 'Insert failed');
                 }
             } catch (Throwable $exception) {
+                $conn->rollback();
                 error_log('Web violation insert failed: ' . $exception->getMessage());
                 $message = 'Failed to add the violation record. Verify the selected values and try again.';
                 $messageType = 'danger';
@@ -676,29 +693,23 @@ div[style*="border-radius: 999px"]:not(.tag){
             </div>
             <div class="col-md-6"><label class="form-label">Plate Number</label><input type="text" name="plate_number" class="form-control text-uppercase" required></div>
             <div class="col-md-6"><label class="form-label">Vehicle Type</label><select name="vehicle_type" class="form-select" required><option value="">Select vehicle type</option><option>Motorcycle</option><option>Car</option><option>SUV</option><option>Truck</option><option>Bus</option><option>Other</option></select></div>
-            <div class="col-md-6">
-              <label class="form-label" for="violationTypeInput">Violation Type</label>
-              <input type="text" id="violationTypeInput" name="violation_type" class="form-control" list="violationTypeOptions" placeholder="Type to search ticket violations..." autocomplete="off" required>
-              <datalist id="violationTypeOptions">
-                <?php foreach (traffic_violation_types() as $violationType): ?>
-                  <option value="<?= esc($violationType) ?>"></option>
-                <?php endforeach; ?>
-              </datalist>
-              <small class="text-muted">Start typing to filter the available violations.</small>
+            <div class="col-12">
+              <div class="d-flex align-items-center justify-content-between mb-2">
+                <label class="form-label mb-0">Violations and Penalties</label>
+                <button type="button" class="btn btn-sm btn-outline-primary" id="addViolationItem"><i class="bi bi-plus-lg me-1"></i>Add another</button>
+              </div>
+              <div id="violationItems">
+                <div class="row g-2 mb-2 violation-item-row">
+                  <div class="col-md-8"><select name="violation_type[]" class="form-select" required><option value="">Select violation</option><?php foreach (traffic_violation_types() as $violationType): ?><option value="<?= esc($violationType) ?>"><?= esc($violationType) ?></option><?php endforeach; ?></select></div>
+                  <div class="col-md-3"><select name="penalty_amount[]" class="form-select" required><option value="">Select fee</option><?php foreach (traffic_penalty_fees() as $penaltyFee): ?><option value="<?= esc($penaltyFee) ?>"><?= peso($penaltyFee) ?></option><?php endforeach; ?></select></div>
+                  <div class="col-md-1"><button type="button" class="btn btn-outline-danger w-100 remove-violation-item" aria-label="Remove violation" disabled><i class="bi bi-x-lg"></i></button></div>
+                </div>
+              </div>
+              <small class="text-muted">Add every box checked on the paper citation and confirm its corresponding fee.</small>
             </div>
             <div class="col-md-6"><label class="form-label">Violation Location</label><input type="text" name="violation_location" class="form-control" placeholder="Nasugbu, Batangas location" required></div>
             <div class="col-md-3"><label class="form-label">Date</label><input type="date" name="violation_date" class="form-control" value="<?= date('Y-m-d') ?>" required></div>
             <div class="col-md-3"><label class="form-label">Time</label><input type="time" name="violation_time" class="form-control" value="<?= date('H:i') ?>" required></div>
-            <div class="col-md-6">
-              <label class="form-label" for="penaltyFeeInput">Penalty Fee</label>
-              <input type="number" id="penaltyFeeInput" name="penalty_amount" class="form-control" list="penaltyFeeOptions" min="100" step="100" placeholder="Type or select a fee..." autocomplete="off" required>
-              <datalist id="penaltyFeeOptions">
-                <?php foreach (traffic_penalty_fees() as $penaltyFee): ?>
-                  <option value="<?= esc($penaltyFee) ?>" label="<?= peso($penaltyFee) ?>"></option>
-                <?php endforeach; ?>
-              </datalist>
-              <small class="text-muted">Type to filter, then choose the fee indicated by the issuing office.</small>
-            </div>
           </div>
           <small class="text-muted d-block mt-3">OCR scanning will be handled by the mobile application. Mobile records saved to the same database will also appear here.</small>
         </div>
@@ -785,6 +796,26 @@ document.getElementById('noLicenseCheck')?.addEventListener('change', function (
   input.disabled = this.checked;
   input.required = !this.checked;
   input.value = this.checked ? 'NO LICENSE' : '';
+});
+
+const violationItems = document.getElementById('violationItems');
+function refreshViolationItemButtons() {
+  const rows = violationItems?.querySelectorAll('.violation-item-row') || [];
+  rows.forEach(function (row) { row.querySelector('.remove-violation-item').disabled = rows.length === 1; });
+}
+document.getElementById('addViolationItem')?.addEventListener('click', function () {
+  const source = violationItems?.querySelector('.violation-item-row');
+  if (!source || !violationItems) return;
+  const clone = source.cloneNode(true);
+  clone.querySelectorAll('select').forEach(function (select) { select.value = ''; });
+  violationItems.appendChild(clone);
+  refreshViolationItemButtons();
+});
+violationItems?.addEventListener('click', function (event) {
+  const button = event.target.closest('.remove-violation-item');
+  if (!button || button.disabled) return;
+  button.closest('.violation-item-row')?.remove();
+  refreshViolationItemButtons();
 });
 </script>
 <?php page_end(); ?>

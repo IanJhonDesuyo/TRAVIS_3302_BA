@@ -47,6 +47,17 @@ $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
 $violations = $stmt->fetchAll();
 
+if ($violations) {
+    $ids = array_map(static fn(array $row): int => (int)$row['violation_id'], $violations);
+    $itemSql = 'SELECT violation_id, violation_item_id, violation_type, penalty_amount, ocr_confidence FROM violation_items WHERE violation_id IN (' . implode(',', array_fill(0, count($ids), '?')) . ') ORDER BY violation_item_id';
+    $itemStatement = $pdo->prepare($itemSql);
+    $itemStatement->execute($ids);
+    $itemsByViolation = [];
+    foreach ($itemStatement->fetchAll() as $item) $itemsByViolation[(int)$item['violation_id']][] = $item;
+    foreach ($violations as &$violation) $violation['violation_items'] = $itemsByViolation[(int)$violation['violation_id']] ?? [];
+    unset($violation);
+}
+
 // Get total count for pagination
 $countSql = "SELECT COUNT(*) as total FROM violations WHERE 1=1";
 $countParams = [];

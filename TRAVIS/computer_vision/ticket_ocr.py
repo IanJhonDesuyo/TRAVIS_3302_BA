@@ -13,7 +13,7 @@ from rapidocr_onnxruntime import RapidOCR
 
 
 LABELS = {
-    "driver_name": ["driver name", "name of driver"],
+    "driver_name": ["driver name", "driver's name", "drivers name", "name of driver"],
     "license_number": ["license number", "driver license number", "driver's license number", "license no", "dl no"],
     "plate_number": ["plate number", "plate no"],
     "vehicle_type": ["vehicle type", "type of vehicle"],
@@ -137,6 +137,90 @@ def closest_allowed(value: str, allowed: list[str], cutoff: float = 0.74) -> str
     return next(option for option in allowed if normalized(option) == matches[0])
 
 
+def violation_section_bounds(items: list[OCRItem], image_height: int) -> tuple[float, float] | None:
+    """Return the printed violation-list bounds, failing closed when its heading is unreadable."""
+    headings = [
+        item for item in items
+        if normalized(item.text) in {"traffic violation", "traffic violations"}
+    ]
+    if not headings:
+        return None
+    heading = max(headings, key=lambda item: item.center_y)
+    end_markers = [
+        item.top for item in items
+        if item.top > heading.bottom
+        and (
+            normalized(item.text).startswith("date and time of violation")
+            or normalized(item.text).startswith("owner of vehicle")
+            or normalized(item.text) == "remarks"
+        )
+    ]
+    bottom = min(end_markers) if end_markers else min(float(image_height), heading.bottom + image_height * 0.48)
+    return heading.bottom, bottom
+
+
+def detect_checked_violations(image, items: list[OCRItem]) -> list[dict]:
+    """Detect ink inside the printed checkbox immediately left of each offence label."""
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
+    section = violation_section_bounds(items, binary.shape[0])
+    if section is None:
+        return []
+    section_top, section_bottom = section
+    detected: dict[str, float] = {}
+    for item in items:
+        if not section_top <= item.center_y <= section_bottom:
+            continue
+        violation = closest_allowed(item.text, VIOLATION_TYPES, 0.60)
+        if not violation:
+            continue
+        h = max(12, int(item.height))
+        # Official tickets place a square roughly 1.0-1.8 text heights left of the label.
+        x2 = max(1, int(item.left - h * 0.12))
+        x1 = max(0, int(item.left - h * 1.9))
+        y1 = max(0, int(item.center_y - h * 0.72))
+        y2 = min(binary.shape[0], int(item.center_y + h * 0.72))
+        region = binary[y1:y2, x1:x2]
+        if region.size == 0 or region.shape[0] < 6 or region.shape[1] < 6:
+            continue
+        # Ignore the printed square border; a tick/cross leaves ink in its interior.
+        margin_y = max(2, int(region.shape[0] * 0.20))
+        margin_x = max(2, int(region.shape[1] * 0.20))
+        inner = region[margin_y:-margin_y, margin_x:-margin_x]
+        if inner.size == 0:
+            continue
+        ink_ratio = float(cv2.countNonZero(inner)) / float(inner.size)
+        if ink_ratio >= 0.075:
+            confidence = min(0.99, 0.55 + (ink_ratio - 0.075) * 2.6)
+            detected[violation] = max(detected.get(violation, 0.0), confidence)
+    return [
+        {"violation_type": violation, "confidence": round(confidence, 3)}
+        for violation, confidence in detected.items()
+    ]
+
+
+def field_confidences(fields: dict[str, str], items: list[OCRItem]) -> dict[str, float]:
+    """Estimate confidence for each populated field from the OCR token that supplied it."""
+    result: dict[str, float] = {}
+    for field, value in fields.items():
+        target = normalized(value)
+        if not target:
+            result[field] = 0.0
+            continue
+        candidates: list[tuple[float, float]] = []
+        for item in items:
+            source = normalized(item.text)
+            if not source:
+                continue
+            similarity = difflib.SequenceMatcher(None, target, source).ratio()
+            if target in source or source in target:
+                similarity = max(similarity, 0.92)
+            candidates.append((similarity, item.confidence))
+        best_similarity, best_ocr_confidence = max(candidates, default=(0.0, 0.0))
+        result[field] = round(best_ocr_confidence * best_similarity, 3) if best_similarity >= 0.48 else 0.0
+    return result
+
+
 def extract(items: list[OCRItem]) -> dict[str, str]:
     fields = {name: "" for name in LABELS}
     matches = {index: label_match(item.text) for index, item in enumerate(items)}
@@ -201,6 +285,11 @@ def main() -> None:
         ])
     items = merge_items(detection_groups)
     fields = extract(items)
+    per_field_confidence = field_confidences(fields, items)
+    checked_violations = detect_checked_violations(image, items)
+    if checked_violations:
+        fields["violation_type"] = checked_violations[0]["violation_type"]
+        per_field_confidence["violation_type"] = checked_violations[0]["confidence"]
     critical_fields = ["driver_name", "license_number", "plate_number"]
     missing_fields = [field for field in critical_fields if not fields[field]]
     confidences = [item.confidence for item in items]
@@ -213,6 +302,8 @@ def main() -> None:
     print(json.dumps({
         "success": True,
         "fields": fields,
+        "field_confidences": per_field_confidence,
+        "checked_violations": checked_violations,
         "confidence": round(sum(confidences) / len(confidences), 3) if confidences else 0,
         "recognized_fields": found,
         "missing_fields": missing_fields,

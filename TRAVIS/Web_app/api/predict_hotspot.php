@@ -1,51 +1,38 @@
 <?php
+declare(strict_types=1);
 
-header("Content-Type: application/json");
+header('Content-Type: application/json; charset=utf-8');
+header('Cache-Control: no-store');
 
-// Flask Hotspot API
-$risk = trim((string) ($_GET['risk'] ?? ''));
-$flask_api = "http://127.0.0.1:5001/hotspots";
-
-if ($risk !== '') {
-    $flask_api .= '/' . rawurlencode($risk);
-}
+$risk = trim((string)($_GET['risk'] ?? ''));
+$endpoint = 'http://127.0.0.1:5001/hotspots';
+if ($risk !== '') $endpoint .= '/' . rawurlencode($risk);
 
 $response = false;
 $curlError = 'Machine-learning API is still starting.';
-$ch = null;
-
+$status = 503;
 for ($attempt = 1; $attempt <= 20; $attempt++) {
-    $ch = curl_init($flask_api);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_HTTPGET, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, ["Accept: application/json"]);
-    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 1);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 5);
-
-    $response = curl_exec($ch);
-    if ($response !== false) break;
-
-    $curlError = curl_error($ch);
-    curl_close($ch);
-    $ch = null;
-    if ($attempt < 20) usleep(750000);
+    $curl = curl_init($endpoint);
+    curl_setopt_array($curl, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPGET => true,
+        CURLOPT_HTTPHEADER => ['Accept: application/json'],
+        CURLOPT_CONNECTTIMEOUT => 1,
+        CURLOPT_TIMEOUT => 5,
+    ]);
+    $response = curl_exec($curl);
+    $status = (int)curl_getinfo($curl, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($curl);
+    curl_close($curl);
+    if ($response !== false && $status > 0) break;
+    if ($attempt < 20) usleep(500000);
 }
 
-if ($response === false || !$ch) {
+if ($response === false) {
     http_response_code(503);
-    echo json_encode([
-        "success" => false,
-        "message" => "Machine-learning service did not become ready in time.",
-        "details" => $curlError
-    ]);
+    echo json_encode(['success' => false, 'message' => 'Hotspot clustering service did not become ready in time.', 'details' => $curlError]);
     exit;
 }
 
-// HTTP Status
-$httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-
-curl_close($ch);
-
-// Return Flask response
-http_response_code($httpCode);
+http_response_code($status);
 echo $response;

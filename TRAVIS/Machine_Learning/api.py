@@ -647,20 +647,16 @@ def all_hotspots():
             data={
                 "count": len(records),
                 "locations": records,
+                "source": "trained_hotspot_clustering_results",
+                "algorithm": hotspot_model_bundle.get("algorithm", "K-Means Clustering") if hotspot_model_bundle else "K-Means Clustering",
+                "model_version": hotspot_model_bundle.get("model_version") if hotspot_model_bundle else None,
             },
             message="Hotspot locations retrieved successfully.",
         )
 
     except Exception as error:
-        logger.exception(
-            "Unable to retrieve hotspots."
-        )
-
-        return error_response(
-            "Unable to retrieve hotspot results.",
-            500,
-            str(error),
-        )
+        logger.exception("Unable to retrieve hotspots.")
+        return error_response("Unable to retrieve hotspot results.", 500, str(error))
 
 
 @app.get("/hotspots/<risk_level>")

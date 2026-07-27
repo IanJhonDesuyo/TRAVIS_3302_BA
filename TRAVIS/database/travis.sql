@@ -136,7 +136,7 @@
     `has_no_license` TINYINT(1) NOT NULL DEFAULT 0,
     `plate_number` VARCHAR(50) NOT NULL,
     `vehicle_type` ENUM('Motorcycle','Car','SUV','Truck','Bus','Other') NOT NULL,
-    `violation_type` VARCHAR(120) NOT NULL,
+    `violation_type` VARCHAR(1000) NOT NULL,
     `violation_location` VARCHAR(255) NOT NULL,
     `violation_date` DATE NOT NULL,
     `violation_time` TIME NOT NULL,
@@ -150,6 +150,18 @@
     UNIQUE KEY `uq_violations_ticket_number` (`ticket_number`),
     KEY `idx_violations_encoded_by` (`encoded_by`),
     CONSTRAINT `fk_violations_encoded_by` FOREIGN KEY (`encoded_by`) REFERENCES `users`(`user_id`) ON DELETE SET NULL ON UPDATE CASCADE
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+  CREATE TABLE `violation_items` (
+    `violation_item_id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `violation_id` BIGINT UNSIGNED NOT NULL,
+    `violation_type` VARCHAR(120) NOT NULL,
+    `penalty_amount` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    `ocr_confidence` DECIMAL(5,4) NULL,
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`violation_item_id`),
+    UNIQUE KEY `uq_violation_item_type` (`violation_id`, `violation_type`),
+    CONSTRAINT `fk_violation_items_violation` FOREIGN KEY (`violation_id`) REFERENCES `violations`(`violation_id`) ON DELETE CASCADE ON UPDATE CASCADE
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
   CREATE TABLE `payments` (

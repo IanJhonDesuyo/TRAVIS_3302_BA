@@ -49,11 +49,17 @@ function travis_offense_analysis(PDO $pdo, string $license, string $plate, strin
     }
 
     if ($license !== '' && $license !== 'NO LICENSE') {
-        $statement = $pdo->prepare("SELECT violation_type, violation_date, ticket_number FROM violations WHERE UPPER(license_number) = ? AND status <> 'cancelled' ORDER BY violation_date DESC, violation_id DESC");
+        $statement = $pdo->prepare("SELECT item.violation_type, record.violation_date, record.ticket_number
+            FROM violations record JOIN violation_items item ON item.violation_id = record.violation_id
+            WHERE UPPER(record.license_number) = ? AND record.status <> 'cancelled'
+            ORDER BY record.violation_date DESC, record.violation_id DESC");
         $statement->execute([$license]);
         $matchedBy = 'license number';
     } else {
-        $statement = $pdo->prepare("SELECT violation_type, violation_date, ticket_number FROM violations WHERE UPPER(plate_number) = ? AND status <> 'cancelled' ORDER BY violation_date DESC, violation_id DESC");
+        $statement = $pdo->prepare("SELECT item.violation_type, record.violation_date, record.ticket_number
+            FROM violations record JOIN violation_items item ON item.violation_id = record.violation_id
+            WHERE UPPER(record.plate_number) = ? AND record.status <> 'cancelled'
+            ORDER BY record.violation_date DESC, record.violation_id DESC");
         $statement->execute([$plate]);
         $matchedBy = 'plate number';
     }

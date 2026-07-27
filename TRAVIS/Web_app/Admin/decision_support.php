@@ -7,60 +7,96 @@ require_once __DIR__ . '/layout.php';
 |--------------------------------------------------------------------------
 */
 
+$analyticsPeriod = strtolower(trim((string)($_GET['analytics_period'] ?? 'day')));
+$analyticsDay = trim((string)($_GET['analytics_day'] ?? date('Y-m-d')));
+$analyticsMonth = trim((string)($_GET['analytics_month'] ?? date('Y-m')));
+$analyticsYear = trim((string)($_GET['analytics_year'] ?? date('Y')));
+$parsedAnalyticsDay = DateTime::createFromFormat('!Y-m-d', $analyticsDay);
+if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $analyticsDay) || !$parsedAnalyticsDay || $parsedAnalyticsDay->format('Y-m-d') !== $analyticsDay) $analyticsDay = date('Y-m-d');
+if (!preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $analyticsMonth)) $analyticsMonth = date('Y-m');
+if (!preg_match('/^\d{4}$/', $analyticsYear) || (int)$analyticsYear < 2000 || (int)$analyticsYear > 2100) $analyticsYear = date('Y');
+$analyticsPeriods = [
+    'day' => ["v.violation_date = '{$analyticsDay}'", date('F j, Y', strtotime($analyticsDay))],
+    'month' => ["DATE_FORMAT(v.violation_date, '%Y-%m') = '{$analyticsMonth}'", date('F Y', strtotime($analyticsMonth . '-01'))],
+    'year' => ["YEAR(v.violation_date) = {$analyticsYear}", $analyticsYear],
+    'all' => ['1=1', 'All Records'],
+];
+if (!isset($analyticsPeriods[$analyticsPeriod])) $analyticsPeriod = 'day';
+[$analyticsDateCondition, $analyticsPeriodLabel] = $analyticsPeriods[$analyticsPeriod];
+$analyticsWhere = "({$analyticsDateCondition}) AND v.status <> 'cancelled'";
+$paymentPeriods = [
+    'day' => "DATE(p.payment_date) = '{$analyticsDay}'",
+    'month' => "DATE_FORMAT(p.payment_date, '%Y-%m') = '{$analyticsMonth}'",
+    'year' => "YEAR(p.payment_date) = {$analyticsYear}",
+    'all' => '1=1',
+];
+$paymentWhere = $paymentPeriods[$analyticsPeriod] . " AND p.payment_status = 'completed'";
+
 $todayAnalytics = fetch_one("
     SELECT
         COUNT(*) AS violations_today,
-        COALESCE(SUM(penalty_amount), 0) AS penalties_today,
-        COUNT(DISTINCT violation_location) AS affected_locations
-    FROM violations
-    WHERE violation_date = CURDATE()
+        COALESCE(SUM(v.penalty_amount), 0) AS penalties_today,
+        COUNT(DISTINCT v.violation_location) AS affected_locations
+    FROM violations v
+    WHERE {$analyticsWhere}
+") ?: [];
+
+$collectionAnalytics = fetch_one("
+    SELECT COUNT(*) AS payment_count, COALESCE(SUM(p.amount_paid), 0) AS collected_amount
+    FROM payments p
+    WHERE {$paymentWhere}
 ") ?: [];
 
 $topViolation = fetch_one("
-    SELECT violation_type, COUNT(*) AS total
-    FROM violations
-    WHERE YEAR(violation_date) = YEAR(CURDATE())
-    GROUP BY violation_type
+    SELECT item.violation_type, COUNT(*) AS total
+    FROM violation_items item
+    JOIN violations v ON v.violation_id = item.violation_id
+    WHERE {$analyticsWhere}
+    GROUP BY item.violation_type
     ORDER BY total DESC
     LIMIT 1
 ") ?: [];
 
 $topLocation = fetch_one("
-    SELECT violation_location, COUNT(*) AS total
-    FROM violations
-    WHERE YEAR(violation_date) = YEAR(CURDATE())
-    GROUP BY violation_location
+    SELECT v.violation_location, COUNT(*) AS total
+    FROM violations v
+    WHERE {$analyticsWhere}
+    GROUP BY v.violation_location
     ORDER BY total DESC
     LIMIT 1
 ") ?: [];
 
 $peakHour = fetch_one("
     SELECT
-        HOUR(created_at) AS peak_hour,
+        HOUR(v.created_at) AS peak_hour,
         COUNT(*) AS total
-    FROM violations
-    WHERE YEAR(created_at) = YEAR(CURDATE())
-    GROUP BY HOUR(created_at)
+    FROM violations v
+    WHERE {$analyticsWhere}
+    GROUP BY HOUR(v.created_at)
     ORDER BY total DESC
     LIMIT 1
 ") ?: [];
 
-$monthlyTrend = monthly_violation_counts();
+$monthlyTrend = array_fill(0, 12, 0);
+foreach (fetch_all("SELECT MONTH(v.violation_date) month_number, COUNT(*) total FROM violations v WHERE {$analyticsWhere} GROUP BY MONTH(v.violation_date)") as $row) {
+    $monthlyTrend[max(0, min(11, (int)$row['month_number'] - 1))] = (int)$row['total'];
+}
 
 $violationTypeRows = fetch_all("
-    SELECT violation_type, COUNT(*) AS total
-    FROM violations
-    WHERE YEAR(violation_date) = YEAR(CURDATE())
-    GROUP BY violation_type
+    SELECT item.violation_type, COUNT(*) AS total
+    FROM violation_items item
+    JOIN violations v ON v.violation_id = item.violation_id
+    WHERE {$analyticsWhere}
+    GROUP BY item.violation_type
     ORDER BY total DESC
     LIMIT 8
 ");
 
 $locationRows = fetch_all("
-    SELECT violation_location, COUNT(*) AS total
-    FROM violations
-    WHERE YEAR(violation_date) = YEAR(CURDATE())
-    GROUP BY violation_location
+    SELECT v.violation_location, COUNT(*) AS total
+    FROM violations v
+    WHERE {$analyticsWhere}
+    GROUP BY v.violation_location
     ORDER BY total DESC
     LIMIT 8
 ");
@@ -84,6 +120,8 @@ foreach ($locationRows as $row) {
 $violationsToday = (int) ($todayAnalytics['violations_today'] ?? 0);
 $penaltiesToday = (float) ($todayAnalytics['penalties_today'] ?? 0);
 $affectedLocations = (int) ($todayAnalytics['affected_locations'] ?? 0);
+$paymentCount = (int) ($collectionAnalytics['payment_count'] ?? 0);
+$collectedAmount = (float) ($collectionAnalytics['collected_amount'] ?? 0);
 $topViolationName = (string) ($topViolation['violation_type'] ?? 'No data');
 $topViolationCount = (int) ($topViolation['total'] ?? 0);
 $topLocationName = (string) ($topLocation['violation_location'] ?? 'No data');
@@ -889,23 +927,46 @@ div[style*="border-radius: 999px"]:not(.tag):not(.system-online-badge){
   <div class="ds-section-title">
     <div>
       <h5>Database Analytics</h5>
-      <small>Operational indicators generated directly from MySQL records</small>
+      <small>Operational indicators generated directly from MySQL records · Showing <?= esc($analyticsPeriodLabel) ?></small>
     </div>
+    <form method="get" class="d-flex align-items-center gap-2 flex-wrap" id="analyticsFilterForm">
+      <label class="small text-muted mb-0" for="analyticsPeriodSelect">Collection period</label>
+      <select class="form-select form-select-sm" name="analytics_period" id="analyticsPeriodSelect" style="width:150px">
+        <option value="day" <?= $analyticsPeriod === 'day' ? 'selected' : '' ?>>Specific day</option>
+        <option value="month" <?= $analyticsPeriod === 'month' ? 'selected' : '' ?>>Specific month</option>
+        <option value="year" <?= $analyticsPeriod === 'year' ? 'selected' : '' ?>>Specific year</option>
+        <option value="all" <?= $analyticsPeriod === 'all' ? 'selected' : '' ?>>All records</option>
+      </select>
+      <input class="form-control form-control-sm analytics-filter-value" type="date" name="analytics_day" id="analyticsDayInput" value="<?= esc($analyticsDay) ?>" style="width:150px">
+      <input class="form-control form-control-sm analytics-filter-value" type="month" name="analytics_month" id="analyticsMonthInput" value="<?= esc($analyticsMonth) ?>" style="width:150px">
+      <input class="form-control form-control-sm analytics-filter-value" type="number" name="analytics_year" id="analyticsYearInput" value="<?= esc($analyticsYear) ?>" min="2000" max="2100" style="width:110px">
+      <button class="btn btn-sm btn-primary" type="submit"><i class="bi bi-funnel me-1"></i>Apply</button>
+    </form>
   </div>
 
   <div class="ds-analysis-grid mb-3">
     <div class="ds-analysis-kpi">
-      <small>Violations Today</small>
+      <small>Actual Collection</small>
+      <strong><?= peso($collectedAmount) ?></strong>
+    </div>
+
+    <div class="ds-analysis-kpi">
+      <small>Completed Payments</small>
+      <strong><?= num($paymentCount) ?></strong>
+    </div>
+
+    <div class="ds-analysis-kpi">
+      <small>Violations</small>
       <strong><?= num($violationsToday) ?></strong>
     </div>
 
     <div class="ds-analysis-kpi">
-      <small>Estimated Penalties Today</small>
+      <small>Estimated Penalties</small>
       <strong><?= peso($penaltiesToday) ?></strong>
     </div>
 
     <div class="ds-analysis-kpi">
-      <small>Affected Locations Today</small>
+      <small>Affected Locations</small>
       <strong><?= num($affectedLocations) ?></strong>
     </div>
 
@@ -921,7 +982,7 @@ div[style*="border-radius: 999px"]:not(.tag):not(.system-online-badge){
         <div class="section-head">
           <div>
             <h6>Leading Violation</h6>
-            <small class="text-muted">Current-year database result</small>
+            <small class="text-muted"><?= esc($analyticsPeriodLabel) ?> database result</small>
           </div>
         </div>
 
@@ -935,7 +996,7 @@ div[style*="border-radius: 999px"]:not(.tag):not(.system-online-badge){
         <div class="section-head">
           <div>
             <h6>Leading Database Location</h6>
-            <small class="text-muted">Current-year violation concentration</small>
+            <small class="text-muted"><?= esc($analyticsPeriodLabel) ?> violation concentration</small>
           </div>
         </div>
 
@@ -951,7 +1012,7 @@ div[style*="border-radius: 999px"]:not(.tag):not(.system-online-badge){
         <div class="section-head">
           <div>
             <h6>Monthly Violation Trend</h6>
-            <small class="text-muted">Database records for the current year</small>
+            <small class="text-muted">Database records for <?= esc($analyticsPeriodLabel) ?></small>
           </div>
         </div>
         <canvas id="dsTrendChart"></canvas>
@@ -1046,6 +1107,23 @@ const dsViolationData = <?= json_encode($violationTypeData) ?>;
 const databaseTopViolation = <?= json_encode($topViolationName) ?>;
 const databaseTopLocation = <?= json_encode($topLocationName) ?>;
 const databasePeakHour = <?= json_encode($peakHourValue) ?>;
+
+function updateAnalyticsFilterInput() {
+  const selected = document.getElementById('analyticsPeriodSelect')?.value || 'day';
+  const inputs = {
+    day: document.getElementById('analyticsDayInput'),
+    month: document.getElementById('analyticsMonthInput'),
+    year: document.getElementById('analyticsYearInput')
+  };
+  Object.entries(inputs).forEach(([period, input]) => {
+    if (!input) return;
+    const visible = selected === period;
+    input.classList.toggle('d-none', !visible);
+    input.disabled = !visible;
+  });
+}
+document.getElementById('analyticsPeriodSelect')?.addEventListener('change', updateAnalyticsFilterInput);
+updateAnalyticsFilterInput();
 
 function dsNormalizeRisk(value) {
   return String(value || '')

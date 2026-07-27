@@ -35,10 +35,37 @@ $hasNoLicense = $input['has_no_license'];
 $license = $hasNoLicense ? 'NO LICENSE' : strtoupper(trim((string)($input['license_number'] ?? '')));
 $plate = strtoupper(trim((string)($input['plate_number'] ?? '')));
 $vehicle = trim((string)($input['vehicle_type'] ?? ''));
-$type = trim((string)($input['violation_type'] ?? ''));
 $location = trim((string)($input['location'] ?? ''));
-$penalty = filter_var($input['penalty_amount'] ?? null, FILTER_VALIDATE_FLOAT);
 $inputMethod = ($input['input_method'] ?? 'manual') === 'ocr' ? 'ocr' : 'manual';
+
+$submittedItems = isset($input['violations']) && is_array($input['violations'])
+    ? $input['violations']
+    : [[
+        'violation_type' => $input['violation_type'] ?? '',
+        'penalty_amount' => $input['penalty_amount'] ?? null,
+    ]];
+$items = [];
+foreach ($submittedItems as $submittedItem) {
+    if (!is_array($submittedItem)) continue;
+    $itemType = trim((string)($submittedItem['violation_type'] ?? $submittedItem['type'] ?? ''));
+    $itemPenalty = filter_var($submittedItem['penalty_amount'] ?? null, FILTER_VALIDATE_FLOAT);
+    $confidence = isset($submittedItem['ocr_confidence']) && is_numeric($submittedItem['ocr_confidence'])
+        ? max(0.0, min(1.0, (float)$submittedItem['ocr_confidence'])) : null;
+    if (!in_array($itemType, travis_violation_types(), true)) {
+        http_response_code(422); echo json_encode(['success' => false, 'error' => 'Every violation must come from the official list']); exit;
+    }
+    if ($itemPenalty === false || !in_array((float)$itemPenalty, array_map('floatval', travis_penalty_fees()), true)) {
+        http_response_code(422); echo json_encode(['success' => false, 'error' => "Select a valid penalty for {$itemType}"]); exit;
+    }
+    $items[$itemType] = ['violation_type' => $itemType, 'penalty_amount' => (float)$itemPenalty, 'ocr_confidence' => $confidence];
+}
+if (!$items) {
+    http_response_code(422); echo json_encode(['success' => false, 'error' => 'Select at least one violation']); exit;
+}
+$items = array_values($items);
+$types = array_column($items, 'violation_type');
+$typeSummary = implode(', ', $types);
+$penalty = array_sum(array_column($items, 'penalty_amount'));
 
 if ($driver === '' || mb_strlen($driver) > 150 || $plate === '' || mb_strlen($plate) > 50 || $location === '' || mb_strlen($location) > 255) {
     http_response_code(422);
@@ -55,19 +82,11 @@ if (!in_array($vehicle, travis_vehicle_types(), true)) {
     echo json_encode(['success' => false, 'error' => 'Select a valid vehicle type']);
     exit;
 }
-if (!in_array($type, travis_violation_types(), true)) {
-    http_response_code(422);
-    echo json_encode(['success' => false, 'error' => 'Select a valid violation from the official list']);
-    exit;
-}
-if ($penalty === false || !in_array((float)$penalty, array_map('floatval', travis_penalty_fees()), true)) {
-    http_response_code(422);
-    echo json_encode(['success' => false, 'error' => 'Select a valid penalty fee from the official list']);
-    exit;
-}
-
 try {
-    $offense = travis_offense_analysis($pdo, $license, $plate, $type);
+    $offenses = array_map(static fn(array $item): array => [
+        'violation_type' => $item['violation_type'],
+        'analysis' => travis_offense_analysis($pdo, $license, $plate, $item['violation_type']),
+    ], $items);
     $pdo->beginTransaction();
     do {
         $ticket = 'TRV-' . date('Ymd') . '-' . str_pad((string)random_int(1, 999999), 6, '0', STR_PAD_LEFT);
@@ -80,10 +99,14 @@ try {
         violation_type, violation_location, violation_date, violation_time, penalty_amount,
         encoded_by, input_method, status
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), CURTIME(), ?, ?, ?, 'pending')");
-    $statement->execute([$ticket, $driver, $license, $hasNoLicense ? 1 : 0, $plate, $vehicle, $type, $location, $penalty, (int)$_SESSION['user_id'], $inputMethod]);
+    $statement->execute([$ticket, $driver, $license, $hasNoLicense ? 1 : 0, $plate, $vehicle, $typeSummary, $location, $penalty, (int)$_SESSION['user_id'], $inputMethod]);
     $id = (int)$pdo->lastInsertId();
+    $itemStatement = $pdo->prepare('INSERT INTO violation_items (violation_id, violation_type, penalty_amount, ocr_confidence) VALUES (?, ?, ?, ?)');
+    foreach ($items as $item) {
+        $itemStatement->execute([$id, $item['violation_type'], $item['penalty_amount'], $item['ocr_confidence']]);
+    }
     $pdo->commit();
-    echo json_encode(['success' => true, 'message' => 'Violation added successfully', 'violation_id' => $id, 'ticket_number' => $ticket, 'offense_analysis' => $offense]);
+    echo json_encode(['success' => true, 'message' => count($items) . ' violation(s) added successfully', 'violation_id' => $id, 'ticket_number' => $ticket, 'violation_items' => $items, 'offense_analyses' => $offenses, 'offense_analysis' => $offenses[0]['analysis']]);
 } catch (Throwable $exception) {
     if ($pdo->inTransaction()) $pdo->rollBack();
     error_log('add_violations.php: ' . $exception->getMessage());

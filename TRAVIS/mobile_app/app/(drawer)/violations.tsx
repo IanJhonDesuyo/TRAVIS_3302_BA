@@ -107,6 +107,8 @@ export default function ViolationsScreen() {
   const [scanning, setScanning] = useState(false);
   const [inputMethod, setInputMethod] = useState<'manual' | 'ocr'>('manual');
   const [ocrNotice, setOcrNotice] = useState('');
+  const [selectedViolations, setSelectedViolations] = useState<Array<{ violation_type: string; penalty_amount: string; ocr_confidence?: number }>>([]);
+  const [violationDropdownOpen, setViolationDropdownOpen] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<Violation | null>(null);
   const [violationTypes, setViolationTypes] = useState<string[]>([]);
   const [penaltyFees, setPenaltyFees] = useState<number[]>([]);
@@ -126,20 +128,31 @@ export default function ViolationsScreen() {
   useEffect(() => {
     const license = hasNoLicense ? 'NO LICENSE' : formData.license_number.trim();
     const plate = formData.plate_number.trim();
-    if (!violationTypes.includes(formData.violation_type) || (!license && !plate)) {
+    const selectedType = selectedViolations[0]?.violation_type || '';
+    if (!violationTypes.includes(selectedType) || (!license && !plate)) {
       setOffenseAnalysis(null);
       return;
     }
     const timer = setTimeout(async () => {
       setAnalyzingOffense(true);
       try {
-        const response = await api.get('analyze_offense.php', { params: { license_number: license, plate_number: plate, violation_type: formData.violation_type } });
+        const response = await api.get('analyze_offense.php', { params: { license_number: license, plate_number: plate, violation_type: selectedType } });
         setOffenseAnalysis(response.data?.data || null);
       } catch { setOffenseAnalysis(null); }
       finally { setAnalyzingOffense(false); }
     }, 450);
     return () => clearTimeout(timer);
-  }, [formData.license_number, formData.plate_number, formData.violation_type, hasNoLicense, violationTypes]);
+  }, [formData.license_number, formData.plate_number, selectedViolations, hasNoLicense, violationTypes]);
+
+  const toggleViolation = (type: string, confidence?: number) => {
+    setSelectedViolations(current => current.some(item => item.violation_type === type)
+      ? current.filter(item => item.violation_type !== type)
+      : [...current, { violation_type: type, penalty_amount: '', ocr_confidence: confidence }]);
+  };
+
+  const setViolationPenalty = (type: string, penalty: number) => {
+    setSelectedViolations(current => current.map(item => item.violation_type === type ? { ...item, penalty_amount: String(penalty) } : item));
+  };
 
   const scanTicket = async (source: 'camera' | 'gallery') => {
     const permission = source === 'camera'
@@ -150,8 +163,8 @@ export default function ViolationsScreen() {
       return;
     }
     const result = source === 'camera'
-      ? await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.9, allowsEditing: true })
-      : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.9, allowsEditing: true });
+      ? await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 1, allowsEditing: false })
+      : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 1, allowsEditing: false });
     if (result.canceled || !result.assets[0]) return;
 
     setScanning(true);
@@ -162,22 +175,35 @@ export default function ViolationsScreen() {
       body.append('ticket', { uri: asset.uri, name: asset.fileName || 'ticket.jpg', type: asset.mimeType || 'image/jpeg' } as any);
       const response = await api.post('scan_ticket.php', body, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 60000 });
       const fields = response.data.fields || {};
-      const noLicenseDetected = String(fields.license_number || '').toUpperCase() === 'NO LICENSE'
-        || String(fields.violation_type || '').toLowerCase() === "no driver's license";
+      const fieldConfidences = response.data.field_confidences || {};
+      const minimumFieldConfidence = 0.55;
+      const trustedField = (name: string) => String(fields[name] || '').trim() && Number(fieldConfidences[name] || 0) >= minimumFieldConfidence;
+      const checked = Array.isArray(response.data.checked_violations) ? response.data.checked_violations : [];
+      const detectedTypes = checked
+        .filter((item: any) => Number(item.confidence || 0) >= minimumFieldConfidence && violationTypes.includes(String(item.violation_type || '')))
+        .map((item: any) => ({ violation_type: String(item.violation_type), penalty_amount: '', ocr_confidence: Number(item.confidence || 0) }));
+      if (!detectedTypes.length && trustedField('violation_type') && violationTypes.includes(String(fields.violation_type || ''))) {
+        detectedTypes.push({ violation_type: String(fields.violation_type), penalty_amount: String(fields.penalty_amount || ''), ocr_confidence: 0 });
+      }
+      setSelectedViolations(detectedTypes);
+      const noLicenseDetected = (trustedField('license_number') && String(fields.license_number || '').toUpperCase() === 'NO LICENSE')
+        || detectedTypes.some((item: any) => item.violation_type === "No Driver's License");
       setHasNoLicense(noLicenseDetected);
       setFormData(current => ({
         ...current,
-        driver_name: fields.driver_name || current.driver_name,
-        license_number: noLicenseDetected ? '' : (fields.license_number || current.license_number),
-        plate_number: fields.plate_number || current.plate_number,
-        vehicle_type: fields.vehicle_type || current.vehicle_type,
-        violation_type: fields.violation_type || current.violation_type,
-        location: fields.location || current.location,
-        penalty_amount: fields.penalty_amount || current.penalty_amount,
+        driver_name: trustedField('driver_name') ? fields.driver_name : current.driver_name,
+        license_number: noLicenseDetected ? '' : (trustedField('license_number') ? fields.license_number : current.license_number),
+        plate_number: trustedField('plate_number') ? fields.plate_number : current.plate_number,
+        vehicle_type: trustedField('vehicle_type') ? fields.vehicle_type : current.vehicle_type,
+        violation_type: '',
+        location: trustedField('location') ? fields.location : current.location,
+        penalty_amount: trustedField('penalty_amount') ? fields.penalty_amount : current.penalty_amount,
       }));
       setInputMethod('ocr');
       const warning = String(response.data.warning || '').trim();
-      setOcrNotice(warning || `${response.data.recognized_fields || 0} fields detected · ${Math.round((response.data.confidence || 0) * 100)}% text confidence. Review all values.`);
+      const lowConfidenceFields = Object.keys(fields).filter(name => fields[name] && !trustedField(name));
+      const confidenceWarning = lowConfidenceFields.length ? ` Low-confidence fields were left blank: ${lowConfidenceFields.join(', ').replaceAll('_', ' ')}.` : '';
+      setOcrNotice(`${warning || `${response.data.recognized_fields || 0} fields detected.`}${confidenceWarning} Review all values before saving.`);
     } catch (error: any) {
       setOcrNotice('');
       Alert.alert('Ticket scan failed', error.response?.data?.error || 'The ticket could not be read. Try a clearer, well-lit photo.');
@@ -241,21 +267,21 @@ export default function ViolationsScreen() {
 
   // ===== ADD VIOLATION =====
   const handleAddViolation = async () => {
-    const { driver_name, license_number, plate_number, vehicle_type, violation_type, location, penalty_amount } = formData;
+    const { driver_name, license_number, plate_number, vehicle_type, location } = formData;
     if (!driver_name.trim() || (!hasNoLicense && !license_number.trim()) || !plate_number.trim() || !location.trim()) {
       Alert.alert('Error', 'Please fill in all fields.');
       return;
     }
-    if (!violationTypes.includes(violation_type)) {
-      Alert.alert('Invalid violation', 'Select a violation from the official list.');
+    if (!selectedViolations.length || selectedViolations.some(item => !violationTypes.includes(item.violation_type))) {
+      Alert.alert('Invalid violation', 'Select at least one violation from the official list.');
       return;
     }
     if (!vehicleTypes.includes(vehicle_type)) {
       Alert.alert('Invalid vehicle', 'Select a valid vehicle type.');
       return;
     }
-    if (!penaltyFees.includes(Number(penalty_amount))) {
-      Alert.alert('Invalid penalty', 'Select a penalty from the official fee list.');
+    if (selectedViolations.some(item => !penaltyFees.includes(Number(item.penalty_amount)))) {
+      Alert.alert('Invalid penalty', 'Select the applicable penalty for every violation.');
       return;
     }
     setSubmitting(true);
@@ -266,9 +292,8 @@ export default function ViolationsScreen() {
         has_no_license: hasNoLicense,
         plate_number,
         vehicle_type,
-        violation_type,
+        violations: selectedViolations.map(item => ({ ...item, penalty_amount: Number(item.penalty_amount) })),
         location,
-        penalty_amount: parseFloat(penalty_amount),
         input_method: inputMethod,
       });
       if (response.data.success) {
@@ -278,6 +303,7 @@ export default function ViolationsScreen() {
           : `${response.data.ticket_number} was recorded as a first offense.`);
         setModalVisible(false);
         setFormData({ driver_name: '', license_number: '', plate_number: '', vehicle_type: 'Car', violation_type: '', location: '', penalty_amount: '' });
+        setSelectedViolations([]);
         setHasNoLicense(false);
         setInputMethod('manual');
         setOcrNotice('');
@@ -554,23 +580,54 @@ export default function ViolationsScreen() {
                 value={formData.plate_number}
                 onChangeText={text => setFormData({ ...formData, plate_number: text })}
               />
-              <Text style={styles.modalLabel}>Violation Type</Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="Violation type"
-                placeholderTextColor={COLORS.textTertiary}
-                value={formData.violation_type}
-                onChangeText={text => setFormData({ ...formData, violation_type: text })}
-              />
-              {!!formData.violation_type && (
-                <View style={styles.optionWrap}>
-                  {violationTypes.filter(type => type.toLowerCase().includes(formData.violation_type.toLowerCase())).slice(0, 6).map(type => (
-                    <TouchableOpacity key={type} style={[styles.optionChip, formData.violation_type === type && styles.optionChipActive]} onPress={() => setFormData({ ...formData, violation_type: type })}>
-                      <Text style={[styles.optionChipText, formData.violation_type === type && styles.optionChipTextActive]}>{type}</Text>
-                    </TouchableOpacity>
-                  ))}
+              <Text style={styles.modalLabel}>Violations ({selectedViolations.length} selected)</Text>
+              <TouchableOpacity
+                style={[styles.violationDropdownButton, violationDropdownOpen && styles.violationDropdownButtonOpen]}
+                onPress={() => setViolationDropdownOpen(open => !open)}
+                activeOpacity={0.75}
+              >
+                <Ionicons name="list-outline" size={18} color={COLORS.primary} />
+                <Text style={[styles.violationDropdownText, !selectedViolations.length && styles.violationDropdownPlaceholder]} numberOfLines={1}>
+                  {selectedViolations.length ? `${selectedViolations.length} violation${selectedViolations.length === 1 ? '' : 's'} selected` : 'Select violation types'}
+                </Text>
+                <Ionicons name={violationDropdownOpen ? 'chevron-up' : 'chevron-down'} size={17} color={COLORS.textTertiary} />
+              </TouchableOpacity>
+              {violationDropdownOpen && <View style={styles.violationDropdownMenu}>
+                <View style={styles.violationSearchRow}>
+                  <Ionicons name="search-outline" size={17} color={COLORS.textTertiary} />
+                  <TextInput
+                    style={styles.violationSearchInput}
+                    placeholder="Search violation types"
+                    placeholderTextColor={COLORS.textTertiary}
+                    value={formData.violation_type}
+                    onChangeText={text => setFormData({ ...formData, violation_type: text })}
+                  />
                 </View>
-              )}
+                <ScrollView style={styles.violationDropdownList} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                  {violationTypes.filter(type => type.toLowerCase().includes(formData.violation_type.toLowerCase())).map(type => {
+                    const selected = selectedViolations.some(item => item.violation_type === type);
+                    return <TouchableOpacity key={type} style={[styles.violationDropdownOption, selected && styles.violationDropdownOptionSelected]} onPress={() => toggleViolation(type)}>
+                      <Text style={[styles.violationDropdownOptionText, selected && styles.violationDropdownOptionTextSelected]}>{type}</Text>
+                      <Ionicons name={selected ? 'checkbox' : 'square-outline'} size={20} color={selected ? COLORS.primary : COLORS.textTertiary} />
+                    </TouchableOpacity>;
+                  })}
+                </ScrollView>
+                <TouchableOpacity style={styles.violationDropdownDone} onPress={() => setViolationDropdownOpen(false)}>
+                  <Text style={styles.violationDropdownDoneText}>Done</Text>
+                </TouchableOpacity>
+              </View>}
+              {selectedViolations.map(item => (
+                <View key={item.violation_type} style={styles.analysisCard}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.analysisTitle}>{item.violation_type}</Text>
+                    {!!item.ocr_confidence && <Text style={styles.analysisText}>Checkbox confidence: {Math.round(item.ocr_confidence * 100)}% · confirm the fee</Text>}
+                    <View style={[styles.optionWrap, { marginTop: 8 }]}>
+                      {penaltyFees.map(fee => <TouchableOpacity key={fee} style={[styles.optionChip, Number(item.penalty_amount) === fee && styles.optionChipActive]} onPress={() => setViolationPenalty(item.violation_type, fee)}><Text style={[styles.optionChipText, Number(item.penalty_amount) === fee && styles.optionChipTextActive]}>₱{fee.toLocaleString()}</Text></TouchableOpacity>)}
+                    </View>
+                  </View>
+                  <TouchableOpacity onPress={() => toggleViolation(item.violation_type)}><Ionicons name="close-circle" size={22} color={COLORS.danger} /></TouchableOpacity>
+                </View>
+              ))}
               {analyzingOffense && <View style={styles.analysisCard}><ActivityIndicator size="small" color={COLORS.primary} /><Text style={styles.analysisText}>Checking previous offenses…</Text></View>}
               {!analyzingOffense && offenseAnalysis && (
                 <View style={[styles.analysisCard, offenseAnalysis.previous_offenses > 0 && styles.analysisRepeat]}>
@@ -593,18 +650,7 @@ export default function ViolationsScreen() {
                 value={formData.location}
                 onChangeText={text => setFormData({ ...formData, location: text })}
               />
-              <Text style={styles.modalLabel}>Penalty Amount</Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="Penalty amount"
-                placeholderTextColor={COLORS.textTertiary}
-                keyboardType="numeric"
-                value={formData.penalty_amount}
-                onChangeText={text => setFormData({ ...formData, penalty_amount: text })}
-              />
-              <View style={styles.optionWrap}>
-                {penaltyFees.map(fee => <TouchableOpacity key={fee} style={[styles.optionChip, Number(formData.penalty_amount) === fee && styles.optionChipActive]} onPress={() => setFormData({ ...formData, penalty_amount: String(fee) })}><Text style={[styles.optionChipText, Number(formData.penalty_amount) === fee && styles.optionChipTextActive]}>₱{fee.toLocaleString()}</Text></TouchableOpacity>)}
-              </View>
+              {!!selectedViolations.length && <Text style={styles.modalSub}>Total penalty: ₱{selectedViolations.reduce((sum, item) => sum + Number(item.penalty_amount || 0), 0).toLocaleString()}</Text>}
             </ScrollView>
 
             <View style={styles.modalActions}>
@@ -763,6 +809,20 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.bg, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10,
     borderWidth: 1, borderColor: COLORS.border, fontSize: 14, color: COLORS.textPrimary,
   },
+  violationDropdownButton: { minHeight: 46, paddingHorizontal: 12, borderRadius: 10, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.bg, flexDirection: 'row', alignItems: 'center', gap: 9 },
+  violationDropdownButtonOpen: { borderColor: COLORS.primary, borderBottomLeftRadius: 0, borderBottomRightRadius: 0 },
+  violationDropdownText: { flex: 1, color: COLORS.textPrimary, fontSize: 13, fontWeight: '700' },
+  violationDropdownPlaceholder: { color: COLORS.textTertiary, fontWeight: '500' },
+  violationDropdownMenu: { borderWidth: 1, borderTopWidth: 0, borderColor: COLORS.primary, borderBottomLeftRadius: 10, borderBottomRightRadius: 10, backgroundColor: '#FFF', overflow: 'hidden' },
+  violationSearchRow: { height: 42, margin: 9, paddingHorizontal: 10, borderRadius: 9, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.bg, flexDirection: 'row', alignItems: 'center', gap: 7 },
+  violationSearchInput: { flex: 1, height: 40, color: COLORS.textPrimary, fontSize: 12, paddingVertical: 0 },
+  violationDropdownList: { maxHeight: 230 },
+  violationDropdownOption: { minHeight: 44, paddingHorizontal: 12, paddingVertical: 10, borderTopWidth: 1, borderTopColor: 'rgba(16, 47, 73, 0.09)', flexDirection: 'row', alignItems: 'center', gap: 10 },
+  violationDropdownOptionSelected: { backgroundColor: '#EAF6F5' },
+  violationDropdownOptionText: { flex: 1, color: COLORS.textPrimary, fontSize: 12, lineHeight: 17 },
+  violationDropdownOptionTextSelected: { color: COLORS.primary, fontWeight: '800' },
+  violationDropdownDone: { alignItems: 'center', paddingVertical: 11, backgroundColor: COLORS.primary },
+  violationDropdownDoneText: { color: '#FFF', fontSize: 12, fontWeight: '800' },
   optionWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 8 },
   optionChip: { paddingHorizontal: 10, paddingVertical: 7, borderRadius: 16, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.surface },
   optionChipActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
