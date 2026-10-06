@@ -1,10 +1,13 @@
 from ultralytics import YOLO
 import argparse
 import cv2
+import json
 import os
 import time
+from datetime import datetime
+from pathlib import Path
 import config
-from api_client import get_cv_settings, send_monitoring_log, send_status_update
+from api_client import get_cv_settings, send_monitoring_log, send_status_update, send_status_update_now
 from camera_source import CameraSource
 from stream_server import start_stream, update_frame
 from congestion import get_congestion_level
@@ -13,11 +16,16 @@ from calibration import load_calibration
 from collision_detection import CollisionDetector
 from direction_counter import DirectionCounter
 from officer_detection import OfficerPresenceDetector
+from duty_schedule import is_enforcer_duty_active
 
 
 def apply_selected_source():
     parser = argparse.ArgumentParser(description="TRAVIS AI video detection engine")
-    parser.add_argument("--source-type", choices=["uploaded_video", "tapo_camera"], default=None)
+    parser.add_argument(
+        "--source-type",
+        choices=["uploaded_video", "tapo_camera", "phone_camera"],
+        default=None,
+    )
     parser.add_argument("--source", default=None)
     parser.add_argument("--calibration-profile", default=None)
     parser.add_argument("--enable-collision", action="store_true")
@@ -32,11 +40,16 @@ def apply_selected_source():
         config.VIDEO_SOURCE = "tapo"
         if args.source:
             config.TAPO_RTSP = args.source
+    elif args.source_type == "phone_camera":
+        config.VIDEO_SOURCE = "phone"
+        if args.source:
+            config.PHONE_STREAM_URL = args.source
 
     return args
 
 
 selected_source = apply_selected_source()
+is_live_source = config.VIDEO_SOURCE in ("tapo", "phone")
 
 runtime_settings = get_cv_settings(config.CV_SETTINGS_API_URL)
 config.CONFIDENCE_THRESHOLD = float(runtime_settings.get("confidence_threshold", config.CONFIDENCE_THRESHOLD))
@@ -50,6 +63,10 @@ ALERT_COOLDOWN_SECONDS = int(runtime_settings.get("alert_cooldown_seconds", 300)
 # Load YOLO Model
 # ============================
 model = YOLO(config.MODEL_PATH)
+
+# Avoid CPU oversubscription between PyTorch inference and the background
+# OpenCV MJPEG encoder. PyTorch retains the available inference threads.
+cv2.setNumThreads(2)
 
 # ============================
 # Video Paths
@@ -74,6 +91,39 @@ last_logged_collision_status = None
 last_logged_officer_status = None
 
 
+def report_startup_error(message):
+    """Persist and relay a terminal live-camera failure immediately."""
+    source_type = selected_source.source_type or (
+        "uploaded_video" if config.VIDEO_SOURCE == "video" else f"{config.VIDEO_SOURCE}_camera"
+    )
+    send_status_update_now(config.STATUS_API_URL, {
+        "vehicle_count": 0,
+        "inbound_count": 0,
+        "outbound_count": 0,
+        "congestion_level": "Unknown",
+        "officer_presence": "Unknown",
+        "potential_collision": "None",
+        "alert_status": "NORMAL",
+        "ai_status": "Error",
+        "analysis_status": "Error",
+        "message": message,
+        "source_type": source_type,
+    })
+    status_path = Path(__file__).resolve().parent.parent / "Web_app" / "api" / "analysis_status.json"
+    status_payload = {
+        "analysis_status": "Error",
+        "ai_status": "Error",
+        "message": message,
+        "source_type": source_type,
+        "stream_owner": "shared",
+        "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "updated_at_epoch": int(time.time()),
+    }
+    temporary_status_path = status_path.with_suffix(".json.tmp")
+    temporary_status_path.write_text(json.dumps(status_payload, indent=4), encoding="utf-8")
+    os.replace(temporary_status_path, status_path)
+
+
 # ============================
 # Debug
 # ============================
@@ -84,6 +134,8 @@ if config.VIDEO_SOURCE == "video":
     print("Video exists:", os.path.exists(config.VIDEO_PATH))
 elif config.VIDEO_SOURCE == "tapo":
     print("RTSP source configured:", bool(config.TAPO_RTSP))
+elif config.VIDEO_SOURCE == "phone":
+    print("Cellphone stream configured:", bool(config.PHONE_STREAM_URL))
 
 # ============================
 # Open Video
@@ -99,7 +151,17 @@ camera = CameraSource()
 alert_engine = AlertEngine()
 alert_engine.cooldown = ALERT_COOLDOWN_SECONDS
 
-cap = camera.open()
+try:
+    cap = camera.open()
+except Exception as error:
+    failure_message = (
+        "The Tapo RTSP stream could not be opened. Confirm that port 554 is enabled, "
+        "verify the Camera Account credentials, and use Standard quality."
+        if config.VIDEO_SOURCE == "tapo"
+        else str(error)
+    )
+    report_startup_error(failure_message)
+    raise
 
 if not cap.isOpened():
     print("Cannot open video.")
@@ -111,7 +173,11 @@ print(f"Capture Resolution: {width} x {height}")
 fps = cap.get(cv2.CAP_PROP_FPS)
 total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) if config.VIDEO_SOURCE == "video" else 0
 current_frame = 0
+live_frame_version = -1
+live_reconnect_cycles = 0
+live_connection_error = None
 source_started_at = time.time()
+processing_fps_ema = 0.0
 
 calibration = load_calibration(
     width=width,
@@ -151,11 +217,6 @@ LINE_THICKNESS = max(2, width // 500)
 BOX_THICKNESS = max(2, width // 600)
 POINT_RADIUS = max(3, width // 350)
 
-DASHBOARD_X = int(width * 0.01)
-DASHBOARD_Y = int(height * 0.02)
-DASHBOARD_W = int(width * 0.32)
-DASHBOARD_H = int(height * 0.29)
-
 print("Inbound Line:", INBOUND_LINE)
 print("Outbound Line:", OUTBOUND_LINE)
 print("Calibration Profile:", calibration.name)
@@ -166,7 +227,7 @@ if fps == 0:
     fps = 30
 
 out = None
-if config.VIDEO_SOURCE == "video":
+if config.VIDEO_SOURCE == "video" and config.SAVE_PROCESSED_VIDEO:
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     out = cv2.VideoWriter(OUTPUT_VIDEO, fourcc, fps, (width, height))
 
@@ -184,25 +245,46 @@ if config.VIDEO_SOURCE == "video":
 # Main Loop
 # ============================
 while True:
-    if config.VIDEO_SOURCE == "tapo":
-        ret = True
-        for _ in range(max(1, config.TAPO_FRAMES_TO_GRAB)):
-            if not cap.grab():
-                ret = False
-                break
-        ret, frame = cap.retrieve() if ret else (False, None)
+    frame_started_at = time.perf_counter()
+    enforcer_duty_active = is_enforcer_duty_active(runtime_settings)
+    if is_live_source:
+        ret, frame, live_frame_version = camera.read_latest(
+            after_version=live_frame_version,
+        )
     else:
+        # Preserve sequential frames so ByteTrack IDs remain stable and a
+        # vehicle cannot jump over a counting line between detections.
         ret, frame = cap.read()
 
     if not ret:
-        if config.VIDEO_SOURCE == "tapo":
-            cap = camera.reconnect()
+        if is_live_source:
+            live_reconnect_cycles += 1
+            if live_reconnect_cycles > 3:
+                live_connection_error = (
+                    "The Tapo camera stopped delivering usable RTSP frames after three reconnect attempts. "
+                    "Check Wi-Fi stability, Camera Account/RTSP settings, and restart the camera."
+                    if config.VIDEO_SOURCE == "tapo"
+                    else "The live camera stopped delivering usable frames."
+                )
+                report_startup_error(live_connection_error)
+                print(live_connection_error)
+                break
+            cap = camera.reconnect(attempts=1, delay=1)
             if cap is not None:
+                live_frame_version = -1
                 continue
-            print("Tapo camera connection lost and could not be restored.")
+            live_connection_error = "Live camera connection lost and could not be restored."
+            report_startup_error(live_connection_error)
+            print(live_connection_error)
         break
 
-    current_frame += 1
+    live_reconnect_cycles = 0
+
+    current_frame = (
+        int(cap.get(cv2.CAP_PROP_POS_FRAMES))
+        if config.VIDEO_SOURCE == "video"
+        else current_frame + 1
+    )
    
 
     visible_vehicle_count = 0
@@ -269,8 +351,12 @@ while True:
     results = model.track(
         frame,
         persist=True,
-        tracker="bytetrack.yaml",
-        imgsz=config.LIVE_INFERENCE_SIZE if config.VIDEO_SOURCE == "tapo" else 640,
+        tracker=config.TRACKER_CONFIG,
+        imgsz=config.LIVE_INFERENCE_SIZE if is_live_source else config.UPLOADED_INFERENCE_SIZE,
+        # Preserve low-confidence small-object candidates for class-specific
+        # filtering below. Without this, YOLO may discard the motorcycle body
+        # while retaining only its higher-confidence rider/person box.
+        conf=0.15,
         classes=config.ALLOWED_CLASSES,
         verbose=False
     )
@@ -282,7 +368,16 @@ while True:
             cls = int(box.cls[0])
             conf = float(box.conf[0])
 
-            if conf < config.CONFIDENCE_THRESHOLD:
+            detection_threshold = (
+                min(config.CONFIDENCE_THRESHOLD, config.MOTORCYCLE_CONFIDENCE_THRESHOLD)
+                if cls == config.MOTORCYCLE_CLASS
+                else (
+                    min(config.CONFIDENCE_THRESHOLD, config.VEHICLE_CONFIDENCE_THRESHOLD)
+                    if cls in config.VEHICLE_CLASSES
+                    else config.CONFIDENCE_THRESHOLD
+                )
+            )
+            if conf < detection_threshold:
                 continue
 
             if cls not in config.ALLOWED_CLASSES:
@@ -302,7 +397,7 @@ while True:
                 visible_person_count += 1
                 person_anchor = (center_x, y2)
                 in_officer_zone = calibration.contains_officer_point(person_anchor)
-                if in_officer_zone:
+                if enforcer_duty_active and in_officer_zone:
                     persons_in_officer_zone.append({
                         "track_id": track_id,
                         "confidence": conf,
@@ -316,15 +411,32 @@ while True:
                 visible_vehicle_count += 1
                 label = f"Vehicle #{track_id}"
                 box_color = (0, 255, 0)
-                direction_counter.update(track_id, current_point)
-                vehicle_tracks.append({
-                    "track_id": track_id,
-                    "class_id": cls,
-                    "confidence": conf,
-                    "bbox": (x1, y1, x2, y2),
-                    "center": current_point,
-                    "inside_road_roi": calibration.contains_road_point(current_point),
-                })
+                # An unconfirmed detection has no stable identity yet. Show
+                # it immediately, but do not merge multiple anonymous objects
+                # into the shared -1 track used by counting/collision logic.
+                if track_id >= 0:
+                    # The bottom-center follows the vehicle's road contact
+                    # point. It crosses a painted/calibrated road line more
+                    # reliably than the bounding-box center, especially for
+                    # tall trucks and perspective CCTV views.
+                    counting_point = (center_x, y2)
+                    direction_counter.update(track_id, counting_point)
+                    vehicle_tracks.append({
+                        "track_id": track_id,
+                        "class_id": cls,
+                        "confidence": conf,
+                        "bbox": (x1, y1, x2, y2),
+                        "center": current_point,
+                        "inside_road_roi": calibration.contains_road_point(current_point),
+                    })
+
+                    cv2.circle(
+                        annotated_frame,
+                        counting_point,
+                        max(3, POINT_RADIUS - 1),
+                        (0, 255, 255),
+                        -1,
+                    )
 
             # Draw bounding box
             cv2.rectangle(
@@ -356,10 +468,17 @@ while True:
             )
 
     inbound_count, outbound_count = direction_counter.snapshot()
+    frame_processing_seconds = max(1e-6, time.perf_counter() - frame_started_at)
+    instantaneous_processing_fps = 1.0 / frame_processing_seconds
+    processing_fps_ema = (
+        instantaneous_processing_fps
+        if processing_fps_ema <= 0
+        else (processing_fps_ema * 0.90) + (instantaneous_processing_fps * 0.10)
+    )
     collision_result = collision_detector.update(vehicle_tracks, time.monotonic())
     potential_collision = collision_result.status
-    officer_result = officer_detector.update(persons_in_officer_zone)
-    officer_presence = officer_result.status
+    officer_result = officer_detector.update(persons_in_officer_zone) if enforcer_duty_active else None
+    officer_presence = officer_result.status if officer_result else "unknown"
 
     congestion_level = get_congestion_level(
         visible_vehicle_count,
@@ -369,49 +488,9 @@ while True:
 
     alert_status = alert_engine.update(congestion_level)
 
-    # ============================
-    # Dashboard Overlay
-    # ============================
-    cv2.rectangle(
-    annotated_frame,
-    (DASHBOARD_X, DASHBOARD_Y),
-    (DASHBOARD_X + DASHBOARD_W, DASHBOARD_Y + DASHBOARD_H),
-    (0, 0, 0),
-    -1
-)
-
-    overlay_padding = max(8, int(width * 0.008))
-    overlay_left = DASHBOARD_X + overlay_padding
-    overlay_right = DASHBOARD_X + int(DASHBOARD_W * 0.52)
-    overlay_row = max(20, DASHBOARD_H // 5)
-    overlay_text_scale = max(0.34, width / 3000)
-    overlay_title_scale = max(0.42, width / 2600)
-    overlay_thickness = max(1, width // 900)
-
-    overlay_items = [
-        (f"Vehicles: {visible_vehicle_count}", f"Persons: {visible_person_count}", (0, 255, 0), (255, 255, 0)),
-        (f"Inbound: {inbound_count}", f"Outbound: {outbound_count}", (0, 255, 0), (0, 0, 255)),
-        (f"Traffic: {congestion_level}", f"Alert: {alert_status}", (255, 255, 255), (0, 165, 255)),
-        (f"Collision: {potential_collision.upper()}", f"Officer: {officer_presence.upper()}", (255, 255, 255), (255, 165, 0)),
-    ]
-
-    cv2.putText(
-        annotated_frame,
-        "TRAVIS AI",
-        (overlay_left, DASHBOARD_Y + overlay_row - 4),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        overlay_title_scale,
-        (0, 255, 255),
-        overlay_thickness + 1,
-    )
-
-    for index, (left_text, right_text, left_color, right_color) in enumerate(overlay_items, start=1):
-        y = DASHBOARD_Y + overlay_row * (index + 1) - 6
-        cv2.putText(annotated_frame, left_text, (overlay_left, y), cv2.FONT_HERSHEY_SIMPLEX, overlay_text_scale, left_color, overlay_thickness)
-        cv2.putText(annotated_frame, right_text, (overlay_right, y), cv2.FONT_HERSHEY_SIMPLEX, overlay_text_scale, right_color, overlay_thickness)
-
     # Send status to PHP every second
     if time.time() - last_api_update >= 1:
+        capture_metrics = camera.metrics() if is_live_source else {}
         progress_percent = 0
         if total_frames > 0:
             progress_percent = min(100, round((current_frame / total_frames) * 100, 2))
@@ -430,7 +509,10 @@ while True:
             "current_frame": current_frame,
             "total_frames": total_frames,
             "progress_percent": progress_percent,
-            "running_time_seconds": int(time.time() - source_started_at)
+            "running_time_seconds": int(time.time() - source_started_at),
+            "processing_fps": round(processing_fps_ema, 2),
+            "source_fps": round(float(fps), 2),
+            **capture_metrics,
         }
 
         send_status_update(config.STATUS_API_URL, payload)
@@ -446,8 +528,13 @@ while True:
     if log_due or congestion_changed or alert_changed or collision_changed or officer_changed:
         collision_note = None
         if collision_result.track_ids:
+            collision_label = (
+                "Confirmed collision detected"
+                if potential_collision == "confirmed"
+                else "Potential collision detected"
+            )
             collision_note = (
-                f"Potential collision {potential_collision} between tracks "
+                f"{collision_label} between tracks "
                 f"{collision_result.track_ids[0]} and {collision_result.track_ids[1]} "
                 f"(confidence {collision_result.confidence:.2f})."
             )
@@ -459,7 +546,9 @@ while True:
             "congestion_level": congestion_level,
             "officer_presence": officer_presence,
             "potential_collision": potential_collision,
-            "alert_generated": 1 if alert_status == "ALERT" or potential_collision != "none" else 0,
+            # A possible trajectory conflict is monitoring data only. It must
+            # not raise an operator alert until the detector confirms it.
+            "alert_generated": 1 if alert_status == "ALERT" or potential_collision == "confirmed" else 0,
             "incident_notes": collision_note
         }
 
@@ -484,20 +573,55 @@ while True:
     if out is not None:
         out.write(annotated_frame)
 
-    if config.VIDEO_SOURCE != "tapo":
+    if not is_live_source and config.SHOW_DEBUG_WINDOW:
         cv2.imshow("TRAVIS AI Direction-Based Counting", annotated_frame)
 
-    if config.VIDEO_SOURCE != "tapo" and cv2.waitKey(1) & 0xFF == ord("q"):
+    if not is_live_source and config.SHOW_DEBUG_WINDOW and cv2.waitKey(1) & 0xFF == ord("q"):
         break
 
-cap.release()
+camera.release()
 if out is not None:
     out.release()
 cv2.destroyAllWindows()
 
 print("--------------------------------")
 print("Processing Finished")
-print("Saved to:", OUTPUT_VIDEO)
+if config.SAVE_PROCESSED_VIDEO:
+    print("Saved to:", OUTPUT_VIDEO)
 print("Inbound:", inbound_count)
 print("Outbound:", outbound_count)
 print("--------------------------------")
+
+# The Flask stream lives inside this worker, so it ends with uploaded-video
+# processing. Persist the terminal state to prevent browsers from trying to
+# join a stream that no longer exists.
+if config.VIDEO_SOURCE == "video":
+    send_status_update(config.STATUS_API_URL, {
+        "vehicle_count": visible_vehicle_count,
+        "inbound_count": inbound_count,
+        "outbound_count": outbound_count,
+        "congestion_level": congestion_level,
+        "officer_presence": officer_presence,
+        "potential_collision": potential_collision,
+        "alert_status": alert_status,
+        "ai_status": "Completed",
+        "source_type": "uploaded_video",
+        "calibration_profile": calibration.name,
+        "current_frame": current_frame,
+        "total_frames": total_frames,
+        "progress_percent": 100,
+        "running_time_seconds": int(time.time() - source_started_at),
+    })
+    status_path = Path(__file__).resolve().parent.parent / "Web_app" / "api" / "analysis_status.json"
+    status_payload = {
+        "analysis_status": "Completed",
+        "ai_status": "Completed",
+        "message": "Uploaded video analysis completed. Upload or start the footage again to open a new live feed.",
+        "source_type": "uploaded_video",
+        "stream_owner": "shared",
+        "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "updated_at_epoch": int(time.time()),
+    }
+    temporary_status_path = status_path.with_suffix(".json.tmp")
+    temporary_status_path.write_text(json.dumps(status_payload, indent=4), encoding="utf-8")
+    os.replace(temporary_status_path, status_path)
