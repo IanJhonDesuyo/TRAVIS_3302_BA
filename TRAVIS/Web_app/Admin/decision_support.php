@@ -77,20 +77,15 @@ $peakHour = fetch_one("
     LIMIT 1
 ") ?: [];
 
-$monthlyTrend = array_fill(0, 12, 0);
-foreach (fetch_all("SELECT MONTH(v.violation_date) month_number, COUNT(*) total FROM violations v WHERE {$analyticsWhere} GROUP BY MONTH(v.violation_date)") as $row) {
-    $monthlyTrend[max(0, min(11, (int)$row['month_number'] - 1))] = (int)$row['total'];
-}
+$analyticsChartYear = match ($analyticsPeriod) {
+    'day' => (int) substr($analyticsDay, 0, 4),
+    'month' => (int) substr($analyticsMonth, 0, 4),
+    'year' => (int) $analyticsYear,
+    default => (int) date('Y'),
+};
 
-$violationTypeRows = fetch_all("
-    SELECT item.violation_type, COUNT(*) AS total
-    FROM violation_items item
-    JOIN violations v ON v.violation_id = item.violation_id
-    WHERE {$analyticsWhere}
-    GROUP BY item.violation_type
-    ORDER BY total DESC
-    LIMIT 8
-");
+$monthlyTrend = monthly_violation_counts($analyticsChartYear);
+$monthlyCollectionTrend = monthly_collection_totals($analyticsChartYear);
 
 $locationRows = fetch_all("
     SELECT v.violation_location, COUNT(*) AS total
@@ -100,14 +95,6 @@ $locationRows = fetch_all("
     ORDER BY total DESC
     LIMIT 8
 ");
-
-$violationTypeLabels = [];
-$violationTypeData = [];
-
-foreach ($violationTypeRows as $row) {
-    $violationTypeLabels[] = (string) $row['violation_type'];
-    $violationTypeData[] = (int) $row['total'];
-}
 
 $locationLabels = [];
 $locationData = [];
@@ -484,6 +471,195 @@ a:hover{color:#fff}
     font-size: 1.05rem;
 }
 
+.ds-guidance-card {
+    position: relative;
+    overflow: hidden;
+    height: 100%;
+    padding: 0 !important;
+}
+
+.ds-guidance-card::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 auto;
+    height: 5px;
+    background: linear-gradient(90deg, #2563eb, #20a4c7, #18a878);
+}
+
+.ds-guidance-head {
+    display: flex;
+    align-items: center;
+    gap: .8rem;
+    padding: 1.2rem 1.25rem 1rem;
+    border-bottom: 1px solid var(--border-glass);
+}
+
+.ds-guidance-mark,
+.ds-kpi-icon {
+    display: grid;
+    place-items: center;
+    flex: 0 0 auto;
+    border-radius: 12px;
+}
+
+.ds-guidance-mark {
+    width: 43px;
+    height: 43px;
+    background: rgba(56,189,248,.14);
+    color: var(--cyan-glow);
+    font-size: 1.05rem;
+}
+
+.ds-guidance-card .ds-kpi-grid {
+    padding: 1rem 1.25rem 1.25rem;
+}
+
+.ds-guidance-card .ds-kpi {
+    display: flex;
+    align-items: flex-start;
+    gap: .7rem;
+    min-height: 104px;
+    transition: transform .2s ease, border-color .2s ease;
+}
+
+.ds-guidance-card .ds-kpi:hover {
+    transform: translateY(-2px);
+    border-color: rgba(56,189,248,.3);
+}
+
+.ds-kpi-icon {
+    width: 35px;
+    height: 35px;
+    background: rgba(56,189,248,.12);
+    color: var(--cyan-glow);
+}
+
+.ds-kpi-copy { min-width: 0; }
+.ds-kpi-copy small { display: block; }
+.ds-kpi-copy strong { line-height: 1.35; }
+.ds-kpi-help {
+    display: block;
+    margin-top: .35rem;
+    color: var(--text-soft);
+    font-size: .66rem;
+    line-height: 1.4;
+}
+
+body.municipal-portal .content .ds-guidance-card {
+    border: 1px solid rgba(16,47,73,.16) !important;
+    background: linear-gradient(145deg, #fff, #f5fbfa) !important;
+    box-shadow: 0 14px 32px rgba(16,47,73,.09) !important;
+}
+
+body.municipal-portal .content .ds-guidance-head {
+    border-bottom-color: rgba(16,47,73,.09);
+    background: linear-gradient(110deg, #f7fbff, #fff 55%, #f1faf7);
+}
+
+body.municipal-portal .content .ds-guidance-mark {
+    background: #e5f6f4 !important;
+    color: #087d78 !important;
+}
+
+body.municipal-portal .content .ds-guidance-card .ds-kpi {
+    border: 1px solid #d7e4e8 !important;
+    background: rgba(255,255,255,.9) !important;
+    box-shadow: 0 7px 16px rgba(16,47,73,.05);
+}
+
+body.municipal-portal .content .ds-kpi-icon {
+    background: #e7f5f7 !important;
+    color: #168eb2 !important;
+}
+
+body.municipal-portal .content .ds-kpi-copy small { color: #657a75 !important; }
+body.municipal-portal .content .ds-kpi-copy strong { color: #102f49 !important; }
+body.municipal-portal .content .ds-kpi-help { color: #71849a !important; }
+body.municipal-portal .content .ds-guidance-card.is-high::before { background: linear-gradient(90deg, #dc3545, #ef7a68); }
+body.municipal-portal .content .ds-guidance-card.is-medium::before { background: linear-gradient(90deg, #e5a100, #f2c052); }
+body.municipal-portal .content .ds-guidance-card.is-low::before { background: linear-gradient(90deg, #18a878, #55c89f); }
+
+/* Equal-height layouts with contained scrolling for long dynamic content. */
+.ds-equal-card { height: 100%; }
+
+.ds-guidance-card .ds-kpi {
+    height: 118px;
+    min-height: 118px;
+}
+
+.ds-guidance-card .ds-kpi-copy {
+    max-height: 86px;
+    padding-right: .3rem;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+}
+
+.ds-analysis-kpi {
+    min-height: 98px;
+}
+
+.ds-insight-card {
+    display: flex;
+    flex-direction: column;
+    height: 330px;
+}
+
+.ds-insight-card .section-head {
+    flex: 0 0 auto;
+}
+
+.ds-insight-card .ds-interpretation,
+.ds-insight-card .ds-recommendation-list {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: .55rem;
+    scrollbar-gutter: stable;
+}
+
+.ds-deployment-row {
+    height: 132px;
+    min-height: 132px;
+}
+
+.ds-deployment-row .ds-plan-copy {
+    max-height: 96px;
+    padding-right: .3rem;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+}
+
+.ds-guidance-card .ds-kpi-copy,
+.ds-insight-card .ds-interpretation,
+.ds-insight-card .ds-recommendation-list,
+.ds-deployment-row .ds-plan-copy,
+.ds-hotspot-list {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(8,125,120,.42) rgba(16,47,73,.06);
+}
+
+.ds-guidance-card .ds-kpi-copy::-webkit-scrollbar,
+.ds-insight-card .ds-interpretation::-webkit-scrollbar,
+.ds-insight-card .ds-recommendation-list::-webkit-scrollbar,
+.ds-deployment-row .ds-plan-copy::-webkit-scrollbar {
+    width: 6px;
+}
+
+.ds-guidance-card .ds-kpi-copy::-webkit-scrollbar-thumb,
+.ds-insight-card .ds-interpretation::-webkit-scrollbar-thumb,
+.ds-insight-card .ds-recommendation-list::-webkit-scrollbar-thumb,
+.ds-deployment-row .ds-plan-copy::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: rgba(8,125,120,.38);
+}
+
+.ds-guidance-card .ds-kpi-copy::-webkit-scrollbar-track,
+.ds-insight-card .ds-interpretation::-webkit-scrollbar-track,
+.ds-insight-card .ds-recommendation-list::-webkit-scrollbar-track,
+.ds-deployment-row .ds-plan-copy::-webkit-scrollbar-track {
+    background: rgba(16,47,73,.05);
+}
+
 .ds-section-title {
     display: flex;
     align-items: flex-end;
@@ -660,31 +836,200 @@ a:hover{color:#fff}
     color: var(--cyan-glow);
 }
 
-.ds-deployment-table {
-    display: grid;
-    gap: .7rem;
+.ds-deployment-card {
+    position: relative;
+    overflow: hidden;
+    padding: 0 !important;
+    background:
+        radial-gradient(circle at 92% 0%, rgba(56,189,248,.16), transparent 32%),
+        linear-gradient(145deg, rgba(15,37,68,.98), rgba(6,15,30,.96)) !important;
 }
 
-.ds-deployment-row {
+.ds-deployment-card::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 auto;
+    height: 4px;
+    background: linear-gradient(90deg, var(--blue-accent-2), var(--cyan-glow), #34d399);
+}
+
+.ds-deployment-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
-    padding: .8rem;
+    padding: 1.25rem 1.35rem 1rem;
     border-bottom: 1px solid var(--border-glass);
 }
 
-.ds-deployment-row:last-child {
-    border-bottom: 0;
+.ds-deployment-heading {
+    display: flex;
+    align-items: center;
+    gap: .85rem;
 }
 
-.ds-deployment-row span {
-    color: var(--text-soft);
+.ds-deployment-mark {
+    display: grid;
+    place-items: center;
+    flex: 0 0 46px;
+    width: 46px;
+    height: 46px;
+    border: 1px solid rgba(56,189,248,.3);
+    border-radius: 14px;
+    background: linear-gradient(145deg, rgba(56,189,248,.2), rgba(37,99,235,.14));
+    color: var(--cyan-glow) !important;
+    font-size: 1.2rem;
+    box-shadow: 0 10px 24px rgba(0,0,0,.18);
+}
+
+.ds-deployment-heading h6 {
+    margin: 0 0 .2rem;
+    color: #fff;
+    font-size: 1rem;
+    font-weight: 800;
+}
+
+.ds-plan-status {
+    display: inline-flex;
+    align-items: center;
+    gap: .45rem;
+    padding: .5rem .8rem;
+    border: 1px solid rgba(56,189,248,.25);
+    border-radius: 999px;
+    background: rgba(56,189,248,.1);
+    color: #bae6fd !important;
+    font-size: .72rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.ds-plan-status i {
+    color: #34d399 !important;
+    font-size: .55rem;
+}
+
+.ds-plan-status.is-high {
+    border-color: rgba(248,113,113,.34);
+    background: rgba(248,113,113,.12);
+    color: #fecaca !important;
+}
+
+.ds-plan-status.is-high i { color: #f87171 !important; }
+.ds-plan-status.is-medium {
+    border-color: rgba(251,191,36,.32);
+    background: rgba(251,191,36,.11);
+    color: #fde68a !important;
+}
+.ds-plan-status.is-medium i { color: #fbbf24 !important; }
+.ds-plan-status.is-low {
+    border-color: rgba(52,211,153,.3);
+    background: rgba(52,211,153,.1);
+    color: #a7f3d0 !important;
+}
+.ds-plan-status.is-low i { color: #34d399 !important; }
+
+.ds-deployment-table {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: .85rem;
+    padding: 1.15rem 1.35rem;
+}
+
+.ds-deployment-row {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: .8rem;
+    min-height: 116px;
+    padding: 1rem;
+    overflow: hidden;
+    border: 1px solid var(--border-glass);
+    border-radius: 15px;
+    background: rgba(255,255,255,.045);
+    transition: transform .22s ease, border-color .22s ease, background .22s ease;
+}
+
+.ds-deployment-row:hover {
+    transform: translateY(-2px);
+    border-color: rgba(56,189,248,.32);
+    background: rgba(255,255,255,.07);
+}
+
+.ds-deployment-row::after {
+    content: '';
+    position: absolute;
+    right: -28px;
+    bottom: -38px;
+    width: 88px;
+    height: 88px;
+    border-radius: 50%;
+    background: rgba(56,189,248,.07);
+}
+
+.ds-plan-icon {
+    display: grid;
+    place-items: center;
+    flex: 0 0 36px;
+    width: 36px;
+    height: 36px;
+    border-radius: 11px;
+    background: rgba(56,189,248,.13);
+    color: var(--cyan-glow) !important;
+    font-size: 1rem;
+}
+
+.ds-plan-copy {
+    position: relative;
+    z-index: 1;
+    min-width: 0;
+}
+
+.ds-deployment-row span:not(.ds-plan-icon) {
+    display: block;
+    margin-bottom: .4rem;
+    color: var(--text-soft) !important;
+    font-size: .7rem;
+    font-weight: 700;
+    letter-spacing: .045em;
+    text-transform: uppercase;
 }
 
 .ds-deployment-row strong {
-    color: #fff;
-    text-align: right;
+    display: block;
+    color: #fff !important;
+    font-size: .9rem;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+
+.ds-deployment-row.is-high {
+    border-color: rgba(248,113,113,.36);
+    background: linear-gradient(145deg, rgba(248,113,113,.13), rgba(255,255,255,.035));
+}
+
+.ds-deployment-row.is-high .ds-plan-icon { background: rgba(248,113,113,.16); color: #fca5a5 !important; }
+.ds-deployment-row.is-medium { border-color: rgba(251,191,36,.34); }
+.ds-deployment-row.is-medium .ds-plan-icon { background: rgba(251,191,36,.15); color: #fbbf24 !important; }
+.ds-deployment-row.is-low { border-color: rgba(52,211,153,.32); }
+.ds-deployment-row.is-low .ds-plan-icon { background: rgba(52,211,153,.14); color: #34d399 !important; }
+
+.ds-deployment-note {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    margin: 0 1.35rem 1.2rem;
+    padding: .75rem .9rem;
+    border: 1px solid rgba(56,189,248,.16);
+    border-radius: 12px;
+    background: rgba(56,189,248,.065);
+    color: var(--text-soft) !important;
+    font-size: .76rem;
+    line-height: 1.5;
+}
+
+.ds-deployment-note i {
+    color: var(--cyan-glow) !important;
+    font-size: 1rem;
 }
 
 .ds-chart-card canvas {
@@ -753,8 +1098,150 @@ div[style*="border-radius: 999px"]:not(.tag):not(.system-online-badge){
     border:1px solid var(--border-glass) !important;
 }
 
+/* Deployment plan: scoped after the page-wide card reset so its hierarchy,
+   contrast, and four equal metric panels remain intact. */
+body.municipal-portal .content .ds-deployment-card {
+    overflow: hidden;
+    padding: 0 !important;
+    border: 1px solid rgba(16,47,73,.16) !important;
+    border-radius: 20px !important;
+    background: #fff !important;
+    color: #10202c !important;
+    box-shadow: 0 18px 42px rgba(16,47,73,.11) !important;
+}
+
+body.municipal-portal .content .ds-deployment-card::before {
+    height: 5px;
+    background: linear-gradient(90deg, #2563eb 0%, #20a4c7 48%, #18a878 100%);
+}
+
+body.municipal-portal .content .ds-deployment-header {
+    padding: 1.2rem 1.4rem 1.05rem;
+    border-bottom: 1px solid rgba(16,47,73,.09);
+    background: linear-gradient(110deg, #f7fbff 0%, #fff 56%, #f3fbf8 100%);
+}
+
+body.municipal-portal .content .ds-deployment-mark {
+    border-color: rgba(8,125,120,.2);
+    background: #e7f7f5 !important;
+    color: #087d78 !important;
+    box-shadow: none;
+}
+
+body.municipal-portal .content .ds-deployment-heading h6 {
+    color: #102f49 !important;
+    font-size: 1.05rem;
+}
+
+body.municipal-portal .content .ds-deployment-heading small {
+    color: #60716b !important;
+}
+
+body.municipal-portal .content .ds-plan-status {
+    border-color: rgba(8,125,120,.2) !important;
+    background: #eaf7f5 !important;
+    color: #087d78 !important;
+}
+
+body.municipal-portal .content .ds-plan-status.is-high {
+    border-color: #fecaca !important;
+    background: #fff1f1 !important;
+    color: #b42336 !important;
+}
+body.municipal-portal .content .ds-plan-status.is-medium {
+    border-color: #fde0a4 !important;
+    background: #fff8e9 !important;
+    color: #99610b !important;
+}
+body.municipal-portal .content .ds-plan-status.is-low {
+    border-color: #bce8d4 !important;
+    background: #edf9f3 !important;
+    color: #147153 !important;
+}
+
+body.municipal-portal .content .ds-deployment-table {
+    gap: 1rem;
+    padding: 1.25rem 1.4rem 1.1rem;
+    background: #fff;
+}
+
+body.municipal-portal .content .ds-deployment-row {
+    min-height: 122px;
+    padding: 1.05rem;
+    border: 1px solid #d9e5eb !important;
+    border-top: 3px solid #4db7d7 !important;
+    border-radius: 14px;
+    background: #f9fcfd !important;
+    color: #10202c !important;
+    box-shadow: 0 8px 20px rgba(16,47,73,.055);
+}
+
+body.municipal-portal .content .ds-deployment-row::after {
+    right: -35px;
+    bottom: -46px;
+    width: 105px;
+    height: 105px;
+    background: rgba(49,174,204,.07);
+}
+
+body.municipal-portal .content .ds-deployment-row:hover {
+    border-color: #9ed8e8 !important;
+    border-top-color: #087d78 !important;
+    background: #f4fbfb !important;
+    box-shadow: 0 12px 26px rgba(16,47,73,.09);
+}
+
+body.municipal-portal .content .ds-plan-icon {
+    background: #e3f5f8 !important;
+    color: #168eb2 !important;
+}
+
+body.municipal-portal .content .ds-deployment-row span:not(.ds-plan-icon) {
+    color: #71849a !important;
+    font-size: .68rem;
+}
+
+body.municipal-portal .content .ds-deployment-row strong {
+    color: #10202c !important;
+    font-size: .9rem;
+    line-height: 1.45;
+}
+
+body.municipal-portal .content .ds-deployment-row.is-high {
+    border-color: #fecaca !important;
+    border-top-color: #ef6b6b !important;
+    background: linear-gradient(145deg, #fff5f5, #fff) !important;
+}
+body.municipal-portal .content .ds-deployment-row.is-high .ds-plan-icon {
+    background: #ffe4e4 !important;
+    color: #d94f55 !important;
+}
+body.municipal-portal .content .ds-deployment-row.is-medium {
+    border-top-color: #e9a72e !important;
+    background: #fffbf2 !important;
+}
+body.municipal-portal .content .ds-deployment-row.is-low {
+    border-top-color: #23a477 !important;
+    background: #f4fbf7 !important;
+}
+
+body.municipal-portal .content .ds-deployment-note {
+    margin: 0 1.4rem 1.3rem;
+    padding: .8rem 1rem;
+    border-color: #cbe4ed;
+    background: #f0f8fb !important;
+    color: #526b64 !important;
+}
+
+body.municipal-portal .content .ds-deployment-note i {
+    color: #168eb2 !important;
+}
+
 @media (max-width: 991.98px) {
     .ds-analysis-grid {
+        grid-template-columns: repeat(2,minmax(0,1fr));
+    }
+    .ds-deployment-table {
         grid-template-columns: repeat(2,minmax(0,1fr));
     }
 }
@@ -766,6 +1253,20 @@ div[style*="border-radius: 999px"]:not(.tag):not(.system-online-badge){
     }
     .ds-hotspot-card {
         height: 275px;
+    }
+    .ds-deployment-header {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+    .ds-deployment-table {
+        grid-template-columns: 1fr;
+        padding: 1rem;
+    }
+    .ds-deployment-row {
+        min-height: 96px;
+    }
+    .ds-deployment-note {
+        margin: 0 1rem 1rem;
     }
 }
 </style>
@@ -797,11 +1298,11 @@ div[style*="border-radius: 999px"]:not(.tag):not(.system-online-badge){
 <div id="dsContent" class="d-none">
   <div class="row g-3">
     <div class="col-lg-7">
-      <div class="section-card">
+      <div class="section-card ds-equal-card">
         <div class="section-head">
           <div>
-            <h6>Monthly Risk Prediction</h6>
-            <small class="text-muted">Random Forest classifier</small>
+            <h6>Monthly Violation-Risk Prediction</h6>
+            <small class="text-muted">Based on historical monthly violation records</small>
           </div>
           <div class="d-flex align-items-center gap-2 flex-wrap">
             <label class="small text-muted mb-0" for="dsPredictionMonth">Forecast period</label>
@@ -823,37 +1324,57 @@ div[style*="border-radius: 999px"]:not(.tag):not(.system-online-badge){
             <div class="progress-bar" id="dsConfidenceBar" style="width:0%"></div>
           </div>
         </div>
+        <p class="small text-muted mt-3 mb-0">
+          This forecast does not use traffic-flow, congestion, or live camera data.
+        </p>
       </div>
     </div>
 
     <div class="col-lg-5">
-      <div class="section-card">
-        <div class="section-head">
+      <div class="section-card ds-guidance-card ds-equal-card" id="dsGuidanceCard">
+        <div class="ds-guidance-head">
+          <span class="ds-guidance-mark" aria-hidden="true"><i class="bi bi-compass-fill"></i></span>
           <div>
-            <h6>Deployment Guidance</h6>
-            <small class="text-muted">Business-rule recommendation</small>
+            <h6 class="mb-1">Recommended Response</h6>
+            <small class="text-muted">A simple guide for planning the next action</small>
           </div>
         </div>
 
         <div class="ds-kpi-grid">
           <div class="ds-kpi">
-            <small>Priority</small>
-            <strong id="dsDeploymentPriority">—</strong>
+            <span class="ds-kpi-icon" aria-hidden="true"><i class="bi bi-flag-fill"></i></span>
+            <div class="ds-kpi-copy">
+              <small>Level of attention</small>
+              <strong id="dsDeploymentPriority">—</strong>
+              <span class="ds-kpi-help">How soon the area should be reviewed</span>
+            </div>
           </div>
 
           <div class="ds-kpi">
-            <small>Personnel</small>
-            <strong id="dsPersonnel">—</strong>
+            <span class="ds-kpi-icon" aria-hidden="true"><i class="bi bi-people-fill"></i></span>
+            <div class="ds-kpi-copy">
+              <small>Recommended response</small>
+              <strong id="dsPersonnel">—</strong>
+              <span class="ds-kpi-help">Suggested short-term field activity</span>
+            </div>
           </div>
 
           <div class="ds-kpi">
-            <small>Monitoring</small>
-            <strong id="dsMonitoring">—</strong>
+            <span class="ds-kpi-icon" aria-hidden="true"><i class="bi bi-clipboard-data-fill"></i></span>
+            <div class="ds-kpi-copy">
+              <small>Check results</small>
+              <strong id="dsMonitoring">—</strong>
+              <span class="ds-kpi-help">How often progress should be checked</span>
+            </div>
           </div>
 
           <div class="ds-kpi">
-            <small>Focus Area</small>
-            <strong id="dsFocusArea">—</strong>
+            <span class="ds-kpi-icon" aria-hidden="true"><i class="bi bi-geo-alt-fill"></i></span>
+            <div class="ds-kpi-copy">
+              <small>Start at this location</small>
+              <strong id="dsFocusArea">—</strong>
+              <span class="ds-kpi-help">Confirm current conditions before deployment</span>
+            </div>
           </div>
         </div>
       </div>
@@ -978,7 +1499,7 @@ div[style*="border-radius: 999px"]:not(.tag):not(.system-online-badge){
 
   <div class="row g-3 mb-3">
     <div class="col-lg-6">
-      <div class="section-card">
+      <div class="section-card ds-equal-card">
         <div class="section-head">
           <div>
             <h6>Leading Violation</h6>
@@ -992,7 +1513,7 @@ div[style*="border-radius: 999px"]:not(.tag):not(.system-online-badge){
     </div>
 
     <div class="col-lg-6">
-      <div class="section-card">
+      <div class="section-card ds-equal-card">
         <div class="section-head">
           <div>
             <h6>Leading Database Location</h6>
@@ -1007,34 +1528,34 @@ div[style*="border-radius: 999px"]:not(.tag):not(.system-online-badge){
   </div>
 
   <div class="row g-3 mb-3">
-    <div class="col-lg-7">
-      <div class="section-card ds-chart-card">
+    <div class="col-lg-6">
+      <div class="section-card ds-chart-card ds-equal-card">
         <div class="section-head">
           <div>
-            <h6>Monthly Violation Trend</h6>
-            <small class="text-muted">Database records for <?= esc($analyticsPeriodLabel) ?></small>
+            <h6>Violation Records</h6>
+            <small class="text-muted">Monthly records · <?= esc((string) $analyticsChartYear) ?></small>
           </div>
         </div>
-        <canvas id="dsTrendChart"></canvas>
+        <div style="height:240px"><canvas id="dsTrendChart"></canvas></div>
       </div>
     </div>
 
-    <div class="col-lg-5">
-      <div class="section-card ds-chart-card">
+    <div class="col-lg-6">
+      <div class="section-card ds-chart-card ds-equal-card">
         <div class="section-head">
           <div>
-            <h6>Top Violation Types</h6>
-            <small class="text-muted">Most frequently recorded categories</small>
+            <h6>Monthly Collection</h6>
+            <small class="text-muted">Completed payments · <?= esc((string) $analyticsChartYear) ?></small>
           </div>
         </div>
-        <canvas id="dsViolationChart"></canvas>
+        <div style="height:240px"><canvas id="dsCollectionChart"></canvas></div>
       </div>
     </div>
   </div>
 
   <div class="row g-3">
     <div class="col-lg-7">
-      <div class="section-card">
+      <div class="section-card ds-insight-card">
         <div class="section-head">
           <div>
             <h6>Interpretation</h6>
@@ -1049,7 +1570,7 @@ div[style*="border-radius: 999px"]:not(.tag):not(.system-online-badge){
     </div>
 
     <div class="col-lg-5">
-      <div class="section-card">
+      <div class="section-card ds-insight-card">
         <div class="section-head">
           <div>
             <h6>Recommendations</h6>
@@ -1062,34 +1583,58 @@ div[style*="border-radius: 999px"]:not(.tag):not(.system-online-badge){
     </div>
   </div>
 
-  <div class="section-card mt-3">
-    <div class="section-head">
-      <div>
-        <h6>Deployment Plan</h6>
-        <small class="text-muted">Summary for TMO operational planning</small>
+  <div class="section-card ds-deployment-card mt-3">
+    <div class="ds-deployment-header">
+      <div class="ds-deployment-heading">
+        <span class="ds-deployment-mark" aria-hidden="true"><i class="bi bi-signpost-split-fill"></i></span>
+        <div>
+          <h6>Action Plan</h6>
+          <small class="text-muted">Summary for TMO operational planning</small>
+        </div>
       </div>
+      <span class="ds-plan-status" id="dsPlanStatus">
+        <i class="bi bi-circle-fill" aria-hidden="true"></i>
+        <span id="dsPlanStatusText">Awaiting prediction</span>
+      </span>
     </div>
 
     <div class="ds-deployment-table">
-      <div class="ds-deployment-row">
-        <span>Monthly risk</span>
-        <strong id="dsPlanRisk">—</strong>
+      <div class="ds-deployment-row" id="dsPlanRiskCard">
+        <span class="ds-plan-icon" aria-hidden="true"><i class="bi bi-shield-exclamation"></i></span>
+        <div class="ds-plan-copy">
+          <span>Monthly risk</span>
+          <strong id="dsPlanRisk">—</strong>
+        </div>
       </div>
 
       <div class="ds-deployment-row">
-        <span>Suggested personnel</span>
-        <strong id="dsPlanPersonnel">—</strong>
+        <span class="ds-plan-icon" aria-hidden="true"><i class="bi bi-people-fill"></i></span>
+        <div class="ds-plan-copy">
+          <span>Recommended intervention</span>
+          <strong id="dsPlanPersonnel">—</strong>
+        </div>
       </div>
 
       <div class="ds-deployment-row">
-        <span>Primary focus</span>
-        <strong id="dsPlanFocus">—</strong>
+        <span class="ds-plan-icon" aria-hidden="true"><i class="bi bi-geo-alt-fill"></i></span>
+        <div class="ds-plan-copy">
+          <span>Primary focus</span>
+          <strong id="dsPlanFocus">—</strong>
+        </div>
       </div>
 
       <div class="ds-deployment-row">
-        <span>Monitoring approach</span>
-        <strong id="dsPlanMonitoring">—</strong>
+        <span class="ds-plan-icon" aria-hidden="true"><i class="bi bi-camera-video-fill"></i></span>
+        <div class="ds-plan-copy">
+          <span>Monitoring approach</span>
+          <strong id="dsPlanMonitoring">—</strong>
+        </div>
       </div>
+    </div>
+
+    <div class="ds-deployment-note">
+      <i class="bi bi-info-circle-fill" aria-hidden="true"></i>
+      <span>Confirm current road conditions, apply a time-bound intervention, and compare results before continuing it.</span>
     </div>
   </div>
 </div>
@@ -1101,8 +1646,7 @@ const DS_HOTSPOT_ENDPOINT = '../api/predict_hotspot.php';
 
 const dsMonths = <?= json_encode(month_labels()) ?>;
 const dsMonthlyTrend = <?= json_encode($monthlyTrend) ?>;
-const dsViolationLabels = <?= json_encode($violationTypeLabels) ?>;
-const dsViolationData = <?= json_encode($violationTypeData) ?>;
+const dsMonthlyCollections = <?= json_encode($monthlyCollectionTrend) ?>;
 
 const databaseTopViolation = <?= json_encode($topViolationName) ?>;
 const databaseTopLocation = <?= json_encode($topLocationName) ?>;
@@ -1137,41 +1681,39 @@ function dsGuidance(riskLevel) {
 
   if (risk === 'high') {
     return {
-      priority: 'High',
-      personnel: '5–6 enforcers',
-      monitoring: 'Intensive monitoring',
+      priority: 'Urgent attention',
+      personnel: 'Run a focused 7-day operation',
+      monitoring: 'Check the results every day',
       actions: [
-        'Prioritize high-risk intersections for field deployment.',
-        'Increase patrol visibility during peak traffic periods.',
-        'Review live monitoring feeds more frequently.',
-        'Prepare public advisories when traffic conditions worsen.'
+        'Confirm the current road condition at the priority location before sending personnel.',
+        'Run a focused 7-day operation during the historically busiest period.',
+        'Use the response that matches the common problem, such as loading control, clearing, signage, reminders, or random checks.',
+        'Compare the number of violations before and after the 7-day operation.'
       ]
     };
   }
 
   if (risk === 'medium') {
     return {
-      priority: 'Medium',
-      personnel: '3–4 enforcers',
-      monitoring: 'Enhanced monitoring',
+      priority: 'Needs attention',
+      personnel: 'Run a focused 14-day trial',
+      monitoring: 'Check results twice a week',
       actions: [
-        'Maintain regular patrol visibility.',
-        'Schedule additional monitoring during busy periods.',
-        'Review recurring violation types and locations.',
-        'Keep high-risk historical hotspots under observation.'
+        'Observe the priority location during its historically busiest periods.',
+        'Use reminders, signs, or random checks for the most common violation.',
+        'Review the results after 14 days before continuing or expanding the operation.'
       ]
     };
   }
 
   return {
-    priority: 'Low',
-    personnel: 'Regular staffing',
-    monitoring: 'Routine monitoring',
+    priority: 'Routine priority',
+    personnel: 'Continue regular observation',
+    monitoring: 'Review results every month',
     actions: [
-      'Continue routine traffic monitoring.',
-      'Maintain the standard enforcer schedule.',
-      'Periodically inspect historical high-risk intersections.',
-      'Reassess conditions when new records become available.'
+      'Continue normal monitoring without adding a permanent checkpoint.',
+      'Visit the location periodically to confirm that conditions remain stable.',
+      'Review the area again when new violation records become available.'
     ]
   };
 }
@@ -1241,19 +1783,12 @@ function dsRenderHotspots(risk, records) {
       record.violation_location ||
       'Unnamed location';
 
-    const total =
-      record['Total Violations'] ??
-      record.Total_Violations ??
-      record.total ??
-      0;
-
     const item = document.createElement('li');
 
     item.innerHTML = `
       <span class="ds-rank">${index + 1}</span>
       <span class="ds-location-copy">
         <strong>${name}</strong>
-        <small>${Number(total).toLocaleString()} historical records</small>
       </span>
     `;
 
@@ -1297,7 +1832,7 @@ function dsBuildInterpretation(prediction, groups) {
   } else if (risk === 'medium') {
     opening =
       `${month} is predicted to have a medium traffic-violation risk. ` +
-      `Regular deployment should be supported by additional monitoring during busy periods.`;
+      `Regular deployment should be supported by additional enforcement during historically high-violation periods.`;
   } else {
     opening =
       `${month} is predicted to have a low traffic-violation risk. ` +
@@ -1310,7 +1845,7 @@ function dsBuildInterpretation(prediction, groups) {
     The highest-priority location is ${highestLocation}.
     Database records also show that ${databaseTopViolation} is the leading violation type,
     while ${databasePeakHour} is the peak recording hour.
-    These results should be reviewed together with live computer-vision monitoring before final deployment decisions are made.
+    The monthly forecast uses violation records only; live computer-vision monitoring is a separate operational input.
   `;
 }
 
@@ -1438,6 +1973,27 @@ async function loadDecisionSupport() {
     document.getElementById('dsPlanMonitoring').textContent =
       guidance.monitoring;
 
+    const planRisk = dsNormalizeRisk(riskLevel);
+    const planRiskCard = document.getElementById('dsPlanRiskCard');
+    const planStatus = document.getElementById('dsPlanStatus');
+    const planStatusText = document.getElementById('dsPlanStatusText');
+    const guidanceCard = document.getElementById('dsGuidanceCard');
+
+    [planRiskCard, planStatus, guidanceCard].forEach((element) => {
+      element?.classList.remove('is-high', 'is-medium', 'is-low');
+      if (['high', 'medium', 'low'].includes(planRisk)) {
+        element?.classList.add(`is-${planRisk}`);
+      }
+    });
+
+    if (planStatusText) {
+      planStatusText.textContent = planRisk === 'high'
+        ? 'High-priority plan'
+        : planRisk === 'medium'
+          ? 'Focused monitoring plan'
+          : 'Routine monitoring plan';
+    }
+
     loading.classList.add('d-none');
     content.classList.remove('d-none');
   } catch (error) {
@@ -1448,71 +2004,115 @@ async function loadDecisionSupport() {
   }
 }
 
-new Chart(document.getElementById('dsTrendChart'), {
+Chart.defaults.font.family = "'Poppins', sans-serif";
+
+function dsViolationChartOptions() {
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#102f49',
+        titleColor: '#ffffff',
+        bodyColor: '#e8f0ed',
+        padding: 12,
+        cornerRadius: 8,
+        callbacks: {
+          label: context => {
+            const count = Number(context.parsed.y || 0);
+            return `${count.toLocaleString()} violation${count === 1 ? '' : 's'}`;
+          }
+        }
+      }
+    },
+    scales: {
+      x: { grid: { display: false }, ticks: { color: '#526b64' } },
+      y: {
+        beginAtZero: true,
+        grid: { color: 'rgba(16, 47, 73, .12)' },
+        ticks: { precision: 0, color: '#526b64' }
+      }
+    }
+  };
+}
+
+function dsCollectionChartOptions() {
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#102f49',
+        titleColor: '#ffffff',
+        bodyColor: '#e8f0ed',
+        padding: 12,
+        cornerRadius: 8,
+        callbacks: {
+          label: context => `₱${Number(context.parsed.y || 0).toLocaleString()}`
+        }
+      }
+    },
+    scales: {
+      x: { grid: { display: false }, ticks: { color: '#526b64' } },
+      y: {
+        beginAtZero: true,
+        grid: { color: 'rgba(16, 47, 73, .12)' },
+        ticks: {
+          color: '#526b64',
+          callback: value => `₱${Number(value).toLocaleString()}`
+        }
+      }
+    }
+  };
+}
+
+const dsViolationContext = document.getElementById('dsTrendChart').getContext('2d');
+const dsViolationGradient = dsViolationContext.createLinearGradient(0, 0, 0, 240);
+dsViolationGradient.addColorStop(0, 'rgba(8, 125, 120, .34)');
+dsViolationGradient.addColorStop(1, 'rgba(8, 125, 120, 0)');
+
+new Chart(dsViolationContext, {
   type: 'line',
   data: {
     labels: dsMonths,
     datasets: [{
-      label: 'Violations',
+      label: 'Violation Records',
       data: dsMonthlyTrend,
       borderColor: '#087d78',
-      backgroundColor: 'rgba(8,125,120,.14)',
+      backgroundColor: dsViolationGradient,
       fill: true,
       tension: .4,
       borderWidth: 3,
-      pointRadius: 3,
       pointBackgroundColor: '#eb941f',
-      pointBorderColor: '#fffdf7'
+      pointBorderColor: '#fffdf7',
+      pointBorderWidth: 2,
+      pointRadius: 4,
+      pointHoverRadius: 6
     }]
   },
-  options: {
-    responsive: true,
-    plugins: {
-      legend: { display: false }
-    },
-    scales: {
-      x: {
-        grid: { display: false },
-        ticks: { color: '#526b64' }
-      },
-      y: {
-        beginAtZero: true,
-        grid: { color: 'rgba(16,47,73,.12)' },
-        ticks: { precision: 0, color: '#526b64' }
-      }
-    }
-  }
+  options: dsViolationChartOptions()
 });
 
-new Chart(document.getElementById('dsViolationChart'), {
+const dsCollectionContext = document.getElementById('dsCollectionChart').getContext('2d');
+const dsCollectionGradient = dsCollectionContext.createLinearGradient(0, 0, 0, 240);
+dsCollectionGradient.addColorStop(0, '#087d78');
+dsCollectionGradient.addColorStop(1, '#eb941f');
+
+new Chart(dsCollectionContext, {
   type: 'bar',
   data: {
-    labels: dsViolationLabels,
+    labels: dsMonths,
     datasets: [{
-      label: 'Recorded violations',
-      data: dsViolationData,
-      backgroundColor: ['#087d78', '#eb941f', '#15966f', '#3e7c92', '#c87820', '#78a99f', '#0f6f69', '#d99a48'],
-      borderRadius: 7
+      label: 'Monthly Collection',
+      data: dsMonthlyCollections,
+      backgroundColor: dsCollectionGradient,
+      borderRadius: 6,
+      borderSkipped: false
     }]
   },
-  options: {
-    responsive: true,
-    indexAxis: 'y',
-    plugins: {
-      legend: { display: false }
-    },
-    scales: {
-      x: {
-        beginAtZero: true,
-        grid: { color: 'rgba(16,47,73,.12)' },
-        ticks: { precision: 0, color: '#526b64' }
-      },
-      y: {
-        grid: { display: false },
-        ticks: { color: '#526b64' }
-      }
-    }
-  }
+  options: dsCollectionChartOptions()
 });
 
 loadDecisionSupport();

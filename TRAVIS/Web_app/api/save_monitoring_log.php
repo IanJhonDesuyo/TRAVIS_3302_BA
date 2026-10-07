@@ -2,6 +2,7 @@
 header("Content-Type: application/json");
 
 require_once __DIR__ . "/../Admin/db_connect.php";
+require_once __DIR__ . "/enforcer_schedule.php";
 
 $notificationSettings = [
     "notify_congestion" => 1,
@@ -11,12 +12,20 @@ $notificationSettings = [
     "congestion_heavy_min" => 13,
     "enable_officer_detection" => 1,
     "enable_collision_detection" => 0,
+    "enforcer_schedule_enabled" => 0,
+    "enforcer_duty_start" => '06:00',
+    "enforcer_duty_end" => '18:00',
+    "enforcer_break_start" => '12:00',
+    "enforcer_break_end" => '13:00',
+    "notify_officer_absence" => 1,
+    "officer_absence_seconds" => 180,
 ];
 $settingsTable = $conn->query("SHOW TABLES LIKE 'system_settings'");
 if ($settingsTable && $settingsTable->num_rows > 0) {
-    $settingsResult = $conn->query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('notify_congestion','notify_collision','alert_cooldown_seconds','congestion_light_max','congestion_heavy_min','enable_officer_detection','enable_collision_detection')");
+    $settingsResult = $conn->query("SELECT setting_key, setting_value FROM system_settings");
     while ($settingsResult && ($settingRow = $settingsResult->fetch_assoc())) {
-        $notificationSettings[(string)$settingRow['setting_key']] = (int)$settingRow['setting_value'];
+        $settingKey = (string)$settingRow['setting_key'];
+        if (array_key_exists($settingKey, $notificationSettings)) $notificationSettings[$settingKey] = is_numeric($settingRow['setting_value']) ? (float)$settingRow['setting_value'] : (string)$settingRow['setting_value'];
     }
 }
 $alertCooldownSeconds = max(0, min(86400, $notificationSettings['alert_cooldown_seconds']));
@@ -142,8 +151,9 @@ $incident_notes = $data["incident_notes"] ?? null;
 $lightMax = max(0, min(100, (int)$notificationSettings['congestion_light_max']));
 $heavyMin = max($lightMax + 1, min(200, (int)$notificationSettings['congestion_heavy_min']));
 $congestion_level = $vehicle_count <= $lightMax ? 'low' : ($vehicle_count < $heavyMin ? 'moderate' : 'heavy');
-if ($notificationSettings['enable_officer_detection'] !== 1) $officer_presence = 'unknown';
-if ($notificationSettings['enable_collision_detection'] !== 1) {
+if ((int)$notificationSettings['enable_officer_detection'] !== 1) $officer_presence = 'unknown';
+if (!enforcer_detection_is_active($notificationSettings)) $officer_presence = 'unknown';
+if ((int)$notificationSettings['enable_collision_detection'] !== 1) {
     $potential_collision = 'none';
     $incident_notes = null;
 }
@@ -209,14 +219,14 @@ if ($stmt->execute()) {
     // Create one congestion notification when the detector confirms a
     // sustained Heavy/Severe state. The cooldown prevents the 30-second
     // monitoring snapshots from generating duplicate alerts.
-    if ($notificationSettings['notify_congestion'] === 1 && $alert_generated === 1 && in_array($congestion_level, ["heavy", "severe"], true)) {
+    if ((int)$notificationSettings['notify_congestion'] === 1 && $alert_generated === 1 && in_array($congestion_level, ["heavy", "severe"], true)) {
         $duplicate_sql = "
             SELECT a.alert_id
             FROM monitoring_alerts a
             INNER JOIN camera_monitoring_logs l ON l.log_id = a.camera_log_id
             WHERE l.camera_id = ?
               AND a.alert_type = 'congestion'
-              AND a.status IN ('active', 'acknowledged')
+              AND a.status IN ('active', 'acknowledged', 'resolved')
               AND a.generated_at >= DATE_SUB(NOW(), INTERVAL {$alertCooldownSeconds} SECOND)
             ORDER BY a.generated_at DESC
             LIMIT 1
@@ -274,10 +284,9 @@ if ($stmt->execute()) {
         }
     }
 
-    // Collision notifications use the same monitoring log contract. A
-    // possible event creates a warning; a later confirmed state upgrades the
-    // existing active alert instead of adding a duplicate row.
-    if ($notificationSettings['notify_collision'] === 1 && $alert_generated === 1 && in_array($potential_collision, ["possible", "confirmed"], true)) {
+    // Possible collision risk remains monitoring data only. Notify operators
+    // only after computer vision classifies the collision as confirmed.
+    if ((int)$notificationSettings['notify_collision'] === 1 && $alert_generated === 1 && $potential_collision === "confirmed") {
         $collision_alert_id = null;
         $collision_alert_severity = null;
         $existing_collision_stmt = $conn->prepare("
@@ -286,7 +295,7 @@ if ($stmt->execute()) {
             INNER JOIN camera_monitoring_logs l ON l.log_id = a.camera_log_id
             WHERE l.camera_id = ?
               AND a.alert_type = 'collision'
-              AND a.status IN ('active', 'acknowledged')
+              AND a.status IN ('active', 'acknowledged', 'resolved')
               AND a.generated_at >= DATE_SUB(NOW(), INTERVAL {$alertCooldownSeconds} SECOND)
             ORDER BY a.generated_at DESC
             LIMIT 1
@@ -304,13 +313,24 @@ if ($stmt->execute()) {
             $existing_collision_stmt->close();
         }
 
-        $collision_severity = $potential_collision === "confirmed" ? "critical" : "warning";
-        $collision_message = $incident_notes ?: sprintf(
-            "%s collision risk detected by Camera #%d (%d vehicles visible).",
-            ucfirst($potential_collision),
-            $camera_id,
-            $vehicle_count
-        );
+        $collision_severity = "critical";
+        $collision_message = trim((string)$incident_notes);
+        if ($collision_message !== '') {
+            // Older CV workers described even confirmed events as a
+            // "Potential collision". Normalize that wording at the API
+            // boundary so operator alerts always state the confirmed status.
+            $collision_message = (string)preg_replace(
+                '/^Potential collision(?: confirmed)?/i',
+                'Confirmed collision detected',
+                $collision_message
+            );
+        } else {
+            $collision_message = sprintf(
+                "Confirmed collision detected by Camera #%d (%d vehicles visible).",
+                $camera_id,
+                $vehicle_count
+            );
+        }
 
         if ($collision_alert_id === null) {
             $collision_stmt = $conn->prepare("
@@ -327,7 +347,7 @@ if ($stmt->execute()) {
                 }
                 $collision_stmt->close();
             }
-        } elseif ($potential_collision === "confirmed" && $collision_alert_severity !== "critical") {
+        } elseif ($potential_collision === "confirmed") {
             $upgrade_stmt = $conn->prepare("
                 UPDATE monitoring_alerts
                 SET camera_log_id = ?, severity = 'critical', message = ?, status = 'active'
@@ -342,6 +362,80 @@ if ($stmt->execute()) {
         }
     }
 
+    // Officer-absence alerts only run during scheduled duty time. Unknown
+    // means off-duty/break/disabled and must never count as an absence.
+    if ((int)$notificationSettings['notify_officer_absence'] === 1
+        && enforcer_detection_is_active($notificationSettings)
+        && $officer_presence === 'none') {
+        $absenceDelay = max(60, min(3600, (int)$notificationSettings['officer_absence_seconds']));
+        $absence_stmt = $conn->prepare("
+            SELECT MIN(recorded_at) AS absent_since,
+                   TIMESTAMPDIFF(SECOND, MIN(recorded_at), NOW()) AS absent_seconds
+            FROM camera_monitoring_logs
+            WHERE camera_id = ? AND officer_presence = 'none'
+              AND log_id > COALESCE((
+                SELECT MAX(previous.log_id) FROM camera_monitoring_logs previous
+                WHERE previous.camera_id = ? AND previous.officer_presence <> 'none'
+              ), 0)
+        ");
+        $absentSince = null;
+        $absentSeconds = 0;
+        if ($absence_stmt) {
+            $absence_stmt->bind_param('ii', $camera_id, $camera_id);
+            $absence_stmt->execute();
+            $absenceRow = $absence_stmt->get_result()?->fetch_assoc();
+            $absentSince = $absenceRow['absent_since'] ?? null;
+            $absentSeconds = (int)($absenceRow['absent_seconds'] ?? 0);
+            $absence_stmt->close();
+        }
+        if ($absentSince && $absentSeconds >= $absenceDelay) {
+            // Upgrade installations created with the earlier enum before the
+            // first officer alert is inserted.
+            $typeColumn = $conn->query("SHOW COLUMNS FROM monitoring_alerts LIKE 'alert_type'")?->fetch_assoc();
+            if ($typeColumn && stripos((string)$typeColumn['Type'], 'officer_absence') === false) {
+                $conn->query("ALTER TABLE monitoring_alerts MODIFY alert_type ENUM('congestion','collision','officer_absence','incident','system') NOT NULL");
+            }
+            $duplicateOfficer = $conn->prepare("
+                SELECT alert_id FROM monitoring_alerts
+                WHERE alert_type = 'officer_absence' AND status IN ('active','acknowledged','resolved')
+                  AND generated_at >= DATE_SUB(NOW(), INTERVAL {$alertCooldownSeconds} SECOND)
+                ORDER BY generated_at DESC LIMIT 1
+            ");
+            $existingOfficerId = null;
+            if ($duplicateOfficer) {
+                $duplicateOfficer->execute();
+                $existingOfficerId = $duplicateOfficer->get_result()?->fetch_assoc()['alert_id'] ?? null;
+                $duplicateOfficer->close();
+            }
+            if ($existingOfficerId === null) {
+                $officerMessage = sprintf('No traffic enforcer has been detected at Camera #%d for at least %d seconds during active duty.', $camera_id, $absenceDelay);
+                $officerAlert = $conn->prepare("INSERT INTO monitoring_alerts (camera_log_id, alert_type, severity, message, status) VALUES (?, 'officer_absence', 'warning', ?, 'active')");
+                if ($officerAlert) {
+                    $officerAlert->bind_param('is', $log_id, $officerMessage);
+                    if ($officerAlert->execute()) {
+                        $alert_created = true;
+                        $alert_id = (int)$officerAlert->insert_id;
+                    }
+                    $officerAlert->close();
+                }
+            }
+        }
+    }
+
+    if ($officer_presence !== 'none' || !enforcer_detection_is_active($notificationSettings)) {
+        $resolveOfficer = $conn->prepare("
+            UPDATE monitoring_alerts a
+            INNER JOIN camera_monitoring_logs l ON l.log_id = a.camera_log_id
+            SET a.status = 'resolved'
+            WHERE l.camera_id = ? AND a.alert_type = 'officer_absence' AND a.status = 'active'
+        ");
+        if ($resolveOfficer) {
+            $resolveOfficer->bind_param('i', $camera_id);
+            $resolveOfficer->execute();
+            $resolveOfficer->close();
+        }
+    }
+
     // Close active congestion notifications after traffic returns below the
     // heavy threshold, allowing a later congestion episode to alert again.
     if (!in_array($congestion_level, ["heavy", "severe"], true)) {
@@ -352,15 +446,21 @@ if ($stmt->execute()) {
             WHERE l.camera_id = ?
               AND a.alert_type = 'congestion'
               AND a.status = 'active'
+              AND NOT EXISTS (
+                SELECT 1 FROM camera_monitoring_logs recent
+                WHERE recent.camera_id = ?
+                  AND recent.congestion_level IN ('heavy','severe')
+                  AND recent.recorded_at >= DATE_SUB(NOW(), INTERVAL 10 SECOND)
+              )
         ");
         if ($resolve_stmt) {
-            $resolve_stmt->bind_param("i", $camera_id);
+            $resolve_stmt->bind_param("ii", $camera_id, $camera_id);
             $resolve_stmt->execute();
             $resolve_stmt->close();
         }
     }
 
-    if ($potential_collision === "none") {
+    if ($potential_collision !== "confirmed") {
         $resolve_collision_stmt = $conn->prepare("
             UPDATE monitoring_alerts a
             INNER JOIN camera_monitoring_logs l ON l.log_id = a.camera_log_id
@@ -368,9 +468,15 @@ if ($stmt->execute()) {
             WHERE l.camera_id = ?
               AND a.alert_type = 'collision'
               AND a.status = 'active'
+              AND NOT EXISTS (
+                SELECT 1 FROM camera_monitoring_logs recent
+                WHERE recent.camera_id = ?
+                  AND recent.potential_collision = 'confirmed'
+                  AND recent.recorded_at >= DATE_SUB(NOW(), INTERVAL 10 SECOND)
+              )
         ");
         if ($resolve_collision_stmt) {
-            $resolve_collision_stmt->bind_param("i", $camera_id);
+            $resolve_collision_stmt->bind_param("ii", $camera_id, $camera_id);
             $resolve_collision_stmt->execute();
             $resolve_collision_stmt->close();
         }

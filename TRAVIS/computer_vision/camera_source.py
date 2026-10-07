@@ -2,6 +2,7 @@ import cv2
 import config
 import threading
 import time
+from tapo_camera import TapoCamera
 
 
 LIVE_OPEN_TIMEOUT_MS = 5000
@@ -23,6 +24,7 @@ class CameraSource:
         self._captured_frames = 0
         self._dropped_frames = 0
         self._reconnect_count = 0
+        self._tapo_camera = None
 
     @property
     def is_live(self):
@@ -98,6 +100,8 @@ class CameraSource:
 
     def read_latest(self, after_version=-1, timeout=5):
         """Return the newest live frame, waiting briefly for a newer one."""
+        if self._tapo_camera is not None:
+            return self._tapo_camera.read_latest(after_version, timeout)
         if not self.uses_latest_frame_reader:
             success, frame = self.cap.read()
             return success, frame, after_version + 1
@@ -124,6 +128,8 @@ class CameraSource:
 
     def metrics(self):
         """Return live-capture health without exposing mutable reader state."""
+        if self._tapo_camera is not None:
+            return self._tapo_camera.metrics()
         with self._frame_condition:
             now = time.monotonic()
             elapsed = max(1e-6, now - self._capture_started_at) if self._capture_started_at else 0
@@ -142,6 +148,9 @@ class CameraSource:
             }
 
     def release(self):
+        if self._tapo_camera is not None:
+            self._tapo_camera.release()
+            return
         self._reader_stop.set()
         with self._frame_condition:
             self._frame_condition.notify_all()
@@ -185,7 +194,8 @@ class CameraSource:
             if not config.TAPO_RTSP:
                 raise Exception("Tapo camera is not configured.")
 
-            self.cap = self._open_live_capture(config.TAPO_RTSP)
+            self._tapo_camera = TapoCamera(config.TAPO_RTSP)
+            self.cap = self._tapo_camera.open()
 
         elif config.VIDEO_SOURCE == "phone":
 
@@ -204,7 +214,7 @@ class CameraSource:
 
             raise Exception("Cannot open video source.")
 
-        if self.uses_latest_frame_reader:
+        if self.uses_latest_frame_reader and self._tapo_camera is None:
             self._start_latest_frame_reader()
 
         return self.cap
@@ -213,6 +223,10 @@ class CameraSource:
         """Reconnect a live camera after a temporary Wi-Fi interruption."""
         if config.VIDEO_SOURCE not in ("tapo", "phone"):
             return None
+
+        if self._tapo_camera is not None:
+            self.cap = self._tapo_camera.reconnect(attempts=attempts, delay=delay)
+            return self.cap
 
         stream_url = (
             config.TAPO_RTSP

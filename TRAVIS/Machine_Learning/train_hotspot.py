@@ -106,19 +106,19 @@ def recommendation_for_risk(risk_level: str) -> list[str]:
     """Return decision-support recommendations for each risk level."""
     recommendations = {
         "High Risk": [
-            "Prioritize the location for traffic-enforcer deployment.",
-            "Increase patrol visibility during peak traffic periods.",
-            "Closely monitor congestion and possible road incidents.",
-            "Prepare public advisories when traffic conditions worsen.",
+            "Prioritize a time-bound intervention during the location's peak period.",
+            "Match the response to the leading pattern: clearing, signage, education, or random checks.",
+            "Coordinate with local stakeholders when shared road use contributes to the problem.",
+            "Measure the change in recorded violations after 7 days.",
         ],
         "Medium Risk": [
-            "Maintain regular patrol visibility.",
-            "Schedule additional monitoring during busy periods.",
-            "Review recurring violation types in the area.",
+            "Use rotating observation during busy periods.",
+            "Apply a targeted reminder, sign, or compliance check for the recurring violation.",
+            "Review the location again after 14 days.",
         ],
         "Low Risk": [
-            "Continue routine traffic monitoring.",
-            "Maintain the standard enforcer schedule.",
+            "Continue routine monitoring without changing current operations.",
+            "Use periodic observation instead of a permanent checkpoint.",
             "Reassess the location when new records become available.",
         ],
     }

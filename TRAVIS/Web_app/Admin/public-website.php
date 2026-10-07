@@ -67,10 +67,70 @@ function cms_find(mysqli $conn, int $id): ?array {
     return $stmt->get_result()->fetch_assoc() ?: null;
 }
 
+$conn->query("CREATE TABLE IF NOT EXISTS public_contacts (
+    contact_id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    office_name VARCHAR(150) NOT NULL,
+    phone_number VARCHAR(50) NOT NULL,
+    description VARCHAR(500) NOT NULL DEFAULT '',
+    office_hours VARCHAR(120) NOT NULL DEFAULT '',
+    category ENUM('emergency','office') NOT NULL DEFAULT 'office',
+    display_order INT NOT NULL DEFAULT 0,
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
 $currentUserId = isset($_SESSION['user']['id']) ? (int)$_SESSION['user']['id'] : null;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = (string)($_POST['action'] ?? '');
+
+    if ($action === 'contact_save') {
+        $contactId = (int)($_POST['contact_id'] ?? 0);
+        $officeName = cms_post('office_name');
+        $phoneNumber = cms_post('phone_number');
+        $description = cms_post('contact_description');
+        $officeHours = cms_post('office_hours');
+        $category = cms_post('contact_category', 'office');
+        $displayOrder = max(0, min(999, (int)($_POST['display_order'] ?? 0)));
+        $isActive = isset($_POST['is_active']) ? 1 : 0;
+        try {
+            if ($officeName === '' || $phoneNumber === '') throw new RuntimeException('Office name and contact number are required.');
+            if (!in_array($category, ['emergency', 'office'], true)) throw new RuntimeException('Invalid contact category.');
+            if ($contactId > 0) {
+                $stmt = $conn->prepare('UPDATE public_contacts SET office_name=?, phone_number=?, description=?, office_hours=?, category=?, display_order=?, is_active=? WHERE contact_id=?');
+                $stmt->bind_param('sssssiii', $officeName, $phoneNumber, $description, $officeHours, $category, $displayOrder, $isActive, $contactId);
+            } else {
+                $stmt = $conn->prepare('INSERT INTO public_contacts (office_name, phone_number, description, office_hours, category, display_order, is_active) VALUES (?, ?, ?, ?, ?, ?, ?)');
+                $stmt->bind_param('sssssii', $officeName, $phoneNumber, $description, $officeHours, $category, $displayOrder, $isActive);
+            }
+            if (!$stmt->execute()) throw new RuntimeException('Unable to save the contact.');
+            $message = $contactId > 0 ? 'Contact updated successfully.' : 'Contact created successfully.';
+            $messageType = 'success';
+        } catch (Throwable $e) {
+            $message = $e->getMessage();
+            $messageType = 'danger';
+        }
+    }
+
+    if ($action === 'contact_status') {
+        $contactId = (int)($_POST['contact_id'] ?? 0);
+        $isActive = (int)($_POST['is_active'] ?? 0) === 1 ? 1 : 0;
+        $stmt = $conn->prepare('UPDATE public_contacts SET is_active=? WHERE contact_id=?');
+        $stmt->bind_param('ii', $isActive, $contactId);
+        $stmt->execute();
+        $message = $isActive ? 'Contact is now visible publicly.' : 'Contact hidden from the public website.';
+        $messageType = 'success';
+    }
+
+    if ($action === 'contact_delete') {
+        $contactId = (int)($_POST['contact_id'] ?? 0);
+        $stmt = $conn->prepare('DELETE FROM public_contacts WHERE contact_id=?');
+        $stmt->bind_param('i', $contactId);
+        $stmt->execute();
+        $message = 'Contact deleted.';
+        $messageType = 'success';
+    }
 
     if ($action === 'create' || $action === 'update') {
         $id = (int)($_POST['announcement_id'] ?? 0);
@@ -128,6 +188,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $messageType = 'success';
         }
     }
+
+    if ($action === 'delete') {
+        $id = (int)($_POST['announcement_id'] ?? 0);
+
+        try {
+            if (!hash_equals(csrf_token(), (string)($_POST['csrf_token'] ?? ''))) {
+                throw new RuntimeException('Your session token is invalid. Please refresh the page and try again.');
+            }
+            if ($id <= 0) throw new RuntimeException('Invalid announcement.');
+
+            $existing = cms_find($conn, $id);
+            if (!$existing) throw new RuntimeException('Announcement not found.');
+
+            $stmt = $conn->prepare('DELETE FROM public_announcements WHERE announcement_id=?');
+            if (!$stmt) throw new RuntimeException('Unable to delete the announcement.');
+            $stmt->bind_param('i', $id);
+            if (!$stmt->execute() || $stmt->affected_rows !== 1) {
+                throw new RuntimeException('Unable to delete the announcement.');
+            }
+            $stmt->close();
+
+            cms_delete_image($existing['image_path'] ?? null);
+            audit_log('delete', 'public_website', 'Deleted announcement: ' . $existing['title'] . '.', 'success', 'announcement', $id);
+            $message = 'Announcement deleted successfully.';
+            $messageType = 'success';
+        } catch (Throwable $e) {
+            $message = $e->getMessage();
+            $messageType = 'danger';
+        }
+    }
 }
 
 $search = trim((string)($_GET['search'] ?? ''));
@@ -161,6 +251,7 @@ $published = scalar("SELECT COUNT(*) FROM public_announcements WHERE status='pub
 $drafts = scalar("SELECT COUNT(*) FROM public_announcements WHERE status='draft'", 0);
 $archived = scalar("SELECT COUNT(*) FROM public_announcements WHERE status='archived'", 0);
 $scheduled = scalar("SELECT COUNT(*) FROM public_announcements WHERE status='published' AND publish_date > NOW()", 0);
+$contacts = fetch_all('SELECT * FROM public_contacts ORDER BY display_order ASC, office_name ASC');
 
 page_start('Public Website', 'public', 'Search public posts...');
 ?>
@@ -306,6 +397,22 @@ header.topbar,
     box-shadow:0 12px 26px rgba(21,128,61,.32) !important;
 }
 .btn-success:hover{filter:brightness(1.08);color:#fff !important}
+.btn-delete{
+    display:inline-flex !important;
+    align-items:center !important;
+    justify-content:center !important;
+    background:linear-gradient(90deg,#b91c1c,#ef4444) !important;
+    border:1px solid rgba(248,113,113,.55) !important;
+    color:#fff !important;
+    box-shadow:0 8px 18px rgba(185,28,28,.32) !important;
+}
+.btn-delete:hover,
+.btn-delete:focus{
+    background:linear-gradient(90deg,#991b1b,#dc2626) !important;
+    border-color:#f87171 !important;
+    color:#fff !important;
+}
+.btn-delete:focus-visible{box-shadow:0 0 0 .2rem rgba(248,113,113,.3) !important}
 
 .dashboard-eyebrow{
     display:inline-block;color:var(--cyan-glow) !important;font-weight:700;
@@ -611,6 +718,26 @@ div[style*="border-radius: 999px"]:not(.tag){
   </div>
 </div>
 
+<div class="section-card mb-4">
+  <div class="section-head">
+    <div><h6>Public Contacts</h6><small>Manage emergency and office contacts displayed on the public website.</small></div>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#contactModal"><i class="bi bi-person-lines-fill"></i>Add Contact</button>
+  </div>
+  <?php if (!$contacts): ?>
+    <?php empty_state('No public contacts have been added yet.'); ?>
+  <?php else: ?>
+    <div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead><tr><th>Office</th><th>Number</th><th>Category</th><th>Hours</th><th>Order</th><th>Status</th><th class="text-end">Actions</th></tr></thead><tbody>
+    <?php foreach ($contacts as $contact): ?>
+      <tr><td><strong><?= esc($contact['office_name']) ?></strong><br><small><?= esc($contact['description']) ?></small></td><td><?= esc($contact['phone_number']) ?></td><td><?= esc(ucfirst($contact['category'])) ?></td><td><?= esc($contact['office_hours'] ?: 'Not specified') ?></td><td><?= (int)$contact['display_order'] ?></td><td><span class="tag <?= $contact['is_active'] ? 'tag-active' : 'tag-inactive' ?>"><?= $contact['is_active'] ? 'Visible' : 'Hidden' ?></span></td><td class="text-end text-nowrap">
+        <button class="btn btn-sm btn-light" data-bs-toggle="modal" data-bs-target="#contactEdit<?= (int)$contact['contact_id'] ?>" title="Edit"><i class="bi bi-pencil-square"></i></button>
+        <form method="post" class="d-inline"><input type="hidden" name="action" value="contact_status"><input type="hidden" name="contact_id" value="<?= (int)$contact['contact_id'] ?>"><input type="hidden" name="is_active" value="<?= $contact['is_active'] ? 0 : 1 ?>"><button class="btn btn-sm btn-light" title="<?= $contact['is_active'] ? 'Hide' : 'Show' ?>"><i class="bi <?= $contact['is_active'] ? 'bi-eye-slash' : 'bi-eye' ?>"></i></button></form>
+        <form method="post" class="d-inline" onsubmit="return confirm('Delete this public contact?');"><input type="hidden" name="action" value="contact_delete"><input type="hidden" name="contact_id" value="<?= (int)$contact['contact_id'] ?>"><button class="btn btn-sm btn-light text-danger" title="Delete"><i class="bi bi-trash"></i></button></form>
+      </td></tr>
+    <?php endforeach; ?>
+    </tbody></table></div>
+  <?php endif; ?>
+</div>
+
 <div class="section-card">
   <div class="section-head flex-wrap gap-2">
     <div>
@@ -703,6 +830,14 @@ div[style*="border-radius: 999px"]:not(.tag){
                     <button class="btn btn-sm btn-light text-danger" title="Archive"><i class="bi bi-archive"></i></button>
                   </form>
                 <?php endif; ?>
+                <form method="post" class="d-inline" onsubmit="return confirm('Permanently delete this announcement? This action cannot be undone.');">
+                  <input type="hidden" name="action" value="delete">
+                  <input type="hidden" name="announcement_id" value="<?= (int)$post['announcement_id'] ?>">
+                  <input type="hidden" name="csrf_token" value="<?= esc(csrf_token()) ?>">
+                  <button class="btn btn-sm btn-delete" title="Delete" aria-label="Delete <?= esc($post['title']) ?>">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </form>
               </td>
             </tr>
           <?php endforeach; ?>
@@ -711,6 +846,12 @@ div[style*="border-radius: 999px"]:not(.tag){
     </div>
   <?php endif; ?>
 </div>
+
+<div class="modal fade" id="contactModal" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-centered"><div class="modal-content"><form method="post"><div class="modal-header"><h5 class="modal-title">Add Public Contact</h5><button class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><input type="hidden" name="action" value="contact_save"><div class="row g-3"><div class="col-md-7"><label class="form-label">Office or Service Name</label><input class="form-control" name="office_name" maxlength="150" required></div><div class="col-md-5"><label class="form-label">Contact Number</label><input class="form-control" name="phone_number" maxlength="50" required></div><div class="col-12"><label class="form-label">Description</label><textarea class="form-control" name="contact_description" rows="3" maxlength="500"></textarea></div><div class="col-md-5"><label class="form-label">Office Hours</label><input class="form-control" name="office_hours" maxlength="120" placeholder="e.g. Monday–Friday, 8 AM–5 PM"></div><div class="col-md-4"><label class="form-label">Category</label><select class="form-select" name="contact_category"><option value="office">Office</option><option value="emergency">Emergency</option></select></div><div class="col-md-3"><label class="form-label">Display Order</label><input class="form-control" type="number" name="display_order" min="0" max="999" value="0"></div><div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" name="is_active" id="contactActive" checked><label class="form-check-label" for="contactActive">Display on public website</label></div></div></div></div><div class="modal-footer"><button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button><button class="btn btn-primary"><i class="bi bi-save"></i>Save Contact</button></div></form></div></div></div>
+
+<?php foreach ($contacts as $contact): ?>
+<div class="modal fade" id="contactEdit<?= (int)$contact['contact_id'] ?>" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-centered"><div class="modal-content"><form method="post"><div class="modal-header"><h5 class="modal-title">Edit Public Contact</h5><button class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><input type="hidden" name="action" value="contact_save"><input type="hidden" name="contact_id" value="<?= (int)$contact['contact_id'] ?>"><div class="row g-3"><div class="col-md-7"><label class="form-label">Office or Service Name</label><input class="form-control" name="office_name" maxlength="150" value="<?= esc($contact['office_name']) ?>" required></div><div class="col-md-5"><label class="form-label">Contact Number</label><input class="form-control" name="phone_number" maxlength="50" value="<?= esc($contact['phone_number']) ?>" required></div><div class="col-12"><label class="form-label">Description</label><textarea class="form-control" name="contact_description" rows="3" maxlength="500"><?= esc($contact['description']) ?></textarea></div><div class="col-md-5"><label class="form-label">Office Hours</label><input class="form-control" name="office_hours" maxlength="120" value="<?= esc($contact['office_hours']) ?>"></div><div class="col-md-4"><label class="form-label">Category</label><select class="form-select" name="contact_category"><option value="office" <?= $contact['category']==='office'?'selected':'' ?>>Office</option><option value="emergency" <?= $contact['category']==='emergency'?'selected':'' ?>>Emergency</option></select></div><div class="col-md-3"><label class="form-label">Display Order</label><input class="form-control" type="number" name="display_order" min="0" max="999" value="<?= (int)$contact['display_order'] ?>"></div><div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" name="is_active" id="contactActive<?= (int)$contact['contact_id'] ?>" <?= $contact['is_active']?'checked':'' ?>><label class="form-check-label" for="contactActive<?= (int)$contact['contact_id'] ?>">Display on public website</label></div></div></div></div><div class="modal-footer"><button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button><button class="btn btn-primary"><i class="bi bi-save"></i>Save Changes</button></div></form></div></div></div>
+<?php endforeach; ?>
 
 <div class="modal fade" id="createModal" tabindex="-1">
   <div class="modal-dialog modal-xl modal-dialog-centered">

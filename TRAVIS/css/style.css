@@ -520,6 +520,8 @@ body.admin-navy-theme .section-card .table-scroll::-webkit-scrollbar-thumb {
   grid-template-columns: auto minmax(0, 1fr) auto;
   gap: .85rem;
   width: min(360px, calc(100vw - 2rem));
+  height: 180px;
+  box-sizing: border-box;
   padding: .9rem;
   border: 1px solid rgba(220, 38, 38, .18);
   border-radius: 18px;
@@ -550,6 +552,7 @@ body.admin-navy-theme .section-card .table-scroll::-webkit-scrollbar-thumb {
 }
 
 .congestion-live-alert-copy { display: grid; gap: .18rem; }
+.congestion-live-alert-copy { align-content: center; }
 .congestion-live-alert-copy strong { color: #8f1d2c; font-size: .88rem; }
 .congestion-live-alert-copy span { color: #5e7183; font-size: .78rem; line-height: 1.45; }
 .congestion-live-alert-copy a { margin-top: .25rem; color: #087d78; font-size: .75rem; font-weight: 800; text-decoration: none; }

@@ -1,0 +1,17 @@
+ALTER TABLE violations
+    ADD COLUMN IF NOT EXISTS driver_address VARCHAR(255) NULL AFTER driver_name,
+    ADD COLUMN IF NOT EXISTS date_of_birth DATE NULL AFTER driver_address,
+    ADD COLUMN IF NOT EXISTS license_expiry_date DATE NULL AFTER license_number,
+    ADD COLUMN IF NOT EXISTS license_confiscated TINYINT(1) NOT NULL DEFAULT 0 AFTER has_no_license,
+    ADD COLUMN IF NOT EXISTS license_remarks VARCHAR(255) NULL AFTER license_confiscated,
+    ADD COLUMN IF NOT EXISTS vehicle_owner VARCHAR(150) NULL AFTER has_no_plate,
+    ADD COLUMN IF NOT EXISTS vehicle_registration_number VARCHAR(80) NULL AFTER vehicle_owner,
+    ADD COLUMN IF NOT EXISTS vehicle_color VARCHAR(80) NULL AFTER vehicle_type,
+    ADD COLUMN IF NOT EXISTS insurance_policy_number VARCHAR(100) NULL AFTER vehicle_color,
+    ADD COLUMN IF NOT EXISTS coding_sticker_number VARCHAR(100) NULL AFTER insurance_policy_number,
+    ADD COLUMN IF NOT EXISTS vehicle_toda VARCHAR(120) NULL AFTER coding_sticker_number,
+    ADD COLUMN IF NOT EXISTS offense_number TINYINT UNSIGNED NOT NULL DEFAULT 1 AFTER violation_time,
+    ADD COLUMN IF NOT EXISTS ticket_remarks TEXT NULL AFTER offense_number,
+    ADD COLUMN IF NOT EXISTS apprehending_officer_name VARCHAR(150) NULL AFTER ticket_remarks,
+    ADD COLUMN IF NOT EXISTS apprehending_officer_position VARCHAR(120) NULL AFTER apprehending_officer_name,
+    ADD COLUMN IF NOT EXISTS apprehension_datetime DATETIME NULL AFTER apprehending_officer_position;

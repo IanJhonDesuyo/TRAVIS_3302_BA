@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import {
-  SafeAreaView,
   ScrollView,
   View,
   Text,
@@ -13,7 +12,9 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import api from '../../api/axiosConfig';
 
 // ========== COLOR TOKENS ==========
@@ -50,16 +51,52 @@ const SectionCard = ({ title, children }: { title: string; children: React.React
   </>
 );
 
+const timeValue = (value: string) => {
+  const match = /^(\d{2}):([0-5]\d)$/.exec(value);
+  const date = new Date();
+  date.setSeconds(0, 0);
+  date.setHours(match ? Number(match[1]) : 0, match ? Number(match[2]) : 0);
+  return date;
+};
+
+const formatTime12 = (value: string) => timeValue(value).toLocaleTimeString('en-PH', {
+  hour: 'numeric', minute: '2-digit', hour12: true,
+});
+
+const TimeSettingInput = ({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) => {
+  const [open, setOpen] = useState(false);
+  return <View style={styles.settingGroup}>
+    <Text style={styles.settingLabel}>{label}</Text>
+    <TouchableOpacity style={styles.timeSelect} onPress={() => setOpen(true)} activeOpacity={0.75} accessibilityRole="button" accessibilityLabel={`${label}, ${formatTime12(value)}`}>
+      <Ionicons name="time-outline" size={18} color={COLORS.primary} />
+      <Text style={styles.timeSelectText}>{formatTime12(value)}</Text>
+      <Ionicons name="chevron-down" size={16} color={COLORS.textTertiary} />
+    </TouchableOpacity>
+    {open && <DateTimePicker
+      value={timeValue(value)}
+      mode="time"
+      display="default"
+      is24Hour={false}
+      onChange={(_, date) => {
+        setOpen(false);
+        if (date) onChange(`${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`);
+      }}
+    />}
+  </View>;
+};
+
 const SettingInput = ({ label, value, onChangeText, disabled = false, keyboardType = 'default' }: any) => (
   <View style={styles.settingGroup}>
     <Text style={styles.settingLabel}>{label}</Text>
-    <TextInput
-      style={[styles.settingInput, disabled && styles.disabledInput]}
-      value={value}
-      onChangeText={onChangeText}
-      editable={!disabled}
-      keyboardType={keyboardType}
-    />
+    <View style={[styles.settingInputWrap, disabled && styles.disabledInput]}>
+      <TextInput
+        style={styles.settingInput}
+        value={value}
+        onChangeText={onChangeText}
+        editable={!disabled}
+        keyboardType={keyboardType}
+      />
+    </View>
   </View>
 );
 
@@ -74,6 +111,13 @@ export default function SettingsScreen() {
   const [collisionDetection, setCollisionDetection] = useState(false);
   const [notifyCongestion, setNotifyCongestion] = useState(true);
   const [notifyCollision, setNotifyCollision] = useState(true);
+  const [notifyOfficerAbsence, setNotifyOfficerAbsence] = useState(true);
+  const [officerAbsenceSeconds, setOfficerAbsenceSeconds] = useState('180');
+  const [scheduleEnabled, setScheduleEnabled] = useState(false);
+  const [dutyStart, setDutyStart] = useState('06:00');
+  const [dutyEnd, setDutyEnd] = useState('18:00');
+  const [breakStart, setBreakStart] = useState('12:00');
+  const [breakEnd, setBreakEnd] = useState('13:00');
   const [saving, setSaving] = useState(false);
 
   // ===== FETCH SETTINGS =====
@@ -91,6 +135,13 @@ export default function SettingsScreen() {
         setCollisionDetection(Boolean(data.enable_collision_detection));
         setNotifyCongestion(Boolean(data.notify_congestion));
         setNotifyCollision(Boolean(data.notify_collision));
+        setNotifyOfficerAbsence(Boolean(data.notify_officer_absence));
+        setOfficerAbsenceSeconds(String(data.officer_absence_seconds || 180));
+        setScheduleEnabled(Boolean(data.enforcer_schedule_enabled));
+        setDutyStart(data.enforcer_duty_start || '06:00');
+        setDutyEnd(data.enforcer_duty_end || '18:00');
+        setBreakStart(data.enforcer_break_start || '12:00');
+        setBreakEnd(data.enforcer_break_end || '13:00');
       }
     } catch (error) {
       Alert.alert('Error', 'Failed to load settings.');
@@ -109,6 +160,7 @@ export default function SettingsScreen() {
     const heavyMin = Number(congestionHeavyMin);
     const cooldown = Number(alertCooldownSeconds);
     const confidence = Number(confidenceThreshold);
+    const absenceSeconds = Number(officerAbsenceSeconds);
     if (!Number.isInteger(lightMax) || lightMax < 0 || lightMax > 100) {
       Alert.alert('Invalid setting', 'Light congestion maximum must be a whole number from 0 to 100.');
       return;
@@ -122,7 +174,15 @@ export default function SettingsScreen() {
       return;
     }
     if (!Number.isFinite(confidence) || confidence < 0.1 || confidence > 1) {
-      Alert.alert('Invalid setting', 'Confidence threshold must be from 0.10 to 1.00.');
+      Alert.alert('Invalid setting', 'Minimum detection confidence must be from 0.10 (10%) to 1.00 (100%). Use 0.50 for balanced detection.');
+      return;
+    }
+    if (![dutyStart, dutyEnd, breakStart, breakEnd].every(value => /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value))) {
+      Alert.alert('Invalid schedule', 'Choose valid duty and break times.');
+      return;
+    }
+    if (!Number.isInteger(absenceSeconds) || absenceSeconds < 60 || absenceSeconds > 3600) {
+      Alert.alert('Invalid setting', 'Officer absence delay must be from 60 to 3,600 seconds.');
       return;
     }
     setSaving(true);
@@ -136,6 +196,13 @@ export default function SettingsScreen() {
         enable_collision_detection: collisionDetection,
         notify_congestion: notifyCongestion,
         notify_collision: notifyCollision,
+        notify_officer_absence: notifyOfficerAbsence,
+        officer_absence_seconds: absenceSeconds,
+        enforcer_schedule_enabled: scheduleEnabled,
+        enforcer_duty_start: dutyStart,
+        enforcer_duty_end: dutyEnd,
+        enforcer_break_start: breakStart,
+        enforcer_break_end: breakEnd,
       };
       const res = await api.post('update_settings.php', payload);
       if (res.data.success) {
@@ -186,13 +253,17 @@ export default function SettingsScreen() {
 
         {/* Computer Vision Integration */}
         <SectionCard title="Computer Vision Integration">
-          <SettingInput label="Confidence Threshold (0.10–1.00)" value={confidenceThreshold} onChangeText={setConfidenceThreshold} keyboardType="decimal-pad" />
+          <SettingInput label="Minimum Detection Confidence (0.50 = 50%)" value={confidenceThreshold} onChangeText={setConfidenceThreshold} keyboardType="decimal-pad" />
+          <View style={styles.helperRow}>
+            <Ionicons name="information-circle-outline" size={14} color={COLORS.primary} style={{ marginRight: 6 }} />
+            <Text style={styles.helperText}>Current level: {Math.round((Number(confidenceThreshold) || 0) * 100)}%. Use 0.50 for balanced detection. Lower values detect more but may be less accurate; higher values are stricter.</Text>
+          </View>
           <View style={styles.switchRow}>
             <Text style={styles.switchLabel}>Officer presence detection</Text>
             <Switch value={officerDetection} onValueChange={setOfficerDetection} trackColor={{ false: COLORS.border, true: COLORS.primary }} thumbColor="#fff" />
           </View>
           <View style={[styles.switchRow, { borderBottomWidth: 0 }]}>
-            <Text style={styles.switchLabel}>Potential collision detection</Text>
+            <Text style={styles.switchLabel}>Collision detection</Text>
             <Switch value={collisionDetection} onValueChange={setCollisionDetection} trackColor={{ false: COLORS.border, true: COLORS.primary }} thumbColor="#fff" />
           </View>
           <View style={styles.helperRow}>
@@ -200,6 +271,21 @@ export default function SettingsScreen() {
             <Text style={styles.helperText}>
               Detection changes apply the next time analysis starts. Camera source remains in Live Monitoring.
             </Text>
+          </View>
+        </SectionCard>
+
+        <SectionCard title="Enforcer Duty Schedule">
+          <View style={styles.switchRow}>
+            <Text style={styles.switchLabel}>Limit detection to duty hours</Text>
+            <Switch value={scheduleEnabled} onValueChange={setScheduleEnabled} trackColor={{ false: COLORS.border, true: COLORS.primary }} thumbColor="#fff" />
+          </View>
+          <TimeSettingInput label="Duty starts" value={dutyStart} onChange={setDutyStart} />
+          <TimeSettingInput label="Duty ends" value={dutyEnd} onChange={setDutyEnd} />
+          <TimeSettingInput label="Break starts" value={breakStart} onChange={setBreakStart} />
+          <TimeSettingInput label="Break ends" value={breakEnd} onChange={setBreakEnd} />
+          <View style={styles.helperRow}>
+            <Ionicons name="time-outline" size={13} color={COLORS.textTertiary} style={{ marginRight: 6 }} />
+            <Text style={styles.helperText}>Officer detection is inactive outside duty hours and during break.</Text>
           </View>
         </SectionCard>
 
@@ -220,7 +306,7 @@ export default function SettingsScreen() {
           <View style={[styles.switchRow, { borderBottomWidth: 0 }]}>
             <View style={styles.switchLabelCol}>
               <View style={[styles.switchDot, { backgroundColor: COLORS.primary }]} />
-              <Text style={styles.switchLabel}>Potential collision alerts</Text>
+              <Text style={styles.switchLabel}>Confirmed collision alerts</Text>
             </View>
             <Switch
               value={notifyCollision}
@@ -229,13 +315,13 @@ export default function SettingsScreen() {
               thumbColor="#fff"
             />
           </View>
+          <View style={styles.switchRow}>
+            <View style={styles.switchLabelCol}><View style={[styles.switchDot, { backgroundColor: COLORS.warning }]} /><Text style={styles.switchLabel}>Officer absence alerts</Text></View>
+            <Switch value={notifyOfficerAbsence} onValueChange={setNotifyOfficerAbsence} trackColor={{ false: COLORS.border, true: COLORS.primary }} thumbColor="#fff" />
+          </View>
+          <SettingInput label="Officer absence delay (seconds)" value={officerAbsenceSeconds} onChangeText={setOfficerAbsenceSeconds} keyboardType="number-pad" />
         </SectionCard>
 
-        <SectionCard title="Runtime Information">
-          <View style={styles.runtimeRow}><Text style={styles.runtimeLabel}>Live Stream</Text><Text style={styles.runtimeValue}>Port 5000</Text></View>
-          <View style={styles.runtimeRow}><Text style={styles.runtimeLabel}>Detection Model</Text><Text style={styles.runtimeValue}>YOLOv8n</Text></View>
-          <View style={[styles.runtimeRow, { borderBottomWidth: 0 }]}><Text style={styles.runtimeLabel}>Settings Storage</Text><Text style={styles.runtimeValue}>Database</Text></View>
-        </SectionCard>
 
         {/* Save button */}
         <TouchableOpacity style={[styles.saveButton, saving && { opacity: 0.6 }]} onPress={saveSettings} disabled={saving} activeOpacity={0.85}>
@@ -275,10 +361,13 @@ const styles = StyleSheet.create({
 
   settingGroup: { marginBottom: 14 },
   settingLabel: { fontSize: 12, fontWeight: '700', color: COLORS.textSecondary, letterSpacing: 0.2, marginBottom: 6 },
-  settingInput: {
+  settingInputWrap: {
     backgroundColor: COLORS.bg, borderRadius: 12, borderWidth: 1, borderColor: COLORS.border,
-    paddingHorizontal: 12, fontSize: 14, height: 46, color: COLORS.textPrimary, fontFamily: mono,
+    paddingHorizontal: 12, height: 46, flexDirection: 'row', alignItems: 'center',
   },
+  settingInput: { flex: 1, height: 44, paddingVertical: 0, fontSize: 14, color: COLORS.textPrimary, fontFamily: mono },
+  timeSelect: { height: 48, paddingHorizontal: 12, borderRadius: 12, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.bg, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  timeSelectText: { flex: 1, color: COLORS.textPrimary, fontSize: 14, fontWeight: '800' },
   disabledInput: { backgroundColor: '#F1F5F9', color: COLORS.textTertiary },
 
   helperRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: 4 },
@@ -292,9 +381,6 @@ const styles = StyleSheet.create({
   switchDot: { width: 6, height: 6, borderRadius: 3, marginRight: 10 },
   switchLabel: { fontSize: 13, color: COLORS.textPrimary, fontWeight: '500', flex: 1 },
 
-  runtimeRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  runtimeLabel: { fontSize: 13, color: COLORS.textSecondary },
-  runtimeValue: { fontSize: 13, color: COLORS.textPrimary, fontWeight: '700' },
 
   saveButton: {
     flexDirection: 'row',

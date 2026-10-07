@@ -1,0 +1,16 @@
+<?php
+declare(strict_types=1);
+
+// Copy this file to local.php on Hostinger and fill in the real password.
+// Never commit, share, or include local.php in a public deployment archive.
+return [
+    'db_host' => 'localhost',
+    'db_port' => 3306,
+    'db_name' => 'u791345703_Travis',
+    'db_user' => 'u791345703_Travis',
+    'db_pass' => 'REPLACE_WITH_HOSTINGER_DATABASE_PASSWORD',
+    // Public HTTPS MediaMTX player URL, for example:
+    // https://stream.example.org/tapo-ai
+    // Leave blank to retain the existing MJPEG/snapshot fallback.
+    'webrtc_url' => '',
+];

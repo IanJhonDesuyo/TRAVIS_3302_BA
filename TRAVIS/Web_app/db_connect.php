@@ -2,16 +2,14 @@
 declare(strict_types=1);
 
 // Shared PDO connection used by the JSON API consumed by the mobile app.
-$dbHost = getenv('TRAVIS_DB_HOST') ?: 'localhost';
-$dbName = getenv('TRAVIS_DB_NAME') ?: 'travis';
-$dbUser = getenv('TRAVIS_DB_USER') ?: 'root';
-$dbPass = getenv('TRAVIS_DB_PASS') ?: '';
+require_once dirname(__DIR__) . '/config/bootstrap.php';
+$database = travis_db_config();
 
 try {
     $pdo = new PDO(
-        "mysql:host={$dbHost};dbname={$dbName};charset=utf8mb4",
-        $dbUser,
-        $dbPass,
+        "mysql:host={$database['host']};port={$database['port']};dbname={$database['name']};charset=utf8mb4",
+        $database['user'],
+        $database['pass'],
         [
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,

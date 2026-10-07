@@ -12,6 +12,11 @@ $defaults = [
     'notify_collision' => '1',
     'notify_officer_absence' => '1',
     'officer_absence_seconds' => '180',
+    'enforcer_schedule_enabled' => '0',
+    'enforcer_duty_start' => '06:00',
+    'enforcer_duty_end' => '18:00',
+    'enforcer_break_start' => '12:00',
+    'enforcer_break_end' => '13:00',
 ];
 $settingsMessage = '';
 $settingsError = '';
@@ -38,7 +43,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'notify_collision' => isset($_POST['notify_collision']) ? 1 : 0,
             'notify_officer_absence' => isset($_POST['notify_officer_absence']) ? 1 : 0,
             'officer_absence_seconds' => max(60, min(3600, (int)($_POST['officer_absence_seconds'] ?? 180))),
+            'enforcer_schedule_enabled' => isset($_POST['enforcer_schedule_enabled']) ? 1 : 0,
         ];
+
+        foreach (['enforcer_duty_start', 'enforcer_duty_end', 'enforcer_break_start', 'enforcer_break_end'] as $timeKey) {
+            $timeValue = (string)($_POST[$timeKey] ?? $defaults[$timeKey]);
+            $values[$timeKey] = preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/', $timeValue) ? $timeValue : $defaults[$timeKey];
+        }
 
         if ($values['congestion_heavy_min'] <= $values['congestion_light_max']) {
             $settingsError = 'Heavy congestion must start above the light congestion maximum.';
@@ -51,6 +62,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             $stmt->close();
             $settingsMessage = 'Settings saved. Computer-vision changes apply the next time analysis starts.';
+            audit_log('update_settings', 'settings', 'System and computer-vision settings were updated.');
         }
     }
 }
@@ -370,6 +382,37 @@ a:hover{color:#fff}
     font-size:.85rem;
     cursor:pointer;
 }
+.form-check.form-switch{
+    padding:10px 0 !important;
+    margin-left:0 !important;
+    gap:12px;
+    min-height:40px;
+}
+.form-check.form-switch .form-check-input{
+    appearance:none;
+    -webkit-appearance:none;
+    width:52px !important;
+    min-width:52px !important;
+    height:28px !important;
+    margin:0 !important;
+    border:1px solid rgba(16,47,73,.22) !important;
+    border-radius:999px !important;
+    background-color:#d7dde0 !important;
+    background-image:radial-gradient(circle at 13px 50%, #fff 0 10px, transparent 10.5px) !important;
+    background-repeat:no-repeat !important;
+    background-size:100% 100% !important;
+    box-shadow:inset 0 1px 2px rgba(16,47,73,.12) !important;
+    transition:background-color .2s ease, background-image .2s ease, box-shadow .2s ease;
+}
+.form-check.form-switch .form-check-input:checked{
+    background-color:var(--blue-accent-2) !important;
+    background-image:radial-gradient(circle at calc(100% - 13px) 50%, #fff 0 10px, transparent 10.5px) !important;
+    box-shadow:inset 0 1px 2px rgba(0,0,0,.12),0 0 0 3px rgba(37,99,235,.12) !important;
+}
+.form-check.form-switch .form-check-input:focus{
+    outline:0;
+    box-shadow:0 0 0 3px rgba(56,189,248,.2) !important;
+}
 
 /* ==== Catch-all: any remaining white cards ==== */
 .card,
@@ -486,8 +529,20 @@ div[style*="border-radius: 999px"]:not(.tag){
       </div>
 
       <div class="mb-3">
-        <label class="form-label small fw-semibold">Confidence Threshold</label>
-        <input type="number" min="0.10" max="1" step="0.05" name="confidence_threshold" class="form-control" value="<?= esc($settings['confidence_threshold']) ?>" required>
+        <label class="form-label small fw-semibold">Minimum Detection Confidence</label>
+        <select name="confidence_threshold" class="form-select" required>
+          <?php foreach ([
+            '0.30' => '30% — More sensitive',
+            '0.40' => '40% — Sensitive',
+            '0.50' => '50% — Balanced (recommended)',
+            '0.60' => '60% — More selective',
+            '0.70' => '70% — Strict',
+            '0.80' => '80% — Very strict',
+          ] as $value => $label): ?>
+            <option value="<?= esc($value) ?>" <?= abs((float)$settings['confidence_threshold'] - (float)$value) < 0.001 ? 'selected' : '' ?>><?= esc($label) ?></option>
+          <?php endforeach; ?>
+        </select>
+        <small class="text-muted d-block mt-2">How certain the AI must be before accepting a detection. Lower values detect more but may create false detections; higher values are stricter but may miss unclear objects.</small>
       </div>
 
       <div class="form-check form-switch mb-2">
@@ -497,7 +552,7 @@ div[style*="border-radius: 999px"]:not(.tag){
 
       <div class="form-check form-switch mb-2">
         <input class="form-check-input" name="enable_collision_detection" type="checkbox" <?= $settings['enable_collision_detection'] === '1' ? 'checked' : '' ?>>
-        <label class="form-check-label">Potential collision detection</label>
+        <label class="form-check-label">Collision detection</label>
       </div>
 
       <small class="text-muted">Camera address and stream quality remain configurable from Live Monitoring.</small>
@@ -519,8 +574,24 @@ div[style*="border-radius: 999px"]:not(.tag){
 
       <div class="form-check form-switch mb-2">
         <input class="form-check-input" name="notify_collision" type="checkbox" <?= $settings['notify_collision'] === '1' ? 'checked' : '' ?>>
-        <label class="form-check-label">Potential collision alerts</label>
+        <label class="form-check-label">Confirmed collision alerts</label>
       </div>
+
+      <hr class="border-secondary opacity-25 my-3">
+      <div class="section-head mb-2">
+        <h6>Enforcer Duty Schedule</h6>
+      </div>
+      <div class="form-check form-switch mb-3">
+        <input class="form-check-input" name="enforcer_schedule_enabled" type="checkbox" <?= $settings['enforcer_schedule_enabled'] === '1' ? 'checked' : '' ?>>
+        <label class="form-check-label">Limit officer detection to duty hours</label>
+      </div>
+      <div class="row g-2">
+        <div class="col-6"><label class="form-label small fw-semibold">Duty starts</label><input type="time" name="enforcer_duty_start" class="form-control" value="<?= esc($settings['enforcer_duty_start']) ?>" required></div>
+        <div class="col-6"><label class="form-label small fw-semibold">Duty ends</label><input type="time" name="enforcer_duty_end" class="form-control" value="<?= esc($settings['enforcer_duty_end']) ?>" required></div>
+        <div class="col-6"><label class="form-label small fw-semibold">Break starts</label><input type="time" name="enforcer_break_start" class="form-control" value="<?= esc($settings['enforcer_break_start']) ?>" required></div>
+        <div class="col-6"><label class="form-label small fw-semibold">Break ends</label><input type="time" name="enforcer_break_end" class="form-control" value="<?= esc($settings['enforcer_break_end']) ?>" required></div>
+      </div>
+      <small class="text-muted d-block mt-2">Officer presence is reported as Unknown before duty, after duty, and during break.</small>
 
       <div class="form-check form-switch mb-2">
         <input class="form-check-input" name="notify_officer_absence" type="checkbox" <?= $settings['notify_officer_absence'] === '1' ? 'checked' : '' ?>>
@@ -536,28 +607,6 @@ div[style*="border-radius: 999px"]:not(.tag){
     </div>
   </div>
 
-  <!-- Runtime information -->
-  <div class="col-lg-6">
-    <div class="section-card h-100">
-      <div class="section-head">
-        <h6>Runtime Information</h6>
-        <span class="tag tag-info">Local services</span>
-      </div>
-
-      <div class="mini-metric mb-2">
-        <small>Live Stream</small>
-        <strong>Port 5000</strong>
-      </div>
-      <div class="mini-metric mb-2">
-        <small>Detection Model</small>
-        <strong>YOLOv8n</strong>
-      </div>
-      <div class="mini-metric">
-        <small>Settings Storage</small>
-        <strong>Database</strong>
-      </div>
-    </div>
-  </div>
 </div>
 </form>
 

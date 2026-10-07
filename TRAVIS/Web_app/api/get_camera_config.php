@@ -5,6 +5,8 @@ header('Content-Type: application/json; charset=utf-8');
 
 $configFile = dirname(__DIR__, 2) . '/computer_vision/camera_config.json';
 $config = is_file($configFile) ? json_decode((string)file_get_contents($configFile), true) : [];
+$phoneConfigFile = dirname(__DIR__, 2) . '/computer_vision/phone_camera_config.json';
+$phoneConfig = is_file($phoneConfigFile) ? json_decode((string)file_get_contents($phoneConfigFile), true) : [];
 
 echo json_encode([
     'success' => true,
@@ -13,5 +15,6 @@ echo json_encode([
         'username' => (string)($config['username'] ?? ''),
         'stream' => ($config['stream'] ?? 'stream2') === 'stream1' ? 'stream1' : 'stream2',
         'has_saved_password' => !empty($config['password']),
+        'has_saved_phone_stream' => !empty($phoneConfig['stream_url']),
     ],
 ]);

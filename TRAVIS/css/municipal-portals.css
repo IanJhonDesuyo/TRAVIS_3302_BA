@@ -22,10 +22,34 @@ body.municipal-portal {
   --text: var(--municipal-ink);
   --muted: var(--municipal-muted);
   min-height: 100vh;
+  position: relative;
   color: var(--municipal-ink) !important;
-  background:
-    linear-gradient(rgba(247, 245, 238, .72), rgba(247, 245, 238, .82)),
-    url('../assets/images/nasugbu-municipal-hall.jpg') center 45% / cover fixed no-repeat !important;
+  background-color: #fbfcfd !important;
+  background-image: radial-gradient(circle, rgba(69, 103, 126, .10) 1px, transparent 1.2px) !important;
+  background-size: 24px 24px !important;
+  background-position: 0 0 !important;
+  background-attachment: fixed !important;
+}
+
+body.municipal-portal .main-wrapper {
+  position: relative;
+  z-index: 1;
+}
+
+/* Bootstrap appends its backdrop directly to <body>. Several page-specific
+   modals (including User Management) live inside .main-wrapper, whose z-index
+   would otherwise trap the modal underneath that backdrop. Release the
+   wrapper stacking context only while a modal is open. */
+body.municipal-portal.modal-open .main-wrapper {
+  z-index: auto;
+}
+
+body.municipal-portal.modal-open .main-wrapper .modal {
+  z-index: 1055;
+}
+
+body.municipal-portal.modal-open > .modal-backdrop {
+  z-index: 1050;
 }
 
 body.municipal-portal .main-wrapper,
@@ -43,17 +67,17 @@ body.municipal-portal::before {
   content: "";
   position: fixed;
   inset: 0;
-  z-index: -1;
+  z-index: 0;
   pointer-events: none;
-  background-image: radial-gradient(rgba(16, 42, 67, .1) 1px, transparent 1px);
-  background-size: 22px 22px;
-  -webkit-mask-image: linear-gradient(90deg, transparent, #000 30%);
-  mask-image: linear-gradient(90deg, transparent, #000 30%);
+  background: transparent;
 }
 
 body.municipal-portal .sidebar {
   isolation: isolate;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   color: #e8f3f1 !important;
   background:
     radial-gradient(circle at 16% 8%, rgba(49, 196, 183, .18), transparent 18rem),
@@ -61,6 +85,26 @@ body.municipal-portal .sidebar {
     url('../assets/images/nasugbu-municipal-hall.jpg') center / cover no-repeat !important;
   border-right: 1px solid rgba(101, 211, 199, .22) !important;
   box-shadow: 8px 0 30px rgba(5, 28, 40, .18) !important;
+}
+
+body.municipal-portal .sidebar .nav {
+  flex: 0 0 auto;
+}
+
+body.municipal-portal .backdrop {
+  background: rgba(4, 20, 30, .52);
+  opacity: 0;
+  visibility: hidden;
+  display: block;
+  pointer-events: none;
+  backdrop-filter: blur(2px);
+  transition: opacity .22s ease, visibility .22s ease;
+}
+
+body.municipal-portal .backdrop.show {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
 }
 
 body.municipal-portal .sidebar::before {
@@ -80,7 +124,13 @@ body.municipal-portal .sidebar::before {
 
 body.municipal-portal .sidebar-brand {
   display: flex !important;
-  height: 78px !important;
+  position: sticky !important;
+  top: 0;
+  z-index: 6;
+  height: 84px !important;
+  min-height: 84px !important;
+  flex: 0 0 84px !important;
+  flex-shrink: 0 !important;
   padding: 0 18px !important;
   flex-direction: row !important;
   align-items: center !important;
@@ -101,6 +151,40 @@ body.municipal-portal .municipal-seal {
   border: 2px solid rgba(255, 255, 255, .78);
   border-radius: 50%;
   box-shadow: 0 0 0 3px rgba(44, 190, 174, .15), 0 7px 18px rgba(0, 0, 0, .22);
+}
+
+body.municipal-portal .travis-brand-logo {
+  width: 50px;
+  height: 50px;
+  flex: 0 0 50px;
+  object-fit: cover;
+  background: rgba(255, 255, 255, .94);
+  border-width: 2px;
+  border-radius: 50%;
+}
+
+body.municipal-portal .travis-sidebar-brand {
+  position: relative;
+  justify-content: center !important;
+  gap: 0 !important;
+}
+
+body.municipal-portal .travis-sidebar-brand .travis-brand-logo {
+  position: absolute;
+  left: 18px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+body.municipal-portal .travis-brand-logo + .municipal-brand-copy {
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+}
+
+body.municipal-portal .travis-brand-logo + .municipal-brand-copy .brand-logo-wordmark {
+  font-size: 1.35rem !important;
+  line-height: 1.1;
 }
 
 body.municipal-portal .municipal-brand-copy { min-width: 0; }
@@ -211,21 +295,39 @@ body.municipal-portal .topbar .topbar-clock {
   text-shadow: 0 1px 0 rgba(255, 255, 255, .7);
 }
 body.municipal-portal .topbar .topbar-notification {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 46px;
+  width: 46px;
+  height: 46px;
+  padding: 0 !important;
+  color: #075e59 !important;
+  background: rgba(255, 255, 255, .96) !important;
+  border: 1px solid rgba(16, 47, 73, .14) !important;
+  border-radius: 13px !important;
+  box-shadow: 0 5px 14px rgba(16, 47, 73, .13) !important;
+}
+body.municipal-portal .topbar .topbar-notification i {
+  font-size: 1.18rem;
+  line-height: 1;
+}
+body.municipal-portal .topbar .topbar-notification .badge {
+  position: absolute;
+  top: -7px;
+  right: -7px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 40px;
-  width: 40px;
-  height: 40px;
-  padding: 0 !important;
-  color: #075e59 !important;
-  background: rgba(255, 255, 255, .92) !important;
-  border: 1px solid rgba(16, 47, 73, .16) !important;
-  border-radius: 11px !important;
-  box-shadow: 0 6px 16px rgba(16, 47, 73, .12) !important;
-}
-body.municipal-portal .topbar .topbar-notification i {
-  font-size: 1.05rem;
+  min-width: 21px;
+  height: 21px;
+  padding: 0 5px;
+  color: #fff;
+  background: #dc3545 !important;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  box-shadow: 0 2px 6px rgba(220, 53, 69, .28);
+  font-size: .64rem;
+  font-weight: 700;
   line-height: 1;
 }
 body.municipal-portal .topbar .topbar-notification:hover,
@@ -957,6 +1059,11 @@ body.municipal-portal .auth-prompt .auth-prompt-icon {
 
 body.municipal-portal.sidebar-collapsed .municipal-brand-copy { display: none; }
 body.municipal-portal.sidebar-collapsed .municipal-seal { width: 44px; height: 44px; flex-basis: 44px; }
+body.municipal-portal.sidebar-collapsed .travis-brand-logo { object-fit: cover; border-radius: 50%; }
+body.municipal-portal.sidebar-collapsed .travis-sidebar-brand .travis-brand-logo {
+  position: static;
+  transform: none;
+}
 
 @media (min-width: 992px) {
   body.municipal-portal.sidebar-collapsed .sidebar .nav-label,
@@ -991,6 +1098,114 @@ body.municipal-portal.sidebar-collapsed .municipal-seal { width: 44px; height: 4
   }
 }
 
+@media (max-width: 991.98px) {
+  body.municipal-portal.sidebar-menu-open {
+    overflow: hidden;
+  }
+
+  body.municipal-portal .sidebar {
+    width: min(290px, 88vw);
+    max-width: 88vw;
+    height: 100dvh;
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+    box-shadow: 16px 0 42px rgba(4, 20, 30, .34) !important;
+  }
+
+  body.municipal-portal .sidebar-brand {
+    position: sticky !important;
+    top: 0;
+  }
+}
+
+@media (max-width: 575.98px) {
+  body.municipal-portal .sidebar {
+    width: min(280px, 90vw);
+    max-width: 90vw;
+  }
+}
+
+/* Treasurer dashboard collection-period filter */
+body.municipal-portal .dashboard-period-toolbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, .72);
+  border: 1px solid rgba(16, 47, 73, .16);
+  border-radius: 16px;
+  box-shadow: 0 8px 24px rgba(16, 47, 73, .08);
+  backdrop-filter: blur(14px) saturate(110%);
+}
+body.municipal-portal .dashboard-period-summary {
+  display: flex;
+  align-items: center;
+  gap: .7rem;
+  min-width: 210px;
+}
+body.municipal-portal .dashboard-period-icon {
+  display: inline-grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  flex: 0 0 42px;
+  color: var(--municipal-teal);
+  background: rgba(8, 125, 120, .1);
+  border-radius: 12px;
+}
+body.municipal-portal .dashboard-period-summary small,
+body.municipal-portal .dashboard-period-summary strong {
+  display: block;
+}
+body.municipal-portal .dashboard-period-summary small {
+  color: var(--municipal-muted);
+  font-size: .7rem;
+  font-weight: 600;
+}
+body.municipal-portal .dashboard-period-summary strong {
+  color: var(--municipal-ink);
+  font-size: .92rem;
+}
+body.municipal-portal .dashboard-period-form {
+  display: grid;
+  grid-template-columns: minmax(180px, 230px) minmax(155px, 190px) auto;
+  align-items: end;
+  gap: .65rem;
+}
+body.municipal-portal .dashboard-filter-field label {
+  display: block;
+  margin: 0 0 .32rem .1rem;
+  color: var(--municipal-ink);
+  font-size: .7rem;
+  font-weight: 700;
+}
+body.municipal-portal .dashboard-period-form .form-control,
+body.municipal-portal .dashboard-period-form .form-select,
+body.municipal-portal .dashboard-filter-submit {
+  min-height: 42px;
+  border-radius: 11px;
+}
+body.municipal-portal .dashboard-filter-submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .4rem;
+  padding-inline: 1rem;
+  white-space: nowrap;
+}
+@media (max-width: 767.98px) {
+  body.municipal-portal .dashboard-period-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  body.municipal-portal .dashboard-period-form {
+    grid-template-columns: 1fr;
+  }
+  body.municipal-portal .dashboard-filter-submit {
+    width: 100%;
+  }
+}
+
 @media (max-width: 767.98px) {
   body.municipal-portal .content {
     padding-left: 1rem !important;
@@ -1010,3 +1225,16 @@ body.municipal-portal.sidebar-collapsed .municipal-seal { width: 44px; height: 4
 @media print {
   body.municipal-portal { color: #111827 !important; background: #fff !important; }
 }
+.notification-dropdown{position:relative}
+body.admin-dashboard .dropdown-menu.notification-preview{width:min(390px,calc(100vw - 24px));padding:0!important;overflow:hidden;border:1px solid rgba(79,195,247,.2)!important;border-radius:16px!important;background:linear-gradient(150deg,#0a1a30,#102a49)!important;box-shadow:0 24px 65px rgba(2,8,23,.5)!important}
+.notification-preview-head{display:flex;align-items:center;justify-content:space-between;padding:15px 17px;border-bottom:1px solid rgba(255,255,255,.09)}
+.notification-preview-head strong{color:#fff;font-size:.9rem}.notification-preview-head span{padding:4px 8px;border-radius:999px;background:rgba(248,113,113,.14);color:#fca5a5;font-size:.65rem;font-weight:700}
+.notification-preview-item{display:grid!important;width:100%;grid-template-columns:38px 1fr;gap:11px;padding:13px 16px;color:#cbd5e1!important;text-align:left;text-decoration:none;border:0;border-bottom:1px solid rgba(255,255,255,.07);background:transparent;transition:background-color .16s ease}
+.notification-preview-item:hover{color:#fff!important;background:rgba(56,189,248,.08)}
+.notification-preview-item>span:last-child{min-width:0}.notification-preview-item strong,.notification-preview-item small,.notification-preview-item time{display:block}
+.notification-preview-item strong{margin-bottom:3px;color:#fff;font-size:.78rem}.notification-preview-item small{overflow:hidden;color:#b8c6d6;font-size:.71rem;line-height:1.4;text-overflow:ellipsis}.notification-preview-item time{margin-top:4px;color:#7890a7;font-size:.62rem}
+.notification-preview-icon{display:grid;width:36px;height:36px;place-items:center;border-radius:10px;font-size:.9rem}.notification-preview-icon.tone-danger{color:#f87171;background:rgba(248,113,113,.13)}.notification-preview-icon.tone-warning{color:#fbbf24;background:rgba(251,191,36,.13)}.notification-preview-icon.tone-info{color:#7dd3fc;background:rgba(56,189,248,.13)}
+.notification-preview-empty{display:flex;align-items:center;justify-content:center;gap:9px;padding:28px;color:#94a3b8;font-size:.78rem}.notification-preview-empty i{color:#34d399;font-size:1.1rem}
+.notification-preview-footer{display:flex!important;align-items:center;justify-content:center;gap:7px;padding:12px;color:#7dd3fc!important;text-decoration:none;font-size:.72rem;font-weight:700;background:rgba(255,255,255,.025)}.notification-preview-footer:hover{color:#fff!important;background:rgba(56,189,248,.08)}
+@media(max-width:575.98px){.notification-preview{position:fixed!important;top:72px!important;right:12px!important;left:12px!important;width:auto!important;transform:none!important}}
+.notification-alert-modal .modal-dialog{max-width:480px}.notification-alert-modal .modal-content{overflow:hidden;border:1px solid rgba(79,195,247,.2)!important;border-radius:20px!important;background:linear-gradient(145deg,#0a1a30,#102a49)!important;color:#fff!important;box-shadow:0 28px 80px rgba(2,8,23,.58)!important}.notification-alert-modal .modal-header,.notification-alert-modal .modal-footer{border-color:rgba(255,255,255,.09)!important}.notification-alert-modal .modal-title{color:#fff!important}.notification-alert-modal .modal-body p{color:#d7e1ec!important;line-height:1.6}.notification-alert-modal .text-muted{color:#8fa4b9!important}.notification-modal-eyebrow{display:block;margin-bottom:4px;color:#7dd3fc!important;font-size:.64rem;font-weight:800;letter-spacing:.11em;text-transform:uppercase}.notification-alert-modal .btn-close{filter:invert(1)}

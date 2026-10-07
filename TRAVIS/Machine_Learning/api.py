@@ -271,43 +271,43 @@ def recommendations_for_risk(
 
     recommendations = {
         "low": [
-            "Continue routine traffic monitoring.",
-            "Maintain the regular traffic-enforcer schedule.",
-            "Review current conditions before changing deployment.",
+            "Continue routine monitoring without changing current operations.",
+            "Use periodic observation instead of a permanent checkpoint.",
+            "Review new records monthly while risk remains low.",
         ],
         "low risk": [
-            "Continue routine traffic monitoring.",
-            "Maintain the regular traffic-enforcer schedule.",
-            "Review current conditions before changing deployment.",
+            "Continue routine monitoring without changing current operations.",
+            "Use periodic observation instead of a permanent checkpoint.",
+            "Review new records monthly while risk remains low.",
         ],
         "medium": [
-            "Increase patrol visibility during peak traffic periods.",
-            "Prepare additional personnel for known hotspot locations.",
-            "Monitor recurring traffic violations more closely.",
+            "Schedule rotating observation during historically busy periods.",
+            "Use targeted reminders, signage, or random checks for the leading violation.",
+            "Compare violation counts after 14 days before changing the intervention.",
         ],
         "medium risk": [
-            "Increase patrol visibility during peak traffic periods.",
-            "Prepare additional personnel for known hotspot locations.",
-            "Monitor recurring traffic violations more closely.",
+            "Schedule rotating observation during historically busy periods.",
+            "Use targeted reminders, signage, or random checks for the leading violation.",
+            "Compare violation counts after 14 days before changing the intervention.",
         ],
         "high": [
-            "Deploy additional traffic enforcers to priority hotspots.",
-            "Increase patrol frequency during peak traffic periods.",
-            "Closely monitor congestion and possible road incidents.",
-            "Prepare public traffic advisories when necessary.",
+            "Prioritize a time-bound intervention at the highest-risk location and peak period.",
+            "Match the response to the leading issue: clearing, loading controls, signage, education, or random checks.",
+            "Coordinate with the barangay, TODA, terminals, or nearby establishments when appropriate.",
+            "Review results after 7 days and retain the intervention only when records show improvement.",
         ],
         "high risk": [
-            "Deploy additional traffic enforcers to priority hotspots.",
-            "Increase patrol frequency during peak traffic periods.",
-            "Closely monitor congestion and possible road incidents.",
-            "Prepare public traffic advisories when necessary.",
+            "Prioritize a time-bound intervention at the highest-risk location and peak period.",
+            "Match the response to the leading issue: clearing, loading controls, signage, education, or random checks.",
+            "Coordinate with the barangay, TODA, terminals, or nearby establishments when appropriate.",
+            "Review results after 7 days and retain the intervention only when records show improvement.",
         ],
     }
 
     return recommendations.get(
         normalized_risk,
         [
-            "Review the prediction with current TMO monitoring data.",
+            "Review the prediction against the latest traffic-violation records.",
         ],
     )
 
@@ -382,9 +382,13 @@ def predict_monthly_risk(
             predicted_risk
         ),
         "model": "Random Forest Classifier",
+        "data_basis": "Historical monthly traffic-violation counts",
+        "input_features": ["Year", "Month"],
+        "uses_traffic_flow": False,
         "note": (
-            "This prediction is based on historical TMO records "
-            "and should be reviewed together with current traffic conditions."
+            "This forecast estimates traffic-violation risk from historical "
+            "monthly violation counts. It does not use traffic-flow, "
+            "congestion, or live camera data."
         ),
     }
 

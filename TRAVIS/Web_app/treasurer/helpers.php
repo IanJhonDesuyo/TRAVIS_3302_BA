@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/db_connect.php';
 require_once __DIR__ . '/../auth/session.php';
+require_once __DIR__ . '/../auth/audit.php';
+require_once __DIR__ . '/../traffic_rules.php';
 travis_session_start();
 
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
@@ -122,6 +124,11 @@ function current_admin(): array {
     ];
 }
 
+function audit_log(string $action, string $module, string $description, string $outcome = 'success', ?string $entityType = null, int|string|null $entityId = null): void {
+    global $conn;
+    travis_audit_log($conn, $action, $module, $description, $outcome, $entityType, $entityId);
+}
+
 function csrf_token(): string {
     if (empty($_SESSION['csrf_token'])) {
         $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
@@ -143,11 +150,6 @@ function month_labels(): array {
 function payment_method_options(): array {
     return [
         'cash' => 'Cash',
-        'card' => 'Card',
-        'online' => 'Online / Bank Transfer',
-        'cheque' => 'Cheque',
-        'mobile_wallet' => 'Mobile Wallet (GCash)',
-        'other' => 'Other',
     ];
 }
 
@@ -248,35 +250,17 @@ function payment_status_breakdown(): array {
  * Keep these values identical because both portals write to the same records.
  */
 function traffic_violation_types(): array {
-    return [
-        "No Driver's License",
-        "Failure to Carry Driver's License",
-        "Invalid / Delinquent Driver's License",
-        'Unregistered Motor Vehicle',
-        'Nuisance Muffler',
-        'Disregarding Traffic Sign / Officer',
-        'Reckless Driving',
-        'Colorum',
-        'Illegal Parking',
-        'Illegal Terminal',
-        'Obstruction',
-        'OR / CR Not Carried',
-        'No Canvas Cover',
-        'Operating Out of Line',
-        'Overloading',
-        'Overcharging',
-        'Loading / Unloading in Prohibited Zone',
-        'Refusal to Convey Passenger',
-        'Driving with Sleeveless Shirt / Shorts',
-        'Not Wearing Shoes',
-        'No Side Mirror',
-        'Arrogant Driver',
-        'Driving Under the Influence of Liquor',
-        'Coding Violation',
-        'Other Traffic Violation',
-    ];
+    return travis_violation_types();
 }
 
 function traffic_penalty_fees(): array {
-    return [100, 200, 300, 500, 1000, 1500, 2000, 2500, 3000, 5000];
+    return travis_penalty_fees();
+}
+
+function traffic_violation_category(string $type): string {
+    return travis_violation_category($type);
+}
+
+function traffic_offense_analysis(mysqli $conn, string $driverName, string $violationType, string $licenseNumber = '', ?string $dateOfBirth = null): array {
+    return travis_mysqli_offense_analysis($conn, $driverName, $violationType, $licenseNumber, $dateOfBirth);
 }

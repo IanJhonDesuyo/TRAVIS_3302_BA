@@ -2,6 +2,8 @@
 declare(strict_types=1);
 
 session_start();
+require_once __DIR__ . '/db_connect.php';
+require_once __DIR__ . '/../auth/audit.php';
 
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('Pragma: no-cache');
@@ -19,6 +21,8 @@ if ($sessionToken === '' || !hash_equals($sessionToken, $submittedToken)) {
     http_response_code(403);
     exit('Invalid logout request.');
 }
+
+travis_audit_log($conn, 'logout', 'authentication', 'User signed out securely.', 'success', 'user', (int)($_SESSION['user']['id'] ?? 0), $_SESSION['user'] ?? null);
 
 $_SESSION = [];
 

@@ -9,14 +9,6 @@ if (!in_array($client, ['web', 'mobile'], true)) {
     exit('Invalid monitoring client.');
 }
 
-$statusFile = __DIR__ . '/analysis_status.json';
-$status = is_file($statusFile) ? json_decode((string)file_get_contents($statusFile), true) : [];
-$owner = strtolower((string)($status['stream_owner'] ?? ''));
-if ($owner !== $client) {
-    http_response_code(403);
-    exit('This stream belongs to another monitoring client.');
-}
-
 if (!function_exists('curl_init')) {
     http_response_code(500);
     exit('PHP cURL is required for the monitoring stream.');
@@ -25,6 +17,11 @@ if (!function_exists('curl_init')) {
 set_time_limit(0);
 ignore_user_abort(true);
 while (ob_get_level() > 0) ob_end_clean();
+ob_implicit_flush(true);
+if (function_exists('apache_setenv')) {
+    @apache_setenv('no-gzip', '1');
+    @apache_setenv('dont-vary', '1');
+}
 
 header('Content-Type: multipart/x-mixed-replace; boundary=frame');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
@@ -38,6 +35,8 @@ curl_setopt_array($curl, [
     CURLOPT_CONNECTTIMEOUT => 5,
     CURLOPT_TIMEOUT => 0,
     CURLOPT_RETURNTRANSFER => false,
+    CURLOPT_BUFFERSIZE => 16384,
+    CURLOPT_TCP_NODELAY => true,
     CURLOPT_WRITEFUNCTION => static function ($handle, string $chunk): int {
         if (connection_aborted()) return 0;
         echo $chunk;

@@ -44,10 +44,10 @@ $ok = $stmt->execute();
 $logId = $conn->insert_id;
 $stmt->close();
 
-if ($ok && ($congestion === 'heavy' || $congestion === 'severe' || $collision === 'possible' || $collision === 'confirmed')) {
-    $type = $collision !== 'none' ? 'collision' : 'congestion';
+if ($ok && ($congestion === 'heavy' || $congestion === 'severe' || $collision === 'confirmed')) {
+    $type = $collision === 'confirmed' ? 'collision' : 'congestion';
     $severity = ($congestion === 'severe' || $collision === 'confirmed') ? 'critical' : 'warning';
-    $message = $type === 'collision' ? 'Potential collision detected by computer vision.' : 'Traffic congestion detected by computer vision.';
+    $message = $type === 'collision' ? 'Confirmed collision detected by computer vision.' : 'Traffic congestion detected by computer vision.';
     $stmt = $conn->prepare("INSERT INTO monitoring_alerts (camera_log_id, alert_type, severity, message) VALUES (?,?,?,?)");
     $stmt->bind_param('isss', $logId, $type, $severity, $message);
     $stmt->execute();

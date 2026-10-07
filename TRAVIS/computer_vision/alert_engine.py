@@ -12,6 +12,8 @@ class AlertEngine:
 
         self.heavy_started = None
         self.last_alert_time = 0
+        self.alert_active = False
+        self.recovery_started = None
 
         self.alert_delay = 5          # seconds
         self.cooldown = 300           # 5 minutes
@@ -24,10 +26,19 @@ class AlertEngine:
         # NORMAL
         # -------------------------
         if congestion_level != "Heavy":
-
+            if not self.alert_active:
+                self.heavy_started = None
+                return "NORMAL"
+            if self.recovery_started is None:
+                self.recovery_started = current_time
+            if current_time - self.recovery_started < 10:
+                return "ALERT"
+            self.alert_active = False
             self.heavy_started = None
-
+            self.recovery_started = None
             return "NORMAL"
+
+        self.recovery_started = None
 
         # -------------------------
         # First Heavy Detection
@@ -47,18 +58,8 @@ class AlertEngine:
 
             return "WARNING"
 
-        # -------------------------
-        # Cooldown
-        # -------------------------
-        if current_time - self.last_alert_time >= self.cooldown:
-
-            self.last_alert_time = current_time
-
-            return "ALERT"
-
-        # -------------------------
-        # Heavy but already alerted. Do not report another ALERT until the
-        # configured cooldown expires; the API uses this state to decide
-        # whether a new notification may be created.
-        # -------------------------
-        return "COOLDOWN"
+        # Keep the live state visible for as long as congestion remains heavy.
+        # The monitoring-log API owns notification deduplication/cooldown. A
+        # one-frame ALERT pulse can be missed by the one-second browser poll.
+        self.alert_active = True
+        return "ALERT"

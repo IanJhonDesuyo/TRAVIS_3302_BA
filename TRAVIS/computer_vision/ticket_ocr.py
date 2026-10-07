@@ -5,21 +5,39 @@ import difflib
 import json
 import re
 import sys
+from datetime import date
 from dataclasses import dataclass
 from pathlib import Path
 
 import cv2
+import numpy as np
 from rapidocr_onnxruntime import RapidOCR
 
 
 LABELS = {
+    "ticket_number": ["ticket no", "ticket number", "citation no", "citation number"],
     "driver_name": ["driver name", "driver's name", "drivers name", "name of driver"],
+    "driver_address": ["address", "driver address"],
+    "date_of_birth": ["date of birth", "birth date", "dob"],
     "license_number": ["license number", "driver license number", "driver's license number", "license no", "dl no"],
+    "license_expiry_date": ["license expiry date", "expiry date", "expiration date"],
+    "license_remarks": ["license remarks", "confiscated remarks"],
     "plate_number": ["plate number", "plate no"],
+    "vehicle_owner": ["owner of vehicle", "vehicle owner"],
+    "vehicle_registration_number": ["vehicle registration number", "registration number", "or cr number"],
+    "vehicle_color": ["color of vehicle", "vehicle color"],
+    "insurance_policy_number": ["insurance policy number", "insurance policy no"],
+    "coding_sticker_number": ["coding sticker number", "coding sticker no"],
+    "vehicle_toda": ["toda"],
     "vehicle_type": ["vehicle type", "type of vehicle"],
     "violation_type": ["violation type", "nature of violation", "offense"],
-    "location": ["violation location", "place of violation", "location"],
+    "location": ["violation location", "place of violation", "place of violation", "location"],
+    "violation_date": ["date of violation", "violation date"],
+    "violation_time": ["time of violation", "violation time"],
     "penalty_amount": ["penalty amount", "amount due", "penalty fee", "fine"],
+    "ticket_remarks": ["remarks"],
+    "apprehending_officer_name": ["apprehending arresting officer", "apprehending officer", "arresting officer"],
+    "apprehending_officer_position": ["position"],
 }
 
 VEHICLE_TYPES = ["Motorcycle", "Car", "SUV", "Jeepney", "Tricycle", "Van", "Truck", "Bus", "Other"]
@@ -31,8 +49,19 @@ VIOLATION_TYPES = [
     "Loading / Unloading in Prohibited Zone", "Refusal to Convey Passenger",
     "Driving with Sleeveless Shirt / Shorts", "Not Wearing Shoes", "No Side Mirror", "Arrogant Driver",
     "Driving Under the Influence of Liquor", "Coding Violation", "Other Traffic Violation",
+    "LOI 1482 Highway",
 ]
-PENALTY_FEES = {100, 200, 300, 500, 1000, 1500, 2000, 2500, 3000, 5000}
+VIOLATION_ALIASES = {
+    "no canvass cover": "No Canvas Cover",
+    "loading unloading prohibited zone": "Loading / Unloading in Prohibited Zone",
+    "driving under the influence of liquor": "Driving Under the Influence of Liquor",
+    "driving under influence of liquor": "Driving Under the Influence of Liquor",
+    "loi 1482 highway": "LOI 1482 Highway",
+    "others specify": "Other Traffic Violation",
+    "other specify": "Other Traffic Violation",
+    "arrogant": "Arrogant Driver",
+}
+PENALTY_FEES = {100, 200, 300, 500, 750, 1000, 1500, 2000, 2500, 3000, 5000}
 
 
 def clean(value: str) -> str:
@@ -86,16 +115,109 @@ def merge_items(groups: list[list[OCRItem]]) -> list[OCRItem]:
     return sorted(merged, key=lambda value: (round(value.center_y / max(value.height, 1)), value.left))
 
 
+def order_document_corners(points):
+    """Return quadrilateral corners as top-left, top-right, bottom-right, bottom-left."""
+    points = np.asarray(points, dtype="float32").reshape(4, 2)
+    ordered = np.zeros((4, 2), dtype="float32")
+    totals = points.sum(axis=1)
+    differences = np.diff(points, axis=1).reshape(-1)
+    ordered[0] = points[np.argmin(totals)]
+    ordered[2] = points[np.argmax(totals)]
+    ordered[1] = points[np.argmin(differences)]
+    ordered[3] = points[np.argmax(differences)]
+    return ordered
+
+
+def document_warp(image):
+    """Find the paper boundary and flatten a photographed ticket like camera document mode."""
+    height, width = image.shape[:2]
+    longest = max(height, width)
+    scale = min(1.0, 1200.0 / longest)
+    preview = cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA) if scale < 1 else image.copy()
+    gray = cv2.cvtColor(preview, cv2.COLOR_BGR2GRAY)
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+    edges = cv2.Canny(blurred, 45, 140)
+    edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, np.ones((7, 7), np.uint8), iterations=2)
+    contours = cv2.findContours(edges, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)[0]
+    image_area = float(preview.shape[0] * preview.shape[1])
+    document = None
+    for contour in sorted(contours, key=cv2.contourArea, reverse=True)[:15]:
+        if cv2.contourArea(contour) < image_area * 0.20:
+            break
+        perimeter = cv2.arcLength(contour, True)
+        polygon = cv2.approxPolyDP(contour, 0.02 * perimeter, True)
+        if len(polygon) == 4 and cv2.isContourConvex(polygon):
+            document = polygon.reshape(4, 2).astype("float32") / scale
+            break
+    if document is None:
+        return image, False
+
+    top_left, top_right, bottom_right, bottom_left = order_document_corners(document)
+    target_width = int(max(np.linalg.norm(bottom_right - bottom_left), np.linalg.norm(top_right - top_left)))
+    target_height = int(max(np.linalg.norm(top_right - bottom_right), np.linalg.norm(top_left - bottom_left)))
+    if target_width < 400 or target_height < 400:
+        return image, False
+    destination = np.array([
+        [0, 0], [target_width - 1, 0],
+        [target_width - 1, target_height - 1], [0, target_height - 1],
+    ], dtype="float32")
+    transform = cv2.getPerspectiveTransform(
+        np.array([top_left, top_right, bottom_right, bottom_left], dtype="float32"), destination
+    )
+    return cv2.warpPerspective(image, transform, (target_width, target_height)), True
+
+
 def preprocess_variants(image):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     clahe = cv2.createCLAHE(2.5, (8, 8)).apply(gray)
     sharpened = cv2.addWeighted(clahe, 1.8, cv2.GaussianBlur(clahe, (0, 0), 2), -0.8, 0)
+    # Divide by a broad background estimate to remove phone/camera shadows
+    # while retaining faint ballpoint handwriting.
+    background = cv2.GaussianBlur(gray, (0, 0), 35)
+    shadow_free = cv2.divide(gray, background, scale=255)
+    shadow_free = cv2.createCLAHE(2.0, (8, 8)).apply(shadow_free)
     threshold = cv2.adaptiveThreshold(
-        clahe, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 35, 11
+        shadow_free, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 35, 11
     )
     # Color helps preserve blue/black ballpoint ink that can disappear when a
     # bright paper ticket is reduced directly to binary pixels.
-    return [image, clahe, sharpened, threshold]
+    return [image, clahe, sharpened, shadow_free, threshold]
+
+
+def orientation_score(items: list[OCRItem]) -> float:
+    """Score a rotation using stable words printed on the official ticket."""
+    anchors = (
+        "traffic citation ticket", "traffic violation", "driver s name", "license no",
+        "license expiry date", "owner of vehicle", "plate number", "date and time",
+        "apprehending arresting officer", "remarks",
+    )
+    score = 0.0
+    for item in items:
+        text = normalized(item.text)
+        for anchor in anchors:
+            similarity = difflib.SequenceMatcher(None, text, anchor).ratio()
+            if anchor in text or text in anchor:
+                similarity = max(similarity, 0.9)
+            if similarity >= 0.62:
+                score += similarity * max(0.35, item.confidence)
+    return score
+
+
+def normalize_orientation(image, engine):
+    """Rotate phone photos to the ticket's natural reading direction."""
+    best_image = image
+    best_items: list[OCRItem] = []
+    best_score = -1.0
+    candidates = [image, cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE),
+                  cv2.rotate(image, cv2.ROTATE_180), cv2.rotate(image, cv2.ROTATE_90_COUNTERCLOCKWISE)]
+    for candidate in candidates:
+        gray = cv2.cvtColor(candidate, cv2.COLOR_BGR2GRAY)
+        result, _ = engine(gray)
+        items = [to_item(entry) for entry in (result or []) if len(entry) >= 3 and float(entry[2]) >= 0.28]
+        score = orientation_score(items)
+        if score > best_score:
+            best_image, best_items, best_score = candidate, items, score
+    return best_image, best_items
 
 
 def label_match(text: str) -> tuple[str, str] | None:
@@ -137,6 +259,48 @@ def closest_allowed(value: str, allowed: list[str], cutoff: float = 0.74) -> str
     return next(option for option in allowed if normalized(option) == matches[0])
 
 
+def closest_violation(value: str, cutoff: float = 0.60) -> str:
+    target = normalized(value)
+    if target in VIOLATION_ALIASES:
+        return VIOLATION_ALIASES[target]
+    alias_matches = difflib.get_close_matches(target, VIOLATION_ALIASES.keys(), n=1, cutoff=cutoff)
+    if alias_matches:
+        return VIOLATION_ALIASES[alias_matches[0]]
+    return closest_allowed(value, VIOLATION_TYPES, cutoff)
+
+
+MONTHS = {
+    "jan": 1, "january": 1, "feb": 2, "february": 2, "mar": 3, "march": 3,
+    "apr": 4, "april": 4, "may": 5, "jun": 6, "june": 6, "jul": 7,
+    "july": 7, "aug": 8, "august": 8, "sep": 9, "sept": 9, "september": 9,
+    "oct": 10, "october": 10, "nov": 11, "november": 11, "dec": 12, "december": 12,
+}
+
+
+def normalize_date(value: str) -> str:
+    """Accept handwritten-style numeric dates and dates containing month words."""
+    source = clean(value).lower().replace(",", " ")
+    numeric = re.search(r"\b(\d{1,2})\s*[./-]\s*(\d{1,2})\s*[./-]\s*(\d{2,4})\b", source)
+    month, day, year = (0, 0, 0)
+    if numeric:
+        month, day, year = (int(part) for part in numeric.groups())
+    else:
+        month_pattern = "|".join(sorted(MONTHS, key=len, reverse=True))
+        month_first = re.search(rf"\b({month_pattern})\.?\s+(\d{{1,2}})(?:st|nd|rd|th)?\s+(\d{{2,4}})\b", source)
+        day_first = re.search(rf"\b(\d{{1,2}})(?:st|nd|rd|th)?\s+({month_pattern})\.?\s+(\d{{2,4}})\b", source)
+        if month_first:
+            month, day, year = MONTHS[month_first.group(1)], int(month_first.group(2)), int(month_first.group(3))
+        elif day_first:
+            day, month, year = int(day_first.group(1)), MONTHS[day_first.group(2)], int(day_first.group(3))
+        else:
+            return ""
+    year += 2000 if year < 50 else (1900 if year < 100 else 0)
+    try:
+        return date(year, month, day).isoformat()
+    except ValueError:
+        return ""
+
+
 def violation_section_bounds(items: list[OCRItem], image_height: int) -> tuple[float, float] | None:
     """Return the printed violation-list bounds, failing closed when its heading is unreadable."""
     headings = [
@@ -171,7 +335,7 @@ def detect_checked_violations(image, items: list[OCRItem]) -> list[dict]:
     for item in items:
         if not section_top <= item.center_y <= section_bottom:
             continue
-        violation = closest_allowed(item.text, VIOLATION_TYPES, 0.60)
+        violation = closest_violation(item.text, 0.60)
         if not violation:
             continue
         h = max(12, int(item.height))
@@ -190,8 +354,14 @@ def detect_checked_violations(image, items: list[OCRItem]) -> list[dict]:
         if inner.size == 0:
             continue
         ink_ratio = float(cv2.countNonZero(inner)) / float(inner.size)
-        if ink_ratio >= 0.075:
-            confidence = min(0.99, 0.55 + (ink_ratio - 0.075) * 2.6)
+        components, _, stats, _ = cv2.connectedComponentsWithStats(inner, 8)
+        largest_mark = int(stats[1:, cv2.CC_STAT_AREA].max()) if components > 1 else 0
+        # A printed empty box has an almost blank interior. Requiring both ink
+        # density and a connected pen stroke prevents every printed option from
+        # being returned merely because its checkbox border was detected.
+        min_mark_area = max(3, int(inner.size * 0.025))
+        if ink_ratio >= 0.08 and largest_mark >= min_mark_area:
+            confidence = min(0.99, 0.58 + (ink_ratio - 0.08) * 2.8)
             detected[violation] = max(detected.get(violation, 0.0), confidence)
     return [
         {"violation_type": violation, "confidence": round(confidence, 3)}
@@ -242,15 +412,32 @@ def extract(items: list[OCRItem]) -> dict[str, str]:
         candidates = re.findall(r"\b[A-Z]{2,4}[- ]?\d{3,4}\b", joined, re.I)
         if candidates:
             fields["plate_number"] = candidates[0]
+    if not fields["ticket_number"]:
+        # The official form prints a large serial beside "No." at the foot.
+        number_labels = [item for item in items if normalized(item.text) in {"no", "no ticket"}]
+        for label in number_labels:
+            candidates = [item for item in items if item is not label and re.fullmatch(r"\d{4,8}", clean(item.text))
+                          and abs(item.center_y - label.center_y) <= max(label.height, item.height) * 2.5]
+            if candidates:
+                fields["ticket_number"] = min(candidates, key=lambda item: abs(item.center_x - label.center_x)).text
+                break
 
     license_text = normalized(fields["license_number"])
     if license_text in {"no license", "none", "n a", "na"}:
         fields["license_number"] = "NO LICENSE"
     else:
         fields["license_number"] = re.sub(r"\s+", "", fields["license_number"]).upper()
-    fields["plate_number"] = re.sub(r"\s+", "", fields["plate_number"]).upper()
+    plate_text = normalized(fields["plate_number"])
+    if plate_text in {"no plate", "noplate", "none", "n a", "na"}:
+        fields["plate_number"] = "NO PLATE"
+    else:
+        fields["plate_number"] = re.sub(r"\s+", "", fields["plate_number"]).upper()
     fields["vehicle_type"] = closest_allowed(fields["vehicle_type"], VEHICLE_TYPES, 0.68)
-    fields["violation_type"] = closest_allowed(fields["violation_type"], VIOLATION_TYPES, 0.70)
+    fields["violation_type"] = closest_violation(fields["violation_type"], 0.70)
+
+    for date_field in ("date_of_birth", "license_expiry_date", "violation_date"):
+        if fields[date_field]:
+            fields[date_field] = normalize_date(fields[date_field])
 
     amount_match = re.search(r"(?:PHP|P|₱)?\s*([0-9]{2,6}(?:[,.][0-9]{2})?)", fields["penalty_amount"], re.I)
     amount = float(amount_match.group(1).replace(",", "")) if amount_match else 0
@@ -267,6 +454,8 @@ def main() -> None:
     if image is None:
         raise ValueError("The uploaded ticket is not a readable image.")
 
+    image, document_detected = document_warp(image)
+
     height, width = image.shape[:2]
     if max(height, width) > 2600:
         scale = 2600 / max(height, width)
@@ -276,7 +465,8 @@ def main() -> None:
         image = cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
 
     engine = RapidOCR()
-    detection_groups: list[list[OCRItem]] = []
+    image, orientation_items = normalize_orientation(image, engine)
+    detection_groups: list[list[OCRItem]] = [orientation_items]
     for variant in preprocess_variants(image):
         result, _ = engine(variant)
         detection_groups.append([
@@ -306,6 +496,7 @@ def main() -> None:
         "checked_violations": checked_violations,
         "confidence": round(sum(confidences) / len(confidences), 3) if confidences else 0,
         "recognized_fields": found,
+        "document_detected": document_detected,
         "missing_fields": missing_fields,
         "raw_text": "\n".join(item.text for item in items),
         "warning": warning,

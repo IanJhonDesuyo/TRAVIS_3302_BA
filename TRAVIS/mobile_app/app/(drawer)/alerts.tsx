@@ -1,6 +1,5 @@
 import React, { useState, useCallback } from 'react';
 import {
-  SafeAreaView,
   ScrollView,
   View,
   Text,
@@ -13,8 +12,9 @@ import {
   Platform,
   Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect } from 'expo-router/react-navigation';
 import api from '../../api/axiosConfig';
 
 // ========== COLOR TOKENS ==========
@@ -100,8 +100,6 @@ export default function AlertsScreen() {
       const params: any = { limit: 100 };
       if (severityFilter === 'resolved') {
         params.status = 'resolved';
-      } else {
-        params.status = 'active,acknowledged';
       }
       const response = await api.get('get_alerts.php', { params });
       if (response.data.success) {

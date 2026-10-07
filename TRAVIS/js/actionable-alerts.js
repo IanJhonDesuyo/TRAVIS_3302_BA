@@ -1,4 +1,7 @@
 (() => {
+  const scriptUrl = document.currentScript?.src || `${window.location.origin}/TRAVIS/js/actionable-alerts.js`;
+  const alertsApiBase = new URL('../api/', scriptUrl);
+  const alertsApiUrl = file => new URL(file, alertsApiBase).toString();
   const modalElement = document.getElementById('actionableAlertModal');
   if (!modalElement || typeof bootstrap === 'undefined') return;
 
@@ -16,6 +19,13 @@
   let cooldownSeconds = 300;
   let polling = false;
 
+  function monitoringAlertsPausedForThisSession() {
+    return Object.keys(window.sessionStorage).some(key =>
+      key.startsWith('travis_monitoring_view_stopped_')
+        && window.sessionStorage.getItem(key) === 'true'
+    );
+  }
+
   const storageKey = alert => `travis-alert-modal:${alert.alert_id}`;
   const lastShownAt = alert => Number(localStorage.getItem(storageKey(alert)) || 0);
 
@@ -31,7 +41,11 @@
     const officerAbsence = alert.alert_type === 'officer_absence';
     modalElement.classList.toggle('officer-alert-modal', officerAbsence);
     modalElement.classList.toggle('critical-alert-modal', !officerAbsence);
-    typeElement.textContent = officerAbsence ? 'Officer absence detected' : 'Critical traffic alert';
+    typeElement.textContent = officerAbsence
+      ? 'Officer absence detected'
+      : alert.alert_type === 'collision'
+        ? 'Collision confirmed'
+        : 'Heavy traffic congestion detected';
     messageElement.textContent = alert.message;
     timeElement.textContent = `Detected ${new Date(String(alert.generated_at).replace(' ', 'T')).toLocaleString()}`;
     iconElement.className = officerAbsence
@@ -45,10 +59,11 @@
   }
 
   async function pollAlerts() {
+    if (monitoringAlertsPausedForThisSession()) return;
     if (polling || document.hidden || document.querySelector('.modal.show')) return;
     polling = true;
     try {
-      const response = await fetch('/TRAVIS/api/get_actionable_alerts.php', {
+      const response = await fetch(alertsApiUrl('get_actionable_alerts.php'), {
         cache: 'no-store',
         credentials: 'same-origin',
       });
@@ -69,7 +84,7 @@
     acknowledgeButton.disabled = true;
     acknowledgeButton.innerHTML = '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span><span>Saving...</span>';
     try {
-      const response = await fetch('/TRAVIS/api/acknowledge_alert.php', {
+      const response = await fetch(alertsApiUrl('acknowledge_alert.php'), {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
@@ -94,6 +109,14 @@
   });
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) pollAlerts();
+  });
+  window.addEventListener('travis:monitoring-viewer-state', event => {
+    if (event.detail?.stopped) {
+      currentAlert = null;
+      modal.hide();
+      return;
+    }
+    pollAlerts();
   });
 
   window.setTimeout(pollAlerts, 1200);

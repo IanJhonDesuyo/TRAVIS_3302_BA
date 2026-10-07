@@ -1,10 +1,29 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__ . '/ml_service.php';
+require_once __DIR__ . '/../Admin/db_connect.php';
+require_once __DIR__ . '/hybrid_bridge.php';
+
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 
 $risk = trim((string)($_GET['risk'] ?? ''));
+
+if (!travis_is_edge_host()) {
+    try {
+        $result = travis_dispatch_edge_job($conn, 'ml_hotspots', ['risk' => $risk], 35);
+        if (!empty($result['pending'])) http_response_code(503);
+        echo json_encode($result, JSON_UNESCAPED_SLASHES);
+    } catch (Throwable $error) {
+        error_log('TRAVIS hotspot hybrid prediction: ' . $error->getMessage());
+        http_response_code(503);
+        echo json_encode(['success' => false, 'message' => $error->getMessage()]);
+    }
+    exit;
+}
+
+ensure_ml_service_running();
 $endpoint = 'http://127.0.0.1:5001/hotspots';
 if ($risk !== '') $endpoint .= '/' . rawurlencode($risk);
 

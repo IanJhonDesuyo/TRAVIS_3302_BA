@@ -1,18 +1,27 @@
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import Constants from "expo-constants";
 import { notifySessionExpired } from "../utils/sessionEvents";
 
-// The phone must use the computer's LAN IP; localhost would point to the phone.
-// Override this after changing networks with EXPO_PUBLIC_API_URL when needed.
-const BASE_URL = (
-  process.env.EXPO_PUBLIC_API_URL || "http://192.168.1.10/TRAVIS/api/"
-).replace(/\/?$/, "/");
+const FALLBACK_APP_HOST = "192.168.1.40";
+const expoHostUri = Constants.expoConfig?.hostUri || Constants.expoGoConfig?.debuggerHost;
+const appHost = expoHostUri?.split(":")[0] || FALLBACK_APP_HOST;
 
-export const APP_ROOT_URL = BASE_URL.replace(/api\/$/, "");
-const APP_HOST = BASE_URL.match(/^(https?:\/\/[^/:]+)(?::\d+)?/i)?.[1] || "http://192.168.1.10";
+const ensureTrailingSlash = (url: string): string => `${url.replace(/\/+$/, '')}/`;
+
+// Prefer the deployment URL supplied by Expo. The Metro host is only a local
+// development fallback, so production builds never depend on the laptop's IP.
+const configuredApiUrl = process.env.EXPO_PUBLIC_API_URL?.trim();
+const BASE_URL = ensureTrailingSlash(configuredApiUrl || `http://${appHost}/TRAVIS/api/`);
+
+console.log("TRAVIS API URL:", BASE_URL);
+
+export const APP_ROOT_URL = BASE_URL.replace(/api\/$/i, "");
+const APP_HOST = `http://${appHost}`;
 export const CV_STREAM_URL = `${APP_HOST}:5000/`;
 export const MOBILE_STREAM_URL = `${APP_ROOT_URL}Web_app/api/video_feed.php?client=mobile`;
 export const MOBILE_SNAPSHOT_URL = `${APP_ROOT_URL}Web_app/api/video_snapshot.php?client=mobile`;
+export const MOBILE_CANVAS_STREAM_URL = `${APP_ROOT_URL}Web_app/api/mobile_stream_view.php`;
 
 // The prediction proxies live under Web_app/api and forward requests to the
 // local Flask machine-learning service. Derive the URL from the same app root

@@ -1,14 +1,41 @@
 <?php
 require_once __DIR__ . '/layout.php';
 
-$totalViolations = scalar("SELECT COUNT(*) FROM violations", 0);
-$pendingPayments = scalar("SELECT COUNT(*) FROM violations WHERE status IN ('pending', 'overdue')", 0);
-$paidViolations = scalar("SELECT COUNT(*) FROM violations WHERE status = 'paid'", 0);
+$period = strtolower(trim((string)($_GET['period'] ?? 'day')));
+$selectedDay = trim((string)($_GET['dashboard_day'] ?? date('Y-m-d')));
+$selectedMonth = trim((string)($_GET['dashboard_month'] ?? date('Y-m')));
+$selectedYear = trim((string)($_GET['dashboard_year'] ?? date('Y')));
+$parsedDay = DateTime::createFromFormat('!Y-m-d', $selectedDay);
+if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $selectedDay) || !$parsedDay || $parsedDay->format('Y-m-d') !== $selectedDay) $selectedDay = date('Y-m-d');
+if (!preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $selectedMonth)) $selectedMonth = date('Y-m');
+if (!preg_match('/^\d{4}$/', $selectedYear) || (int)$selectedYear < 2000 || (int)$selectedYear > 2100) $selectedYear = date('Y');
+$periodLabels = ['day' => 'Specific day', 'month' => 'Specific month', 'year' => 'Specific year', 'all' => 'All records'];
+if (!isset($periodLabels[$period])) $period = 'all';
+$periodDisplay = match ($period) {
+    'day' => date('F j, Y', strtotime($selectedDay)),
+    'month' => date('F Y', strtotime($selectedMonth . '-01')),
+    'year' => $selectedYear,
+    default => 'All records',
+};
+$dateCondition = static function (string $column) use ($period, $selectedDay, $selectedMonth, $selectedYear): string {
+    return match ($period) {
+        'day' => "DATE($column) = '{$selectedDay}'",
+        'month' => "DATE_FORMAT($column, '%Y-%m') = '{$selectedMonth}'",
+        'year' => "YEAR($column) = {$selectedYear}",
+        default => '1=1',
+    };
+};
+$violationDateFilter = $dateCondition('violation_date');
+$paymentDateFilter = $dateCondition('payment_date');
+
+$totalViolations = scalar("SELECT COUNT(*) FROM violations WHERE $violationDateFilter", 0);
+$pendingPayments = scalar("SELECT COUNT(*) FROM violations WHERE status IN ('pending', 'overdue') AND $violationDateFilter", 0);
+$paidViolations = scalar("SELECT COUNT(*) FROM violations WHERE status = 'paid' AND $violationDateFilter", 0);
 
 $todaysCollections = scalar("
     SELECT COALESCE(SUM(amount_paid), 0)
     FROM payments
-    WHERE payment_status = 'completed' AND DATE(payment_date) = CURDATE()
+    WHERE payment_status = 'completed' AND $paymentDateFilter
 ", 0);
 
 $monthlyCollections = scalar("
@@ -71,6 +98,7 @@ $recentPayments = fetch_all("
            v.plate_number, v.violation_type
     FROM payments p
     JOIN violations v ON v.violation_id = p.violation_id
+    WHERE p.payment_status = 'completed' AND " . $dateCondition('p.payment_date') . "
     ORDER BY p.payment_date DESC, p.payment_id DESC
     LIMIT 6
 ");
@@ -78,38 +106,66 @@ $recentPayments = fetch_all("
 $pendingList = fetch_all("
     SELECT violation_id, ticket_number, plate_number, violation_type, penalty_amount, violation_date
     FROM violations
-    WHERE status IN ('pending', 'overdue')
+    WHERE status IN ('pending', 'overdue') AND " . $dateCondition('violation_date') . "
     ORDER BY CASE WHEN status = 'overdue' THEN 0 ELSE 1 END, violation_date ASC
     LIMIT 6
 ");
 
-$statusBreakdown = payment_status_breakdown();
+$statusBreakdown = ['paid' => 0, 'pending' => 0, 'overdue' => 0, 'cancelled' => 0];
+foreach (fetch_all("SELECT LOWER(status) status, COUNT(*) total FROM violations WHERE $violationDateFilter GROUP BY LOWER(status)") as $statusRow) {
+    $statusKey = (string)($statusRow['status'] ?? '');
+    if (array_key_exists($statusKey, $statusBreakdown)) $statusBreakdown[$statusKey] = (int)$statusRow['total'];
+}
 $dailyTrend = daily_collection_trend(7);
 $monthlyTotals = monthly_collection_totals();
 
 page_start('Dashboard', 'dashboard', 'Search violations, receipts, plates...', 'Overview of collections and violation payments', false);
 ?>
 
+<div class="dashboard-period-toolbar mb-3">
+  <div class="dashboard-period-summary">
+    <span class="dashboard-period-icon"><i class="bi bi-calendar3"></i></span>
+    <span><small>Currently showing</small><strong><?= esc($periodDisplay) ?></strong></span>
+  </div>
+  <form method="get" class="dashboard-period-form" id="dashboardFilterForm">
+    <div class="dashboard-filter-field dashboard-filter-period">
+      <label for="dashboardPeriod">Collection period</label>
+      <select id="dashboardPeriod" name="period" class="form-select">
+        <?php foreach ($periodLabels as $value => $label): ?>
+          <option value="<?= esc($value) ?>" <?= $period === $value ? 'selected' : '' ?>><?= esc($label) ?></option>
+        <?php endforeach; ?>
+      </select>
+    </div>
+    <div class="dashboard-filter-field dashboard-filter-date">
+      <label for="dashboardDay" id="dashboardValueLabel">Select date</label>
+      <input class="form-control dashboard-filter-value" type="date" name="dashboard_day" id="dashboardDay" value="<?= esc($selectedDay) ?>">
+      <input class="form-control dashboard-filter-value" type="month" name="dashboard_month" id="dashboardMonth" value="<?= esc($selectedMonth) ?>">
+      <input class="form-control dashboard-filter-value" type="number" name="dashboard_year" id="dashboardYear" value="<?= esc($selectedYear) ?>" min="2000" max="2100" inputmode="numeric">
+    </div>
+    <button class="btn btn-primary dashboard-filter-submit" type="submit"><i class="bi bi-funnel"></i><span>Apply filter</span></button>
+  </form>
+</div>
+
 <div class="row g-3 mb-4">
   <div class="col-sm-6 col-xl">
     <div class="stat-card"><div class="stat-icon tone-primary"><i class="bi bi-cone-striped"></i></div>
       <div class="stat-label">Total Violations</div><div class="stat-value"><?= num($totalViolations) ?></div>
-      <div class="stat-trend <?= $totalViolationsTrend['direction'] === 'down' ? 'down' : '' ?>"><?= esc($totalViolationsTrend['label']) ?> this week</div></div>
+      <div class="stat-trend"><?= esc($periodDisplay) ?></div></div>
   </div>
   <div class="col-sm-6 col-xl">
     <div class="stat-card"><div class="stat-icon tone-warning"><i class="bi bi-hourglass-split"></i></div>
       <div class="stat-label">Pending Payments</div><div class="stat-value"><?= num($pendingPayments) ?></div>
-      <div class="stat-trend <?= $pendingPaymentsTrend['direction'] === 'down' ? 'down' : '' ?>"><?= esc($pendingPaymentsTrend['label']) ?> from last week</div></div>
+      <div class="stat-trend"><?= esc($periodDisplay) ?></div></div>
   </div>
   <div class="col-sm-6 col-xl">
     <div class="stat-card"><div class="stat-icon tone-success"><i class="bi bi-check2-circle"></i></div>
       <div class="stat-label">Paid Violations</div><div class="stat-value"><?= num($paidViolations) ?></div>
-      <div class="stat-trend <?= $paidViolationsTrend['direction'] === 'down' ? 'down' : '' ?>"><?= esc($paidViolationsTrend['label']) ?> this month</div></div>
+      <div class="stat-trend"><?= esc($periodDisplay) ?></div></div>
   </div>
   <div class="col-sm-6 col-xl">
     <div class="stat-card"><div class="stat-icon tone-navy"><i class="bi bi-cash-stack"></i></div>
-      <div class="stat-label">Today's Collections</div><div class="stat-value"><?= short_money($todaysCollections) ?></div>
-      <div class="stat-trend <?= $todaysCollectionsTrend['direction'] === 'down' ? 'down' : '' ?>"><?= esc($todaysCollectionsTrend['label']) ?> vs yesterday</div></div>
+      <div class="stat-label">Selected Collections</div><div class="stat-value"><?= short_money($todaysCollections) ?></div>
+      <div class="stat-trend"><?= esc($periodDisplay) ?></div></div>
   </div>
   <div class="col-sm-6 col-xl">
     <div class="stat-card"><div class="stat-icon tone-teal"><i class="bi bi-graph-up-arrow"></i></div>
@@ -155,7 +211,7 @@ page_start('Dashboard', 'dashboard', 'Search violations, receipts, plates...', '
             <tbody>
               <?php foreach ($recentPayments as $p): ?>
                 <tr>
-                  <td class="fw-semibold"><?= esc(payment_reference((int)$p['payment_id'])) ?></td>
+                  <td class="fw-semibold"><?= esc(($p['official_receipt_number'] ?? '') ?: payment_reference((int)$p['payment_id'])) ?></td>
                   <td><?= esc($p['plate_number']) ?></td>
                   <td><?= esc($p['violation_type']) ?></td>
                   <td class="fw-semibold"><?= peso($p['amount_paid']) ?></td>
@@ -205,6 +261,27 @@ page_start('Dashboard', 'dashboard', 'Search violations, receipts, plates...', '
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>
+function updateDashboardFilterInput() {
+  const period = document.getElementById('dashboardPeriod')?.value || 'day';
+  const valueLabel = document.getElementById('dashboardValueLabel');
+  const inputs = {
+    day: document.getElementById('dashboardDay'),
+    month: document.getElementById('dashboardMonth'),
+    year: document.getElementById('dashboardYear')
+  };
+  Object.entries(inputs).forEach(([key, input]) => {
+    if (!input) return;
+    input.classList.toggle('d-none', period !== key);
+    input.disabled = period !== key;
+  });
+  if (valueLabel) {
+    valueLabel.textContent = ({day: 'Select date', month: 'Select month', year: 'Enter year'})[period] || 'Date range';
+    valueLabel.closest('.dashboard-filter-field')?.classList.toggle('d-none', period === 'all');
+  }
+}
+document.getElementById('dashboardPeriod')?.addEventListener('change', updateDashboardFilterInput);
+updateDashboardFilterInput();
+
 const statusLabels = ['Paid', 'Pending', 'Overdue', 'Cancelled'];
 const statusData = <?= json_encode(array_values($statusBreakdown)) ?>;
 const dailyLabels = <?= json_encode($dailyTrend['labels']) ?>;

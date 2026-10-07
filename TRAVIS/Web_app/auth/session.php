@@ -12,6 +12,7 @@ function travis_login_user(array $databaseUser): void
     session_regenerate_id(true);
     $_SESSION['authenticated'] = true;
     $_SESSION['authenticated_at'] = time();
+    $_SESSION['last_activity_at'] = time();
     $_SESSION['user'] = [
         'id' => (int)$databaseUser['user_id'],
         'name' => (string)$databaseUser['full_name'],
@@ -26,6 +27,21 @@ function travis_login_user(array $databaseUser): void
     $_SESSION['full_name'] = $_SESSION['user']['name'];
     $_SESSION['email'] = $_SESSION['user']['email'];
     $_SESSION['role'] = $_SESSION['user']['role'];
+}
+
+function travis_session_has_expired(int $idleTimeoutSeconds = 1800): bool
+{
+    travis_session_start();
+    if (!travis_is_authenticated()) return false;
+
+    $lastActivity = (int)($_SESSION['last_activity_at'] ?? $_SESSION['authenticated_at'] ?? 0);
+    return $lastActivity <= 0 || (time() - $lastActivity) > $idleTimeoutSeconds;
+}
+
+function travis_touch_session(): void
+{
+    travis_session_start();
+    $_SESSION['last_activity_at'] = time();
 }
 
 function travis_is_authenticated(): bool

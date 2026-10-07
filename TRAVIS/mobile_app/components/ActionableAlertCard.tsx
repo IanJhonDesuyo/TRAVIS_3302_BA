@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   AppState,
   Dimensions,
   StyleSheet,
@@ -102,7 +103,13 @@ export default function ActionableAlertCard() {
     setAcknowledging(true);
     try {
       const response = await api.post('acknowledge_alert.php', { alert_id: current.alert_id });
-      if (response.data?.success) setCurrent(null);
+      if (!response.data?.success) throw new Error(response.data?.error || 'The alert could not be acknowledged.');
+      setCurrent(null);
+    } catch (error: any) {
+      Alert.alert(
+        'Acknowledgement failed',
+        error?.response?.data?.error || error?.message || 'Check your connection and try again.'
+      );
     } finally {
       setAcknowledging(false);
     }
@@ -116,7 +123,12 @@ export default function ActionableAlertCard() {
   if (!current) return null;
 
   const officerAlert = isOfficerAbsence(current);
-  const accent = officerAlert ? '#EB941F' : '#D92D2D';
+  const accent = '#D92D2D';
+  const alertTitle = officerAlert
+    ? 'Officer absence detected'
+    : current.alert_type.toLowerCase() === 'collision'
+      ? 'Confirmed collision alert'
+      : 'Heavy traffic congestion detected';
 
   return (
     <View pointerEvents="box-none" style={styles.layer}>
@@ -139,13 +151,11 @@ export default function ActionableAlertCard() {
           </View>
           <View style={styles.headingCopy}>
             <Text style={styles.eyebrow}>TRAVIS OPERATIONAL ALERT</Text>
-            <Text style={styles.title}>
-              {officerAlert ? 'No enforcer detected' : 'Critical traffic alert'}
-            </Text>
+            <Text style={styles.title} numberOfLines={1}>{alertTitle}</Text>
           </View>
         </View>
 
-        <Text style={styles.message}>{current.message}</Text>
+        <Text style={styles.message} numberOfLines={3}>{current.message}</Text>
         <Text style={styles.timestamp}>Detected {formatTimestamp(current.generated_at)}</Text>
 
         <View style={styles.actions}>
@@ -165,11 +175,11 @@ export default function ActionableAlertCard() {
           </TouchableOpacity>
         </View>
 
-        {officerAlert && (
-          <Text style={styles.cooldownNote}>
-            Reminder repeats after {Math.ceil(cooldownSeconds / 60)} minute(s) if no officer is detected.
-          </Text>
-        )}
+        <Text style={styles.cooldownNote}>
+          {officerAlert
+            ? `Reminder repeats after ${Math.ceil(cooldownSeconds / 60)} minute(s) if no officer is detected.`
+            : `Further notifications follow the ${Math.ceil(cooldownSeconds / 60)} minute cooldown.`}
+        </Text>
       </View>
     </View>
   );
@@ -191,6 +201,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(16, 47, 73, 0.18)',
     borderTopWidth: 5,
+    height: 250,
     padding: 16,
     shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 7 },

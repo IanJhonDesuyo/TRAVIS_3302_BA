@@ -9,6 +9,7 @@ require_once __DIR__ . '/layout.php';
 $uploadMessage = '';
 $uploadedVideo = null;
 $maxUploadBytes = 500 * 1024 * 1024;
+$webrtcStreamUrl = trim(travis_config_value('TRAVIS_WEBRTC_URL', 'webrtc_url', ''));
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['cctv_video'])) {
     $allowed = ['mp4','avi','mov','mkv'];
@@ -45,6 +46,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['cctv_video'])) {
 
 $camera = fetch_one("SELECT * FROM cameras ORDER BY camera_id ASC LIMIT 1");
 $latest = fetch_one("SELECT * FROM camera_monitoring_logs ORDER BY recorded_at DESC LIMIT 1");
+$cameraConfigPath = dirname(__DIR__, 2) . '/computer_vision/camera_config.json';
+$cameraConfig = is_file($cameraConfigPath)
+    ? json_decode((string)file_get_contents($cameraConfigPath), true)
+    : [];
+$cameraConfig = is_array($cameraConfig) ? $cameraConfig : [];
+$analysisStatusPath = dirname(__DIR__) . '/api/analysis_status.json';
+$savedAnalysisStatus = is_file($analysisStatusPath)
+    ? json_decode((string)file_get_contents($analysisStatusPath), true)
+    : [];
+$savedAnalysisStatus = is_array($savedAnalysisStatus) ? $savedAnalysisStatus : [];
+$latestFeedStatusPath = dirname(__DIR__) . '/api/latest_status.json';
+$latestFeedStatus = is_file($latestFeedStatusPath)
+    ? json_decode((string)file_get_contents($latestFeedStatusPath), true)
+    : [];
+$latestFeedStatus = is_array($latestFeedStatus) ? $latestFeedStatus : [];
+$savedSourceType = (string)($savedAnalysisStatus['source_type'] ?? $latestFeedStatus['source_type'] ?? 'uploaded_video');
+if (!in_array($savedSourceType, ['uploaded_video', 'tapo_camera'], true)) {
+    $savedSourceType = 'uploaded_video';
+}
 
 $calibrationProfiles = [];
 $calibrationDirectory = dirname(__DIR__, 2) . '/computer_vision/calibration_profiles';
@@ -453,6 +473,56 @@ a:hover{color:#fff}
     padding:8px 14px;
     margin-right:10px;
 }
+/* Keep the monitor and its source controls aligned as one desktop row. */
+.monitoring-main-row{align-items:stretch}
+.monitoring-camera-card{height:100%;display:flex;flex-direction:column}
+.monitoring-camera-card .camera-stage{flex:1;min-height:360px}
+.monitoring-controls-column{gap:16px}
+.monitoring-controls-column > .section-card{margin-bottom:0 !important}
+#uploadSourceCard{flex:1;display:flex;flex-direction:column}
+#uploadVideoForm{display:flex;flex-direction:column}
+#uploadVideoBtn{width:100% !important;min-height:40px}
+.cv-process-modal .modal-dialog{max-width:460px}
+.cv-process-modal .modal-content{overflow:hidden;border-radius:18px!important}
+.cv-process-modal .cv-process-icon{display:grid;width:54px;height:54px;place-items:center;flex:0 0 54px;border-radius:15px;background:rgba(8,125,120,.11);color:#087d78;font-size:1.35rem}
+.cv-process-modal .cv-process-progress{height:9px;border-radius:999px;overflow:hidden;background:rgba(16,47,73,.09)!important}
+.cv-process-modal .cv-process-progress .progress-bar{background:linear-gradient(90deg,#087d78,#22b8a7)!important;transition:width .22s ease}
+.cv-process-modal .cv-process-detail{min-height:1.25rem;color:#60716b;font-size:.76rem;line-height:1.55}
+body.municipal-portal #cctvVideoInput{
+    min-height:48px;
+    padding:4px !important;
+    color:var(--municipal-ink) !important;
+    background:rgba(255,255,255,.88) !important;
+    border:1px solid rgba(16,47,73,.22) !important;
+    overflow:hidden;
+}
+body.municipal-portal #cctvVideoInput::file-selector-button{
+    display:inline-block;
+    min-height:38px;
+    margin:-1px 12px -1px -1px !important;
+    padding:0 16px !important;
+    color:#fff !important;
+    font-weight:700;
+    background:#087d78 !important;
+    border:0 !important;
+    border-radius:8px !important;
+    cursor:pointer;
+}
+body.municipal-portal #cctvVideoInput::-webkit-file-upload-button{
+    min-height:38px;
+    margin:-1px 12px -1px -1px !important;
+    padding:0 16px !important;
+    color:#fff !important;
+    font-weight:700;
+    background:#087d78 !important;
+    border:0 !important;
+    border-radius:8px !important;
+}
+@media(max-width:991.98px){
+    .monitoring-camera-card{height:auto}
+    .monitoring-camera-card .camera-stage{min-height:0}
+    #uploadSourceCard{flex:none}
+}
 .form-label{color:var(--text-soft) !important}
 
 /* ==== Camera stage (video area) ==== */
@@ -460,7 +530,7 @@ a:hover{color:#fff}
     position:relative;
     width:100%;
     aspect-ratio:16/9;
-    background:rgba(255,255,255,.03);
+    background:#020617;
     border:1px solid var(--border-glass);
     border-radius:14px;
     overflow:hidden;
@@ -468,6 +538,30 @@ a:hover{color:#fff}
     align-items:center;
     justify-content:center;
     color:var(--text-soft);
+}
+#aiLiveStream{
+    width:100%;
+    height:100%;
+    object-fit:contain;
+    object-position:center;
+    border-radius:12px;
+}
+#webrtcLiveStream{
+    position:absolute;
+    inset:0;
+    width:100%;
+    height:100%;
+    border:0;
+    z-index:2;
+    background:#020617;
+}
+#snapshotCanvas{
+    position:absolute;
+    inset:0;
+    width:100%;
+    height:100%;
+    z-index:1;
+    border-radius:12px;
 }
 #calibrationCanvas{
     position:absolute;
@@ -526,14 +620,19 @@ a:hover{color:#fff}
 </div>
 
 <?php if ($uploadMessage): ?>
-<div class="alert <?= str_contains(strtolower($uploadMessage), 'success') ? 'alert-success' : 'alert-warning' ?>">
+<?php $uploadSucceeded = str_contains(strtolower($uploadMessage), 'success'); ?>
+<div
+  class="alert fade show <?= $uploadSucceeded ? 'alert-success' : 'alert-warning' ?>"
+  id="uploadResultAlert"
+  data-upload-success="<?= $uploadSucceeded ? 'true' : 'false' ?>"
+>
   <?= esc($uploadMessage) ?>
 </div>
 <?php endif; ?>
 
-<div class="row g-3 mb-4">
-  <div class="col-lg-8">
-    <div class="section-card">
+<div class="row g-3 mb-4 monitoring-main-row">
+  <div class="col-lg-8 d-flex">
+    <div class="section-card monitoring-camera-card w-100">
       <div class="section-head">
         <div>
           <h6>Main Camera Monitor</h6>
@@ -542,12 +641,22 @@ a:hover{color:#fff}
         <span class="tag tag-info" id="sourceStatus">Ready</span>
       </div>
 
-      <div class="camera-stage mb-3" id="cameraStage">
+      <div
+        class="camera-stage mb-3"
+        id="cameraStage"
+        data-webrtc-url="<?= esc($webrtcStreamUrl) ?>"
+      >
+        <iframe
+          id="webrtcLiveStream"
+          title="TRAVIS WebRTC live stream"
+          allow="autoplay; fullscreen; picture-in-picture"
+          referrerpolicy="strict-origin-when-cross-origin"
+          style="display:none;"
+        ></iframe>
         <img
           id="aiLiveStream"
-          src="../api/video_feed.php?client=web"
           alt="TRAVIS Live AI Detection Stream"
-          style="width:100%; height:100%; object-fit:cover; border-radius:12px; display:block;"
+          style="display:none;"
           onerror="this.style.display='none'; document.getElementById('streamFallback').style.display='flex';"
           onload="this.style.display='block'; document.getElementById('streamFallback').style.display='none';"
         >
@@ -555,12 +664,12 @@ a:hover{color:#fff}
         <div
           class="text-center p-4"
           id="streamFallback"
-          style="display:none; width:100%; height:100%; align-items:center; justify-content:center; flex-direction:column;"
+          style="display:flex; width:100%; height:100%; align-items:center; justify-content:center; flex-direction:column;"
         >
           <i class="bi bi-broadcast fs-1 d-block mb-3" style="color:var(--cyan-glow);"></i>
-          <h5>Waiting for AI live stream</h5>
-          <p class="mb-0 opacity-75">
-            Start analysis from the dashboard to activate the AI stream.
+          <h5 id="streamFallbackTitle">Waiting for AI live stream</h5>
+          <p class="mb-0 opacity-75" id="streamFallbackMessage">
+            Select a source and start analysis to activate the AI stream.
           </p>
         </div>
 
@@ -568,33 +677,20 @@ a:hover{color:#fff}
         <canvas id="calibrationCanvas" aria-label="Line configuration editor"></canvas>
       </div>
 
-      <div class="d-flex flex-wrap gap-2">
-        <button class="btn btn-light" type="button" id="stopCameraBtn">
-          <i class="bi bi-stop-fill me-1"></i>Hide Stream
-        </button>
-
-        <button class="btn btn-light" type="button" id="captureSnapshotBtn">
-          <i class="bi bi-camera me-1"></i>Open Stream Snapshot
-        </button>
-
-        <button class="btn btn-light" onclick="location.reload()">
-          <i class="bi bi-arrow-clockwise me-1"></i>Refresh
-        </button>
-      </div>
-
       <small class="text-muted d-block mt-2">
-        Live AI detection stream will appear here from <code>http://localhost:5000/video_feed</code>. Dashboard values update automatically from <code>api/get_status.php</code>.
+        <span id="streamTransportHelp">The best available live-stream transport is selected automatically.</span>
+        Dashboard values update automatically from <code>api/get_status.php</code>.
       </small>
     </div>
   </div>
 
-  <div class="col-lg-4">
+  <div class="col-lg-4 d-flex flex-column monitoring-controls-column">
     <div class="section-card mb-3">
       <div class="section-head"><h6>Monitoring Source</h6></div>
       <label class="form-label small fw-semibold" for="monitoringSource">Source</label>
       <select class="form-select mb-3" id="monitoringSource">
-        <option value="uploaded_video">Uploaded CCTV video</option>
-        <option value="tapo_camera">Tapo camera (RTSP)</option>
+        <option value="uploaded_video" <?= $savedSourceType === 'uploaded_video' ? 'selected' : '' ?>>Uploaded CCTV video</option>
+        <option value="tapo_camera" <?= $savedSourceType === 'tapo_camera' ? 'selected' : '' ?>>Tapo camera (RTSP)</option>
       </select>
 
       <label class="form-label small fw-semibold" for="calibrationProfile">Intersection Configuration</label>
@@ -603,11 +699,23 @@ a:hover{color:#fff}
           <option value="<?= esc($profile['file']) ?>"><?= esc($profile['name']) ?></option>
         <?php endforeach; ?>
       </select>
-      <button class="btn btn-light w-100 mb-3" type="button" id="newCalibrationBtn">
-        <i class="bi bi-bezier2 me-1"></i>New Line Configuration
-      </button>
+      <div class="d-flex gap-2 mb-3">
+        <button class="btn btn-light flex-fill" type="button" id="newCalibrationBtn">
+          <i class="bi bi-bezier2 me-1"></i>New Line Configuration
+        </button>
+        <button class="btn btn-outline-primary px-3" type="button" id="editCalibrationBtn" aria-label="Edit selected intersection configuration" title="Edit selected configuration">
+          <i class="bi bi-pencil-square"></i>
+        </button>
+        <button class="btn btn-outline-danger px-3" type="button" id="deleteCalibrationBtn" aria-label="Delete selected intersection configuration" title="The default configuration cannot be deleted">
+          <i class="bi bi-trash3"></i>
+        </button>
+      </div>
 
       <div id="calibrationEditor" class="d-none mb-3">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <span class="small fw-bold" id="calibrationEditorHeading">New Configuration</span>
+          <span class="badge text-bg-info d-none" id="calibrationEditBadge">Editing</span>
+        </div>
         <label class="form-label small fw-semibold" for="calibrationName">Configuration Name</label>
         <input class="form-control mb-2" id="calibrationName" maxlength="100" placeholder="Example: City Hall - North View">
         <div class="small text-info mb-2" id="calibrationInstruction">Choose which line you want to draw first.</div>
@@ -622,8 +730,11 @@ a:hover{color:#fff}
         <button class="btn btn-light w-100 mb-2" type="button" id="addOfficerZoneBtn">
           <i class="bi bi-person-bounding-box me-1"></i>Add Enforcer Zone (Optional)
         </button>
+        <button class="btn btn-outline-secondary w-100 mb-2 d-none" type="button" id="clearOfficerZoneBtn">
+          <i class="bi bi-eraser me-1"></i>Remove Enforcer Zone
+        </button>
         <div class="d-flex gap-2">
-          <button class="btn btn-primary flex-fill" type="button" id="saveCalibrationBtn" disabled>Save Lines</button>
+          <button class="btn btn-primary flex-fill" type="button" id="saveCalibrationBtn" disabled>Save Configuration</button>
           <button class="btn btn-light flex-fill" type="button" id="cancelCalibrationBtn">Cancel</button>
         </div>
         <input type="hidden" id="calibrationCsrf" value="<?= esc(csrf_token()) ?>">
@@ -631,24 +742,25 @@ a:hover{color:#fff}
 
       <div id="tapoCameraFields" class="d-none">
         <label class="form-label small fw-semibold" for="tapoHost">Camera IP address</label>
-        <input class="form-control mb-2" id="tapoHost" inputmode="decimal" placeholder="192.168.1.100" value="<?= esc($camera['ip_address'] ?? '') ?>">
+        <input class="form-control mb-2" id="tapoHost" inputmode="decimal" placeholder="192.168.1.100" value="<?= esc($cameraConfig['host'] ?? $camera['ip_address'] ?? '') ?>">
         <label class="form-label small fw-semibold" for="tapoUsername">Tapo camera account</label>
-        <input class="form-control mb-2" id="tapoUsername" autocomplete="username" placeholder="Camera account username">
+        <input class="form-control mb-2" id="tapoUsername" autocomplete="username" placeholder="Camera account username" value="<?= esc($cameraConfig['username'] ?? '') ?>">
         <label class="form-label small fw-semibold" for="tapoPassword">Camera password</label>
-        <input class="form-control mb-2" id="tapoPassword" type="password" autocomplete="current-password" placeholder="Camera account password">
+        <input class="form-control mb-2" id="tapoPassword" type="password" autocomplete="current-password" placeholder="<?= !empty($cameraConfig['password']) ? 'Saved password (leave blank to reuse)' : 'Camera account password' ?>">
         <label class="form-label small fw-semibold" for="tapoStream">Stream quality</label>
         <select class="form-select mb-2" id="tapoStream">
-          <option value="stream2">Standard quality (recommended)</option>
-          <option value="stream1">High quality</option>
+          <option value="stream2" <?= ($cameraConfig['stream'] ?? 'stream2') !== 'stream1' ? 'selected' : '' ?>>Standard quality (recommended)</option>
+          <option value="stream1" <?= ($cameraConfig['stream'] ?? '') === 'stream1' ? 'selected' : '' ?>>High quality</option>
         </select>
-        <small class="text-muted d-block mb-3">Use the camera account created in the Tapo app, not your TP-Link cloud login.</small>
+        <small class="text-muted d-block mb-3"><strong>Important:</strong> use the separate Camera Account username created under Tapo App → Device Settings → Advanced Settings → Camera Account. The device name and TP-Link cloud login will not work for RTSP.</small>
       </div>
+
     </div>
 
-    <div class="section-card mb-3" id="uploadSourceCard">
+    <div class="section-card" id="uploadSourceCard">
       <div class="section-head"><h6 id="sourceActionTitle">Upload CCTV Video</h6></div>
 
-      <form method="post" enctype="multipart/form-data" id="uploadVideoForm">
+      <form method="post" enctype="multipart/form-data" id="uploadVideoForm" data-footage-ready="<?= is_file(dirname(__DIR__, 2) . '/computer_vision/uploads/videos/test.mp4') ? 'true' : 'false' ?>">
         <label class="form-label small fw-semibold">LGU CCTV Video Copy</label>
         <input type="hidden" name="MAX_FILE_SIZE" value="<?= $maxUploadBytes ?>">
         <input class="form-control mb-2" type="file" name="cctv_video" id="cctvVideoInput" accept="video/mp4,video/avi,video/quicktime,video/x-matroska" required>
@@ -665,7 +777,11 @@ a:hover{color:#fff}
           <i class="bi bi-play-circle me-1"></i><span id="startAnalysisLabel">Start Analysis</span>
         </button>
 
-        <button class="btn btn-light flex-fill" type="button" id="stopAnalysisBtn">
+        <button
+          class="btn btn-light flex-fill"
+          type="button"
+          id="stopAnalysisBtn"
+        >
           <i class="bi bi-stop-circle me-1"></i>Stop Analysis
         </button>
       </div>
@@ -754,7 +870,7 @@ a:hover{color:#fff}
   <div>
     <div class="stat-card">
       <div class="stat-icon tone-danger"><i class="bi bi-exclamation-triangle"></i></div>
-      <div class="stat-label">Potential Collision</div>
+      <div class="stat-label">Collision</div>
       <div class="stat-value"><span class="tag tag-muted" id="potentialCollision"><?= esc($latest['potential_collision'] ?? 'none') ?></span></div>
     </div>
   </div>
@@ -841,6 +957,32 @@ a:hover{color:#fff}
     <a href="<?= esc(app_url('alerts.php')) ?>">View alert details <i class="bi bi-arrow-right"></i></a>
   </div>
   <button type="button" aria-label="Dismiss congestion alert" onclick="hideCongestionAlert()"><i class="bi bi-x-lg"></i></button>
+</div>
+
+<div class="modal fade cv-process-modal" id="cvProcessModal" tabindex="-1" aria-labelledby="cvProcessTitle" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-body p-4">
+        <div class="d-flex align-items-start gap-3">
+          <span class="cv-process-icon" id="cvProcessIcon" aria-hidden="true"><i class="bi bi-cloud-arrow-up-fill"></i></span>
+          <div class="flex-grow-1 min-w-0">
+            <h5 class="mb-1" id="cvProcessTitle">Preparing Computer Vision</h5>
+            <p class="cv-process-detail mb-3" id="cvProcessDetail">Please keep this page open while the process completes.</p>
+            <div class="progress cv-process-progress" role="progressbar" aria-label="Computer Vision process" aria-valuemin="0" aria-valuemax="100">
+              <div class="progress-bar progress-bar-striped progress-bar-animated" id="cvProcessBar" style="width:12%"></div>
+            </div>
+            <div class="d-flex justify-content-between mt-2 small text-muted">
+              <span id="cvProcessStage">Preparing…</span>
+              <strong id="cvProcessPercent">—</strong>
+            </div>
+          </div>
+        </div>
+        <div class="d-none mt-3" id="cvProcessActions">
+          <button class="btn btn-light w-100" type="button" id="cvProcessCloseBtn">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script src="<?= esc(asset_url('js/monitoring.js') . '?v=' . filemtime(dirname(__DIR__, 2) . '/js/monitoring.js')) ?>"></script>

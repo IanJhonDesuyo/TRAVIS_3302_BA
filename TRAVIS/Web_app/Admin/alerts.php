@@ -10,9 +10,10 @@ $alerts = fetch_all("
     SELECT a.*, u.full_name AS ack_by 
     FROM monitoring_alerts a 
     LEFT JOIN users u ON u.user_id = a.acknowledged_by 
-    ORDER BY FIELD(a.status, 'active', 'acknowledged', 'resolved'), a.generated_at DESC 
+    ORDER BY a.generated_at DESC, a.alert_id DESC
     LIMIT 50
 ");
+$latestAlertId = (int)scalar("SELECT COALESCE(MAX(alert_id), 0) FROM monitoring_alerts", 0);
 
 page_start('Alerts', 'alerts', 'Search alerts...');
 ?>
@@ -404,5 +405,24 @@ div[style*="border-radius: 999px"]:not(.tag){
     </div>
   <?php endif; ?>
 </div>
+
+<script>
+(() => {
+  let latestAlertId = <?= $latestAlertId ?>;
+  window.setInterval(async () => {
+    if (document.hidden) return;
+    try {
+      const response = await fetch('/TRAVIS/api/get_alerts.php?limit=1', { cache: 'no-store', credentials: 'same-origin' });
+      if (!response.ok) return;
+      const payload = await response.json();
+      const incomingId = Number(payload.data?.[0]?.alert_id || 0);
+      if (incomingId > latestAlertId) {
+        latestAlertId = incomingId;
+        window.location.reload();
+      }
+    } catch (_) {}
+  }, 5000);
+})();
+</script>
 
 <?php page_end(); ?>

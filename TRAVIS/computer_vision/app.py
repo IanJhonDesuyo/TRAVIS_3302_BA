@@ -6,7 +6,7 @@ app = Flask(__name__)
 
 USERNAME = "travis"
 PASSWORD = "Travis123"
-CAMERA_IP = "192.168.1.23"
+CAMERA_IP = "192.168.1.13"
 
 RTSP_URL = f"rtsp://{USERNAME}:{PASSWORD}@{CAMERA_IP}:554/stream2"
 

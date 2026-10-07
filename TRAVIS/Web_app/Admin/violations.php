@@ -35,25 +35,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
 
     if ($action === 'add_violation') {
-        $driver = violation_post('driver_name');
+        $ticket = generateTicketNumber($conn);
+        $driver = preg_replace('/\s+/', ' ', violation_post('driver_name')) ?? '';
+        $driverAddress = violation_post('driver_address');
+        $dateOfBirth = violation_post('date_of_birth');
         $hasNoLicense = isset($_POST['has_no_license']);
         $license = $hasNoLicense ? 'NO LICENSE' : strtoupper(violation_post('license_number'));
-        $plate = strtoupper(violation_post('plate_number'));
+        $licenseExpiry = $hasNoLicense ? '' : violation_post('license_expiry_date');
+        $licenseConfiscated = isset($_POST['license_confiscated']) ? 1 : 0;
+        $licenseRemarks = violation_post('license_remarks');
+        $submittedPlate = strtoupper(violation_post('plate_number'));
+        $hasNoPlate = isset($_POST['has_no_plate']) || in_array($submittedPlate, ['NO PLATE', 'NOPLATE', 'NONE', 'N/A', 'NA'], true);
+        $plate = $hasNoPlate ? 'NO PLATE' : $submittedPlate;
+        $vehicleOwner = violation_post('vehicle_owner');
+        $vehicleRegistration = strtoupper(violation_post('vehicle_registration_number'));
         $vehicle = violation_post('vehicle_type');
+        $vehicleColor = violation_post('vehicle_color');
+        $insurancePolicy = violation_post('insurance_policy_number');
+        $isPampasadaTricycle = $vehicle === 'Tricycle';
+        $codingSticker = $isPampasadaTricycle ? violation_post('coding_sticker_number') : '';
+        $vehicleToda = $isPampasadaTricycle ? violation_post('vehicle_toda') : '';
         $submittedTypes = is_array($_POST['violation_type'] ?? null) ? $_POST['violation_type'] : [violation_post('violation_type')];
         $submittedAmounts = is_array($_POST['penalty_amount'] ?? null) ? $_POST['penalty_amount'] : [violation_post('penalty_amount', '0')];
         $location = violation_post('violation_location');
         $date = violation_post('violation_date');
         $time = violation_post('violation_time');
+        $offenseNumber = max(1, min(4, (int)violation_post('offense_number', '1')));
+        $ticketRemarks = violation_post('ticket_remarks');
+        $officerName = violation_post('apprehending_officer_name');
+        $officerPosition = violation_post('apprehending_officer_position');
+        $apprehensionDate = violation_post('apprehension_date', $date);
+        $apprehensionTime = violation_post('apprehension_time', $time);
+        $apprehensionDatetime = $apprehensionDate !== '' && $apprehensionTime !== '' ? $apprehensionDate . ' ' . $apprehensionTime . ':00' : null;
 
         $allowedViolations = traffic_violation_types();
-        $allowedFees = array_map('floatval', traffic_penalty_fees());
-        $allowedVehicles = ['Motorcycle', 'Car', 'SUV', 'Truck', 'Bus', 'Other'];
+        $allowedVehicles = travis_vehicle_types();
         $items = [];
         foreach ($submittedTypes as $index => $submittedType) {
             $itemType = trim((string)$submittedType);
             $itemAmount = (float)($submittedAmounts[$index] ?? 0);
             if ($itemType !== '') $items[$itemType] = $itemAmount;
+        }
+        if ($hasNoLicense && !array_key_exists("No Driver's License", $items)) {
+            $analysis = traffic_offense_analysis($conn, $driver, "No Driver's License", $license, $dateOfBirth);
+            $items["No Driver's License"] = (float)$analysis['suggested_penalty'];
         }
         $type = implode(', ', array_keys($items));
         $amount = array_sum($items);
@@ -71,28 +96,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif (!in_array($vehicle, $allowedVehicles, true)) {
             $message = 'Please select a valid vehicle type.';
             $messageType = 'danger';
-        } elseif (array_filter($items, static fn(float $fee): bool => !in_array($fee, $allowedFees, true))) {
-            $message = 'Please select a valid penalty fee for every violation.';
+        } elseif (array_filter($items, static fn(float $fee): bool => $fee <= 0 || $fee > 99999999.99)) {
+            $message = 'Please enter a valid positive penalty amount for every violation.';
             $messageType = 'danger';
         } else {
-            $ticket = generateTicketNumber($conn);
-
             $stmt = $conn->prepare("
                 INSERT INTO violations (
-                    ticket_number, driver_name, license_number, has_no_license, plate_number,
-                    vehicle_type, violation_type, violation_location,
-                    violation_date, violation_time, penalty_amount,
+                    ticket_number, driver_name, driver_address, date_of_birth,
+                    license_number, license_expiry_date, has_no_license, license_confiscated, license_remarks,
+                    plate_number, has_no_plate, vehicle_owner, vehicle_registration_number,
+                    vehicle_type, vehicle_color, insurance_policy_number, coding_sticker_number, vehicle_toda,
+                    violation_type, violation_location, violation_date, violation_time, offense_number,
+                    ticket_remarks, apprehending_officer_name, apprehending_officer_position, apprehension_datetime,
+                    penalty_amount,
                     encoded_by, input_method, status
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'manual', 'pending')
+                VALUES (?, ?, NULLIF(?, ''), NULLIF(?, ''), ?, NULLIF(?, ''), ?, ?, NULLIF(?, ''),
+                        ?, ?, NULLIF(?, ''), NULLIF(?, ''), ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
+                        ?, ?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, 'manual', 'pending')
             ");
 
             $encodedBy = (int)($_SESSION['user']['id'] ?? 0);
 
             $stmt->bind_param(
-                'sssissssssdi',
-                $ticket, $driver, $license, $hasNoLicense, $plate, $vehicle,
-                $type, $location, $date, $time, $amount, $encodedBy
+                'ssssssiississsssssssssissssdi',
+                $ticket, $driver, $driverAddress, $dateOfBirth, $license, $licenseExpiry,
+                $hasNoLicense, $licenseConfiscated, $licenseRemarks, $plate, $hasNoPlate,
+                $vehicleOwner, $vehicleRegistration, $vehicle, $vehicleColor, $insurancePolicy,
+                $codingSticker, $vehicleToda, $type, $location, $date, $time, $offenseNumber,
+                $ticketRemarks, $officerName, $officerPosition, $apprehensionDatetime, $amount, $encodedBy
             );
 
             try {
@@ -107,13 +139,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $conn->commit();
                     $message = count($items) . ' violation(s) recorded successfully. Ticket No.: ' . $ticket;
                     $messageType = 'success';
+                    try {
+                        audit_log('create', 'violations', 'Created violation ticket ' . $ticket . ' with ' . count($items) . ' violation item(s).', 'success', 'violation', $violationId);
+                    } catch (Throwable $auditException) {
+                        // The violation is already committed; an audit failure must not report the save as failed.
+                        error_log('Violation audit log failed: ' . $auditException->getMessage());
+                    }
                 } else {
                     throw new RuntimeException($stmt->error ?: 'Insert failed');
                 }
             } catch (Throwable $exception) {
                 $conn->rollback();
                 error_log('Web violation insert failed: ' . $exception->getMessage());
-                $message = 'Failed to add the violation record. Verify the selected values and try again.';
+                $message = (int)$exception->getCode() === 1062
+                    ? 'A duplicate ticket number was detected. Please try saving again.'
+                    : 'Failed to add the violation record. Verify the selected values and try again.';
                 $messageType = 'danger';
             }
         }
@@ -134,6 +174,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($stmt->affected_rows > 0) {
             $message = 'Violation record was cancelled. The record remains available for audit purposes.';
             $messageType = 'success';
+            audit_log('cancel', 'violations', 'Cancelled violation record.', 'success', 'violation', $id);
         } else {
             $message = 'The violation could not be cancelled. Paid records cannot be cancelled.';
             $messageType = 'warning';
@@ -172,18 +213,56 @@ $sql = "
     SELECT v.*, u.full_name AS encoded_by_name
     FROM violations v
     LEFT JOIN users u ON u.user_id = v.encoded_by
-    {$whereSql}
     ORDER BY v.created_at DESC
-    LIMIT 100
 ";
 
-if ($params) {
-    $stmt = $conn->prepare($sql);
-    $stmt->bind_param($types, ...$params);
-    $stmt->execute();
-    $violations = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-} else {
-    $violations = fetch_all($sql);
+$violations = fetch_all($sql);
+
+// Show one row per violator while retaining every ticket in their history.
+// Identity priority: license number, then normalized name + birth date,
+// with name-only retained as a compatibility fallback for older records.
+$violators = [];
+foreach ($violations as $violation) {
+    $licenseNumber = strtoupper(trim((string)$violation['license_number']));
+    $hasLicense = !(bool)$violation['has_no_license'] && $licenseNumber !== '' && $licenseNumber !== 'NO LICENSE';
+    $normalizedName = strtolower((string)(preg_replace('/\s+/', ' ', trim((string)$violation['driver_name'])) ?? ''));
+    $birthDate = trim((string)($violation['date_of_birth'] ?? ''));
+    $violatorKey = $hasLicense
+        ? 'license:' . $licenseNumber
+        : ($birthDate !== '' ? 'name-dob:' . $normalizedName . '|' . $birthDate : 'name:' . $normalizedName);
+
+    if (!isset($violators[$violatorKey])) {
+        $violators[$violatorKey] = [
+            'driver_name' => $violation['driver_name'],
+            'license_number' => $violation['license_number'],
+            'latest' => $violation,
+            'records' => [],
+            'total_penalties' => 0.0,
+            'unpaid_count' => 0,
+        ];
+    }
+    $violators[$violatorKey]['records'][] = $violation;
+    $violators[$violatorKey]['total_penalties'] += (float)$violation['penalty_amount'];
+    if (in_array($violation['status'], ['pending', 'overdue'], true)) $violators[$violatorKey]['unpaid_count']++;
+}
+$violators = array_values($violators);
+
+// Filters decide which violators appear, but each matching modal still shows
+// that person's complete history.
+if ($search !== '' || $status !== '') {
+    $needle = strtolower($search);
+    $violators = array_values(array_filter($violators, static function (array $violator) use ($needle, $status): bool {
+        foreach ($violator['records'] as $record) {
+            $matchesStatus = $status === '' || $record['status'] === $status;
+            $haystack = strtolower(implode(' ', [
+                $record['ticket_number'], $record['driver_name'], $record['license_number'],
+                $record['plate_number'], $record['violation_type'], $record['violation_location'],
+            ]));
+            $matchesSearch = $needle === '' || str_contains($haystack, $needle);
+            if ($matchesStatus && $matchesSearch) return true;
+        }
+        return false;
+    }));
 }
 
 page_start('Violations', 'violations', 'Search plate or ticket...');
@@ -467,6 +546,84 @@ a:hover{color:#fff}
 .table-scroll::-webkit-scrollbar-thumb{background:rgba(56,189,248,.35);border-radius:20px;}
 .table-scroll::-webkit-scrollbar-thumb:hover{background:rgba(56,189,248,.65);}
 
+/* The add dialog wraps its header/body/footer in a form, so Bootstrap's
+   modal-dialog-scrollable selector cannot make the body scroll by itself. */
+#addViolationModal .modal-dialog{
+    height:calc(100dvh - 2rem);
+    margin:1rem auto;
+}
+#addViolationModal .modal-content{
+    max-height:100%;
+    overflow:hidden;
+}
+#addViolationModal .modal-content > form{
+    display:flex;
+    flex-direction:column;
+    min-height:0;
+    height:100%;
+}
+#addViolationModal .modal-body{
+    min-height:0;
+    overflow-y:scroll !important;
+    overscroll-behavior:contain;
+    scrollbar-gutter:stable;
+    scrollbar-width:thin;
+    scrollbar-color:rgba(8,125,120,.75) rgba(16,47,73,.08);
+}
+#addViolationModal .modal-body::-webkit-scrollbar{width:10px;}
+#addViolationModal .modal-body::-webkit-scrollbar-track{background:rgba(16,47,73,.08);border-radius:10px;}
+#addViolationModal .modal-body::-webkit-scrollbar-thumb{background:rgba(8,125,120,.72);border:2px solid transparent;border-radius:10px;background-clip:padding-box;}
+#addViolationModal .modal-header,
+#addViolationModal .modal-footer{flex:0 0 auto;}
+.ticket-form-section{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    margin-top:4px;
+    padding:10px 12px;
+    border:1px solid rgba(8,125,120,.18);
+    border-radius:12px;
+    background:linear-gradient(90deg,rgba(8,125,120,.09),rgba(56,189,248,.035));
+}
+.ticket-form-section .section-number{
+    display:grid;
+    place-items:center;
+    flex:0 0 28px;
+    width:28px;
+    height:28px;
+    border-radius:9px;
+    color:#fff;
+    background:#087d78;
+    font-size:.76rem;
+    font-weight:800;
+}
+.ticket-form-section strong{display:block;font-size:.86rem;line-height:1.2;}
+.ticket-form-section small{display:block;margin-top:2px;font-size:.68rem;}
+#addViolationModal .form-label{margin-bottom:.4rem;font-weight:600;}
+#addViolationModal .form-check{padding:8px 10px 8px 2rem;border-radius:9px;background:rgba(8,125,120,.04);}
+#addViolationModal .license-status-row{
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:12px;
+}
+#addViolationModal .license-status-row .form-check{
+    display:flex;
+    align-items:center;
+    min-height:46px;
+    margin:0;
+    padding:10px 14px 10px 40px;
+    border:1px solid rgba(16,47,73,.1);
+    background:rgba(8,125,120,.045);
+}
+#addViolationModal .license-status-row .form-check-input{margin-left:-25px;margin-top:0;}
+#addViolationModal .license-status-row .form-check-label{line-height:1.25;}
+#addViolationModal .vehicle-status-row{grid-template-columns:1fr;}
+#addViolationModal .violation-item-row{padding:10px 4px;border:1px solid rgba(16,47,73,.1);border-radius:11px;background:rgba(255,255,255,.35);}
+@media(max-width:575.98px){
+    #addViolationModal .modal-dialog{height:calc(100dvh - 1rem);margin:.5rem;}
+    #addViolationModal .license-status-row{grid-template-columns:1fr;}
+}
+
 /* ==== Catch-all: any remaining white cards ==== */
 .card,
 .badge,
@@ -522,6 +679,34 @@ div[style*="border-radius: 999px"]:not(.tag){
     background:rgba(255,255,255,.06) !important;
     color:#fff !important;
 }
+
+.violator-record-overview{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:16px;padding:16px 18px;border:1px solid #cfe2e7;border-radius:15px;background:linear-gradient(110deg,#edf9f7,#f7fbff 62%,#fff)}
+.violator-record-person{display:flex;align-items:center;gap:13px;min-width:0}
+.violator-record-avatar{display:grid;place-items:center;flex:0 0 46px;width:46px;height:46px;border-radius:14px;background:#087d78;color:#fff;font-size:1.15rem;box-shadow:0 8px 18px rgba(8,125,120,.2)}
+.violator-record-person small{display:block;color:#657a75!important;font-size:.67rem;font-weight:700;letter-spacing:.055em;text-transform:uppercase}
+.violator-record-person strong{display:block;color:#102f49!important;font-size:1.03rem;line-height:1.35;overflow-wrap:anywhere}
+.violator-record-totals{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.violator-record-total{min-width:96px;padding:8px 11px;border:1px solid #d5e4e8;border-radius:11px;background:rgba(255,255,255,.82);text-align:center}
+.violator-record-total small{display:block;color:#71827d!important;font-size:.61rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+.violator-record-total strong{display:block;margin-top:2px;color:#102f49!important;font-size:.86rem}
+.violator-record-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-bottom:20px}
+.violator-record-panel{overflow:hidden;border:1px solid #d5e3e8;border-radius:15px;background:#fff;color:#102f49;box-shadow:0 7px 18px rgba(16,47,73,.055)}
+.violator-record-panel-head{display:flex;align-items:center;gap:11px;margin:0;padding:14px 16px;border-bottom:1px solid #dfeaed;background:#f4f9fa}
+.violator-record-panel-head i{display:grid;flex:0 0 36px;width:36px;height:36px;place-items:center;border-radius:11px;background:#dff4f1!important;color:#087d78!important;font-size:1rem}
+.violator-record-panel-head strong{color:#102f49!important;font-size:.9rem}
+.violator-record-group{padding:14px 16px}
+.violator-record-group + .violator-record-group{border-top:1px solid #e5edef}
+.violator-record-group-title{display:flex;align-items:center;gap:7px;margin-bottom:11px;color:#087d78!important;font-size:.68rem;font-weight:800;letter-spacing:.055em;text-transform:uppercase}
+.violator-record-group-title i{color:#087d78!important}
+.violator-record-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px 18px}
+.violator-record-field{min-width:0;padding-left:10px;border-left:2px solid #dcebed}
+.violator-record-field.field-wide{grid-column:1/-1}
+.violator-record-field small{display:block;margin-bottom:3px;color:#6b7d78!important;font-size:.63rem;font-weight:700;letter-spacing:.045em;text-transform:uppercase}
+.violator-record-field strong{display:block;color:#10202c!important;font-size:.82rem;line-height:1.45;overflow-wrap:anywhere}
+.violator-history-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:4px 0 12px}
+.violator-history-heading h6{margin:0;color:#102f49!important}
+@media(max-width:767.98px){.violator-record-overview{align-items:flex-start;flex-direction:column}.violator-record-totals{width:100%;justify-content:stretch}.violator-record-total{flex:1 1 90px}.violator-record-summary{grid-template-columns:1fr}}
+@media(max-width:420px){.violator-record-grid{grid-template-columns:1fr}.violator-record-field.field-wide{grid-column:auto}}
 </style>
 
 <div class="d-flex justify-content-between flex-wrap mb-4 gap-2">
@@ -573,8 +758,8 @@ div[style*="border-radius: 999px"]:not(.tag){
 <div class="section-card">
   <div class="section-head flex-wrap gap-2">
     <div>
-      <h6 class="mb-0">Violation Records</h6>
-      <small class="text-muted">Payment processing is handled in the Payments page.</small>
+      <h6 class="mb-0">Violators</h6>
+      <small class="text-muted">One row per violator. Open a record to see the complete violation history.</small>
     </div>
 
     <form method="get" class="d-flex flex-wrap gap-2">
@@ -593,39 +778,29 @@ div[style*="border-radius: 999px"]:not(.tag){
     </form>
   </div>
 
-  <?php if (!$violations): ?>
+  <?php if (!$violators): ?>
     <?php empty_state('No violation records matched your search or filter.'); ?>
   <?php else: ?>
     <div class="table-responsive table-scroll">
       <table class="table align-middle">
         <thead>
           <tr>
-            <th>Ticket</th><th>Driver / License</th><th>Vehicle</th><th>Violation</th>
-            <th>Location</th><th>Date & Time</th><th>Fine</th><th>Status</th><th class="text-end">Actions</th>
+            <th>Violator / License</th><th>Latest Vehicle</th><th>Latest Violation</th>
+            <th>Last Recorded</th><th>Records</th><th>Total Fines</th><th>Unpaid</th><th class="text-end">Actions</th>
           </tr>
         </thead>
         <tbody>
-          <?php foreach ($violations as $v): ?>
+          <?php foreach ($violators as $index => $violator): $latest = $violator['latest']; ?>
             <tr>
-              <td class="fw-semibold"><?= esc($v['ticket_number']) ?></td>
-              <td><?= esc($v['driver_name']) ?><br><small class="text-muted"><?= esc($v['license_number']) ?></small></td>
-              <td><?= esc($v['plate_number']) ?><br><small class="text-muted"><?= esc($v['vehicle_type']) ?></small></td>
-              <td><?= esc($v['violation_type']) ?></td>
-              <td><?= esc($v['violation_location']) ?></td>
-              <td><?= esc($v['violation_date']) ?><br><small class="text-muted"><?= esc($v['violation_time']) ?></small></td>
-              <td class="fw-semibold"><?= peso($v['penalty_amount']) ?></td>
-              <td><span class="tag <?= tag_class($v['status']) ?>"><?= esc(ucfirst($v['status'])) ?></span></td>
+              <td class="fw-semibold"><?= esc($violator['driver_name']) ?><br><small class="text-muted"><?= esc($violator['license_number']) ?></small></td>
+              <td><?= esc($latest['plate_number']) ?><br><small class="text-muted"><?= esc($latest['vehicle_type']) ?></small></td>
+              <td><?= esc($latest['violation_type']) ?><br><small class="text-muted"><?= esc($latest['ticket_number']) ?></small></td>
+              <td><?= esc($latest['violation_date']) ?><br><small class="text-muted"><?= esc($latest['violation_time']) ?></small></td>
+              <td><span class="tag tag-info"><?= num(count($violator['records'])) ?></span></td>
+              <td class="fw-semibold"><?= peso($violator['total_penalties']) ?></td>
+              <td><span class="tag <?= $violator['unpaid_count'] > 0 ? 'tag-warning' : 'tag-success' ?>"><?= num($violator['unpaid_count']) ?></span></td>
               <td class="text-end text-nowrap">
-                <a class="btn btn-sm btn-light" href="#view<?= (int)$v['violation_id'] ?>" data-bs-toggle="modal" data-bs-target="#view<?= (int)$v['violation_id'] ?>" role="button" title="View details"><i class="bi bi-eye"></i></a>
-
-                <?php if (in_array($v['status'], ['pending', 'overdue'], true)): ?>
-                  <a class="btn btn-sm btn-success" href="<?= esc(app_url('payments.php?violation_id=' . (int)$v['violation_id'])) ?>" title="Proceed to payment"><i class="bi bi-cash-coin"></i></a>
-                  <form method="post" class="d-inline" onsubmit="return confirm('Cancel this violation record? The record will not be deleted.');">
-                    <input type="hidden" name="action" value="cancel_violation">
-                    <input type="hidden" name="violation_id" value="<?= (int)$v['violation_id'] ?>">
-                    <button class="btn btn-sm btn-light text-danger" title="Cancel record"><i class="bi bi-slash-circle"></i></button>
-                  </form>
-                <?php endif; ?>
+                <a class="btn btn-sm btn-light" href="#violatorHistory<?= $index ?>" data-bs-toggle="modal" data-bs-target="#violatorHistory<?= $index ?>" role="button" title="View complete violator record"><i class="bi bi-person-vcard"></i> View record</a>
               </td>
             </tr>
           <?php endforeach; ?>
@@ -635,35 +810,141 @@ div[style*="border-radius: 999px"]:not(.tag){
   <?php endif; ?>
 </div>
 
-<?php foreach ($violations as $v): ?>
-  <div class="modal fade" id="view<?= (int)$v['violation_id'] ?>" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-centered">
+<?php foreach ($violators as $index => $violator): $latest = $violator['latest']; ?>
+  <div class="modal fade violation-history-modal" id="violatorHistory<?= $index ?>" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
       <div class="modal-content">
         <div class="modal-header">
-          <div><h5 class="modal-title">Violation Details</h5><small class="text-muted"><?= esc($v['ticket_number']) ?></small></div>
+          <div><h5 class="modal-title">Violator Record</h5><small class="text-muted">Complete personal, vehicle, and violation information</small></div>
           <a class="btn-close" href="#" data-bs-dismiss="modal" aria-label="Close"></a>
         </div>
         <div class="modal-body">
-          <div class="row g-3">
-            <div class="col-md-6"><strong>Status</strong><br><span class="tag <?= tag_class($v['status']) ?>"><?= esc(ucfirst($v['status'])) ?></span></div>
-            <div class="col-md-6"><strong>Penalty</strong><br><?= peso($v['penalty_amount']) ?></div>
-            <div class="col-md-6"><strong>Driver</strong><br><?= esc($v['driver_name']) ?></div>
-            <div class="col-md-6"><strong>License Number</strong><br><?= esc($v['license_number']) ?></div>
-            <div class="col-md-6"><strong>Plate Number</strong><br><?= esc($v['plate_number']) ?></div>
-            <div class="col-md-6"><strong>Vehicle Type</strong><br><?= esc($v['vehicle_type']) ?></div>
-            <div class="col-md-6"><strong>Violation Type</strong><br><?= esc($v['violation_type']) ?></div>
-            <div class="col-md-6"><strong>Location</strong><br><?= esc($v['violation_location']) ?></div>
-            <div class="col-md-6"><strong>Date & Time</strong><br><?= esc($v['violation_date'] . ' ' . $v['violation_time']) ?></div>
-            <div class="col-md-6"><strong>Input Method</strong><br><?= esc($v['input_method']) ?></div>
-            <div class="col-md-6"><strong>Encoded By</strong><br><?= esc($v['encoded_by_name'] ?? 'System / Mobile App') ?></div>
-            <div class="col-md-6"><strong>Created At</strong><br><?= esc($v['created_at']) ?></div>
+          <div class="violator-record-overview">
+            <div class="violator-record-person">
+              <span class="violator-record-avatar" aria-hidden="true"><i class="bi bi-person-fill"></i></span>
+              <div><small>Violator profile</small><strong><?= esc($violator['driver_name']) ?></strong></div>
+            </div>
+            <div class="violator-record-totals">
+              <div class="violator-record-total"><small>License</small><strong><?= esc($violator['license_number']) ?></strong></div>
+              <div class="violator-record-total"><small>Records</small><strong><?= num(count($violator['records'])) ?></strong></div>
+              <div class="violator-record-total"><small>Total fines</small><strong><?= peso($violator['total_penalties']) ?></strong></div>
+              <div class="violator-record-total"><small>Unpaid</small><strong><?= num($violator['unpaid_count']) ?></strong></div>
+            </div>
           </div>
+          <div class="violator-record-summary">
+            <section class="violator-record-panel" aria-label="Driver and license information">
+              <div class="violator-record-panel-head"><i class="bi bi-person-vcard"></i><strong>Driver &amp; License Information</strong></div>
+              <div class="violator-record-group">
+                <div class="violator-record-group-title"><i class="bi bi-person-lines-fill"></i>Personal details</div>
+                <div class="violator-record-grid">
+                  <div class="violator-record-field"><small>Date of birth</small><strong><?= esc($latest['date_of_birth'] ?: 'Not provided') ?></strong></div>
+                  <div class="violator-record-field field-wide"><small>Address</small><strong><?= esc($latest['driver_address'] ?: 'Not provided') ?></strong></div>
+                </div>
+              </div>
+              <div class="violator-record-group">
+                <div class="violator-record-group-title"><i class="bi bi-card-text"></i>License details</div>
+                <div class="violator-record-grid">
+                  <div class="violator-record-field"><small>License number</small><strong><?= esc($violator['license_number']) ?></strong></div>
+                  <div class="violator-record-field"><small>License expiry</small><strong><?= !empty($latest['has_no_license']) ? 'Not applicable' : esc($latest['license_expiry_date'] ?: 'Not provided') ?></strong></div>
+                  <div class="violator-record-field"><small>License status</small><strong><?= !empty($latest['has_no_license']) ? 'No driver’s license' : (!empty($latest['license_confiscated']) ? 'Confiscated' : 'Not confiscated') ?></strong></div>
+                  <div class="violator-record-field"><small>Remarks</small><strong><?= esc($latest['license_remarks'] ?: 'None') ?></strong></div>
+                </div>
+              </div>
+            </section>
+
+            <section class="violator-record-panel" aria-label="Latest vehicle information">
+              <div class="violator-record-panel-head"><i class="bi bi-car-front-fill"></i><strong>Latest Vehicle Information</strong></div>
+              <div class="violator-record-group">
+                <div class="violator-record-group-title"><i class="bi bi-car-front"></i>Vehicle identity</div>
+                <div class="violator-record-grid">
+                  <div class="violator-record-field"><small>Plate number</small><strong><?= esc($latest['plate_number']) ?></strong></div>
+                  <div class="violator-record-field"><small>Vehicle type</small><strong><?= esc($latest['vehicle_type']) ?></strong></div>
+                  <div class="violator-record-field"><small>Vehicle owner</small><strong><?= esc($latest['vehicle_owner'] ?: 'Not provided') ?></strong></div>
+                  <div class="violator-record-field"><small>Vehicle color</small><strong><?= esc($latest['vehicle_color'] ?: 'Not provided') ?></strong></div>
+                </div>
+              </div>
+              <div class="violator-record-group">
+                <div class="violator-record-group-title"><i class="bi bi-file-earmark-check"></i>Registration &amp; operation</div>
+                <div class="violator-record-grid">
+                  <div class="violator-record-field"><small>Registration number</small><strong><?= esc($latest['vehicle_registration_number'] ?: 'Not provided') ?></strong></div>
+                  <div class="violator-record-field"><small>Insurance policy</small><strong><?= esc($latest['insurance_policy_number'] ?: 'Not provided') ?></strong></div>
+                  <?php if (($latest['vehicle_type'] ?? '') === 'Tricycle'): ?>
+                    <div class="violator-record-field"><small>Coding sticker</small><strong><?= esc($latest['coding_sticker_number'] ?: 'Not provided') ?></strong></div>
+                    <div class="violator-record-field"><small>TODA</small><strong><?= esc($latest['vehicle_toda'] ?: 'Not provided') ?></strong></div>
+                  <?php endif; ?>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <div class="violator-history-heading">
+            <h6><i class="bi bi-clock-history me-1"></i>Violation History</h6>
+            <span class="tag tag-info"><?= num(count($violator['records'])) ?> record(s)</span>
+          </div>
+          <div class="table-responsive"><table class="table align-middle mb-0">
+            <thead><tr><th>Ticket</th><th>Violation</th><th>Vehicle</th><th>Location</th><th>Date & Time</th><th>Fine</th><th>Status</th><th class="text-end">Action</th></tr></thead>
+            <tbody>
+            <?php foreach ($violator['records'] as $record): ?>
+              <tr>
+                <td class="fw-semibold"><?= esc($record['ticket_number']) ?></td>
+                <td>
+                  <?= esc($record['violation_type']) ?>
+                  <details class="mt-1"><summary class="small text-primary">Physical ticket details</summary>
+                    <div class="small text-muted mt-2">
+                      <?php if (!empty($record['driver_address'])): ?><div><strong>Address:</strong> <?= esc($record['driver_address']) ?></div><?php endif; ?>
+                      <?php if (!empty($record['date_of_birth'])): ?><div><strong>Birth date:</strong> <?= esc($record['date_of_birth']) ?></div><?php endif; ?>
+                      <?php if (!empty($record['license_expiry_date'])): ?><div><strong>License expiry:</strong> <?= esc($record['license_expiry_date']) ?></div><?php endif; ?>
+                      <?php if (!empty($record['vehicle_owner'])): ?><div><strong>Vehicle owner:</strong> <?= esc($record['vehicle_owner']) ?></div><?php endif; ?>
+                      <?php if (!empty($record['vehicle_registration_number'])): ?><div><strong>Registration:</strong> <?= esc($record['vehicle_registration_number']) ?></div><?php endif; ?>
+                      <?php if (!empty($record['vehicle_color'])): ?><div><strong>Color:</strong> <?= esc($record['vehicle_color']) ?></div><?php endif; ?>
+                      <?php if (!empty($record['insurance_policy_number'])): ?><div><strong>Insurance:</strong> <?= esc($record['insurance_policy_number']) ?></div><?php endif; ?>
+                      <?php if (!empty($record['coding_sticker_number'])): ?><div><strong>Coding sticker:</strong> <?= esc($record['coding_sticker_number']) ?></div><?php endif; ?>
+                      <?php if (!empty($record['vehicle_toda'])): ?><div><strong>TODA:</strong> <?= esc($record['vehicle_toda']) ?></div><?php endif; ?>
+                      <div><strong>Offense:</strong> <?= num((int)($record['offense_number'] ?? 1)) ?></div>
+                      <?php if (!empty($record['apprehending_officer_name'])): ?><div><strong>Officer:</strong> <?= esc($record['apprehending_officer_name']) ?><?= !empty($record['apprehending_officer_position']) ? ' · ' . esc($record['apprehending_officer_position']) : '' ?></div><?php endif; ?>
+                      <?php if (!empty($record['ticket_remarks'])): ?><div><strong>Remarks:</strong> <?= nl2br(esc($record['ticket_remarks'])) ?></div><?php endif; ?>
+                    </div>
+                  </details>
+                </td>
+                <td><?= esc($record['plate_number']) ?><br><small class="text-muted"><?= esc($record['vehicle_type']) ?></small></td>
+                <td><?= esc($record['violation_location']) ?></td>
+                <td><?= esc($record['violation_date']) ?><br><small class="text-muted"><?= esc($record['violation_time']) ?></small></td>
+                <td class="fw-semibold"><?= peso($record['penalty_amount']) ?></td>
+                <td><span class="tag <?= tag_class($record['status']) ?>"><?= esc(ucfirst($record['status'])) ?></span></td>
+                <td class="text-end text-nowrap">
+                  <?php if (in_array($record['status'], ['pending', 'overdue'], true)): ?>
+                    <a class="btn btn-sm btn-success" href="<?= esc(app_url('payments.php?violation_id=' . (int)$record['violation_id'])) ?>" title="Proceed to payment"><i class="bi bi-cash-coin"></i></a>
+                    <form method="post" class="d-inline" onsubmit="return confirm('Cancel this violation record? The record will not be deleted.');">
+                      <input type="hidden" name="action" value="cancel_violation"><input type="hidden" name="violation_id" value="<?= (int)$record['violation_id'] ?>">
+                      <button class="btn btn-sm btn-light text-danger" title="Cancel record"><i class="bi bi-slash-circle"></i></button>
+                    </form>
+                  <?php else: ?>&mdash;<?php endif; ?>
+                </td>
+              </tr>
+            <?php endforeach; ?>
+            </tbody>
+            <tfoot><tr><th colspan="5" class="text-end">Total fines</th><th><?= peso($violator['total_penalties']) ?></th><th colspan="2"></th></tr></tfoot>
+          </table></div>
         </div>
         <div class="modal-footer">
+          <button
+            type="button"
+            class="btn btn-primary add-existing-violator"
+            data-driver="<?= esc($violator['driver_name']) ?>"
+            data-address="<?= esc($latest['driver_address'] ?? '') ?>"
+            data-birth-date="<?= esc($latest['date_of_birth'] ?? '') ?>"
+            data-license="<?= esc($violator['license_number']) ?>"
+            data-license-expiry="<?= esc($latest['license_expiry_date'] ?? '') ?>"
+            data-no-license="<?= (int)$latest['has_no_license'] ?>"
+            data-plate="<?= esc($latest['plate_number']) ?>"
+            data-no-plate="<?= (int)$latest['has_no_plate'] ?>"
+            data-vehicle="<?= esc($latest['vehicle_type']) ?>"
+            data-owner="<?= esc($latest['vehicle_owner'] ?? '') ?>"
+            data-registration="<?= esc($latest['vehicle_registration_number'] ?? '') ?>"
+            data-color="<?= esc($latest['vehicle_color'] ?? '') ?>"
+            data-offense-level="<?= min(4, count($violator['records']) + 1) ?>"
+          ><i class="bi bi-plus-circle"></i>Add Violation for This Person</button>
           <a class="btn btn-light" href="#" data-bs-dismiss="modal">Close</a>
-          <?php if (in_array($v['status'], ['pending', 'overdue'], true)): ?>
-            <a class="btn btn-success" href="<?= esc(app_url('payments.php?violation_id=' . (int)$v['violation_id'])) ?>"><i class="bi bi-cash-coin me-1"></i>Proceed to Payment</a>
-          <?php endif; ?>
         </div>
       </div>
     </div>
@@ -671,7 +952,7 @@ div[style*="border-radius: 999px"]:not(.tag){
 <?php endforeach; ?>
 
 <div class="modal fade" id="addViolationModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-lg modal-dialog-centered">
+  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
     <div class="modal-content">
       <form method="post">
         <div class="modal-header">
@@ -681,18 +962,47 @@ div[style*="border-radius: 999px"]:not(.tag){
         <div class="modal-body">
           <input type="hidden" name="action" value="add_violation">
           <div class="row g-3">
-            <div class="col-md-6"><label class="form-label">Ticket Number</label><input type="text" class="form-control" value="Automatically generated" readonly><small class="text-muted">Format: TRV-YYYYMMDD-000001</small></div>
-            <div class="col-md-6"><label class="form-label">Driver Name</label><input type="text" name="driver_name" class="form-control" required></div>
+            <div class="col-12"><div class="ticket-form-section"><span class="section-number">1</span><div><strong>Driver Information</strong><small class="text-muted">Personal details of the apprehended driver</small></div></div></div>
+            <div class="col-md-6"><label class="form-label">Driver Name</label><input type="text" id="driverNameInput" name="driver_name" class="form-control" required><small class="text-muted">Matching uses license first, then name + birth date.</small></div>
+            <div class="col-md-6"><label class="form-label">Date of Birth</label><input type="date" name="date_of_birth" class="form-control"></div>
+            <div class="col-12"><label class="form-label">Driver Address</label><input type="text" name="driver_address" class="form-control" maxlength="255" placeholder="House no., street, barangay, municipality"></div>
+            <div class="col-12"><div class="ticket-form-section"><span class="section-number">2</span><div><strong>License Information</strong><small class="text-muted">License number, validity, and confiscation status</small></div></div></div>
             <div class="col-md-6">
               <label class="form-label" for="licenseNumberInput">License Number</label>
               <input type="text" id="licenseNumberInput" name="license_number" class="form-control text-uppercase" required>
-              <div class="form-check mt-2">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="licenseExpiryInput">License Expiry Date</label>
+              <input type="date" id="licenseExpiryInput" name="license_expiry_date" class="form-control">
+              <div class="form-control bg-light text-muted d-none" id="licenseExpiryNotApplicable" aria-live="polite">Not applicable — driver has no license</div>
+            </div>
+            <div class="col-12"><div class="license-status-row">
+              <div class="form-check">
                 <input class="form-check-input" type="checkbox" name="has_no_license" value="1" id="noLicenseCheck">
                 <label class="form-check-label" for="noLicenseCheck">Driver has no license</label>
               </div>
+              <div class="form-check"><input class="form-check-input" type="checkbox" name="license_confiscated" value="1" id="licenseConfiscatedCheck"><label class="form-check-label" for="licenseConfiscatedCheck">License confiscated</label></div>
+            </div></div>
+            <div class="col-12"><label class="form-label">License Remarks</label><input type="text" name="license_remarks" class="form-control" maxlength="255" placeholder="Remarks printed beside Confiscated"></div>
+            <div class="col-12"><div class="ticket-form-section"><span class="section-number">3</span><div><strong>Vehicle Information</strong><small class="text-muted">Registration and identifying details of the vehicle</small></div></div></div>
+            <div class="col-md-6">
+              <label class="form-label" for="plateNumberInput">Plate Number</label>
+              <input type="text" id="plateNumberInput" name="plate_number" class="form-control text-uppercase" required>
             </div>
-            <div class="col-md-6"><label class="form-label">Plate Number</label><input type="text" name="plate_number" class="form-control text-uppercase" required></div>
-            <div class="col-md-6"><label class="form-label">Vehicle Type</label><select name="vehicle_type" class="form-select" required><option value="">Select vehicle type</option><option>Motorcycle</option><option>Car</option><option>SUV</option><option>Truck</option><option>Bus</option><option>Other</option></select></div>
+            <div class="col-md-6"><label class="form-label">Vehicle Registration Number</label><input type="text" name="vehicle_registration_number" class="form-control text-uppercase" maxlength="80"></div>
+            <div class="col-12"><div class="license-status-row vehicle-status-row">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="has_no_plate" value="1" id="noPlateCheck">
+                <label class="form-check-label" for="noPlateCheck">Vehicle has no plate number</label>
+              </div>
+            </div></div>
+            <div class="col-md-6"><label class="form-label">Owner of Vehicle</label><input type="text" name="vehicle_owner" class="form-control" maxlength="150"></div>
+            <div class="col-md-6"><label class="form-label">Vehicle Type</label><select name="vehicle_type" class="form-select" required><option value="">Select vehicle type</option><option>Motorcycle</option><option value="Tricycle">Tricycle (Pampasada)</option><option>Car</option><option>SUV</option><option>Truck</option><option>Bus</option><option>Other</option></select></div>
+            <div class="col-md-6"><label class="form-label">Color of Vehicle</label><input type="text" name="vehicle_color" class="form-control" maxlength="80"></div>
+            <div class="col-md-6"><label class="form-label">Insurance Policy Number</label><input type="text" name="insurance_policy_number" class="form-control" maxlength="100"></div>
+            <div class="col-md-6 d-none" id="codingStickerField"><label class="form-label">Coding Sticker Number</label><input type="text" name="coding_sticker_number" class="form-control" maxlength="100"><small class="text-muted">For tricycles operating as public transport only.</small></div>
+            <div class="col-md-6 d-none" id="vehicleTodaField"><label class="form-label">TODA</label><input type="text" name="vehicle_toda" class="form-control" maxlength="120"><small class="text-muted">Tricycle Operators and Drivers Association.</small></div>
+            <div class="col-12"><div class="ticket-form-section"><span class="section-number">4</span><div><strong>Violation Details</strong><small class="text-muted">Offenses, penalties, place, date, and remarks</small></div></div></div>
             <div class="col-12">
               <div class="d-flex align-items-center justify-content-between mb-2">
                 <label class="form-label mb-0">Violations and Penalties</label>
@@ -701,15 +1011,30 @@ div[style*="border-radius: 999px"]:not(.tag){
               <div id="violationItems">
                 <div class="row g-2 mb-2 violation-item-row">
                   <div class="col-md-8"><select name="violation_type[]" class="form-select" required><option value="">Select violation</option><?php foreach (traffic_violation_types() as $violationType): ?><option value="<?= esc($violationType) ?>"><?= esc($violationType) ?></option><?php endforeach; ?></select></div>
-                  <div class="col-md-3"><select name="penalty_amount[]" class="form-select" required><option value="">Select fee</option><?php foreach (traffic_penalty_fees() as $penaltyFee): ?><option value="<?= esc($penaltyFee) ?>"><?= peso($penaltyFee) ?></option><?php endforeach; ?></select></div>
+                  <div class="col-md-3"><input type="number" name="penalty_amount[]" class="form-control penalty-amount" min="0.01" max="99999999.99" step="0.01" placeholder="Auto price" inputmode="decimal" required><small class="text-muted offense-hint">Choose a violation to calculate its price.</small></div>
                   <div class="col-md-1"><button type="button" class="btn btn-outline-danger w-100 remove-violation-item" aria-label="Remove violation" disabled><i class="bi bi-x-lg"></i></button></div>
                 </div>
               </div>
-              <small class="text-muted">Add every box checked on the paper citation and confirm its corresponding fee.</small>
+              <small class="text-muted">Prices are suggested from the driver's matching offense history. You can edit any amount before saving.</small>
             </div>
             <div class="col-md-6"><label class="form-label">Violation Location</label><input type="text" name="violation_location" class="form-control" placeholder="Nasugbu, Batangas location" required></div>
             <div class="col-md-3"><label class="form-label">Date</label><input type="date" name="violation_date" class="form-control" value="<?= date('Y-m-d') ?>" required></div>
             <div class="col-md-3"><label class="form-label">Time</label><input type="time" name="violation_time" class="form-control" value="<?= date('H:i') ?>" required></div>
+            <div class="col-md-4">
+              <label class="form-label">Offense Level</label>
+              <input type="hidden" name="offense_number" id="offenseNumberInput" value="1">
+              <div class="form-control d-flex align-items-center justify-content-between" aria-live="polite">
+                <span id="offenseNumberLabel">First offense</span>
+                <span class="tag tag-info">Automatic</span>
+              </div>
+              <small class="text-muted">Calculated from matching violation history.</small>
+            </div>
+            <div class="col-md-8"><label class="form-label">Ticket Remarks</label><textarea name="ticket_remarks" class="form-control" rows="2" placeholder="Remarks or Treasurer's Office disposition"></textarea></div>
+            <div class="col-12"><div class="ticket-form-section"><span class="section-number">5</span><div><strong>Apprehending / Arresting Officer</strong><small class="text-muted">Officer identity and apprehension schedule</small></div></div></div>
+            <div class="col-md-6"><label class="form-label">Officer Name</label><input type="text" name="apprehending_officer_name" class="form-control" maxlength="150"></div>
+            <div class="col-md-6"><label class="form-label">Position</label><input type="text" name="apprehending_officer_position" class="form-control" maxlength="120"></div>
+            <div class="col-md-6"><label class="form-label">Apprehension Date</label><input type="date" name="apprehension_date" class="form-control" value="<?= date('Y-m-d') ?>"></div>
+            <div class="col-md-6"><label class="form-label">Apprehension Time</label><input type="time" name="apprehension_time" class="form-control" value="<?= date('H:i') ?>"></div>
           </div>
           <small class="text-muted d-block mt-3">OCR scanning will be handled by the mobile application. Mobile records saved to the same database will also appear here.</small>
         </div>
@@ -723,99 +1048,288 @@ div[style*="border-radius: 999px"]:not(.tag){
 </div>
 
 <script>
-let violationModalBackdrop = null;
-
-function openViolationModal(modalId, event) {
-  if (event) {
-    event.preventDefault();
-    event.stopPropagation();
-  }
-
-  const modal = document.getElementById(modalId);
-  if (!modal) return false;
-
-  document.querySelectorAll('.modal.violation-modal-open').forEach(function (openModal) {
-    closeViolationModal(openModal);
-  });
-
-  modal.style.display = 'block';
-  modal.classList.add('show', 'violation-modal-open');
-  modal.removeAttribute('aria-hidden');
-  modal.setAttribute('aria-modal', 'true');
-  modal.setAttribute('role', 'dialog');
-  document.body.classList.add('modal-open');
-  document.body.style.overflow = 'hidden';
-
-  violationModalBackdrop = document.createElement('div');
-  violationModalBackdrop.className = 'modal-backdrop fade show violation-modal-backdrop';
-  violationModalBackdrop.addEventListener('click', function () {
-    closeViolationModal(modal);
-  });
-  document.body.appendChild(violationModalBackdrop);
-
-  const focusTarget = modal.querySelector('input:not([type="hidden"]), select, textarea, button');
-  if (focusTarget) focusTarget.focus();
-  return false;
-}
-
-function closeViolationModal(modalOrChild) {
-  const modal = modalOrChild && modalOrChild.classList && modalOrChild.classList.contains('modal')
-    ? modalOrChild
-    : modalOrChild?.closest('.modal');
-  if (!modal) return false;
-
-  modal.classList.remove('show', 'violation-modal-open');
-  modal.style.display = 'none';
-  modal.setAttribute('aria-hidden', 'true');
-  modal.removeAttribute('aria-modal');
-  modal.removeAttribute('role');
-  document.querySelectorAll('.violation-modal-backdrop').forEach(function (item) { item.remove(); });
-  violationModalBackdrop = null;
-  document.body.classList.remove('modal-open');
-  document.body.style.removeProperty('overflow');
-  return false;
-}
-
-document.querySelectorAll('#addViolationModal [data-bs-dismiss="modal"], [id^="view"] [data-bs-dismiss="modal"]').forEach(function (button) {
-  button.addEventListener('click', function (event) {
-    event.preventDefault();
-    event.stopPropagation();
-    closeViolationModal(button);
-  });
-});
-
-document.addEventListener('keydown', function (event) {
-  if (event.key === 'Escape') {
-    const modal = document.querySelector('.modal.violation-modal-open');
-    if (modal) closeViolationModal(modal);
-  }
-});
-
-document.getElementById('noLicenseCheck')?.addEventListener('change', function () {
-  const input = document.getElementById('licenseNumberInput');
-  input.disabled = this.checked;
-  input.required = !this.checked;
-  input.value = this.checked ? 'NO LICENSE' : '';
+// Keep Bootstrap dialogs at the document root. The municipal layout's
+// .main-wrapper creates its own stacking context; leaving a modal inside it
+// places Bootstrap's body-level backdrop above the dialog and blocks clicks.
+document.querySelectorAll('#addViolationModal, .violation-history-modal').forEach(function (modal) {
+  document.body.appendChild(modal);
 });
 
 const violationItems = document.getElementById('violationItems');
+const driverNameInput = document.getElementById('driverNameInput');
+const noLicenseCheck = document.getElementById('noLicenseCheck');
+const licenseNumberInput = document.getElementById('licenseNumberInput');
+const licenseExpiryInput = document.getElementById('licenseExpiryInput');
+const licenseExpiryNotApplicable = document.getElementById('licenseExpiryNotApplicable');
+const noPlateCheck = document.getElementById('noPlateCheck');
+const plateNumberInput = document.getElementById('plateNumberInput');
+const vehicleTypeInput = document.querySelector('#addViolationModal select[name="vehicle_type"]');
+const codingStickerField = document.getElementById('codingStickerField');
+const vehicleTodaField = document.getElementById('vehicleTodaField');
+const violationLocationInput = document.querySelector('#addViolationModal input[name="violation_location"]');
+const ticketForm = document.querySelector('#addViolationModal form');
+const offenseAnalysisUrl = <?= json_encode('../api/analyze_offense.php') ?>;
+const offenseNumberInput = document.getElementById('offenseNumberInput');
+const offenseNumberLabel = document.getElementById('offenseNumberLabel');
+let driverAnalysisTimer = null;
+let automaticOffenseFloor = 1;
+
+function syncLicenseFields() {
+  const hasNoLicense = Boolean(noLicenseCheck?.checked);
+  if (licenseNumberInput) {
+    licenseNumberInput.disabled = hasNoLicense;
+    licenseNumberInput.required = !hasNoLicense;
+    licenseNumberInput.value = hasNoLicense ? 'NO LICENSE' : (licenseNumberInput.value === 'NO LICENSE' ? '' : licenseNumberInput.value);
+  }
+  if (licenseExpiryInput) {
+    licenseExpiryInput.disabled = hasNoLicense;
+    if (hasNoLicense) licenseExpiryInput.value = '';
+    licenseExpiryInput.classList.toggle('d-none', hasNoLicense);
+  }
+  licenseExpiryNotApplicable?.classList.toggle('d-none', !hasNoLicense);
+}
+
+function syncTricycleFields() {
+  const isPampasadaTricycle = vehicleTypeInput?.value === 'Tricycle';
+  [codingStickerField, vehicleTodaField].forEach(field => field?.classList.toggle('d-none', !isPampasadaTricycle));
+  if (!isPampasadaTricycle && ticketForm) {
+    ticketForm.elements.coding_sticker_number.value = '';
+    ticketForm.elements.vehicle_toda.value = '';
+  }
+}
+
+function updateAutomaticOffenseNumber() {
+  const levels = Array.from(violationItems?.querySelectorAll('.violation-item-row') || [])
+    .map(row => Number(row.dataset.suggestedOffense || 1));
+  const level = Math.max(automaticOffenseFloor, Math.min(4, ...(levels.length ? levels : [1])));
+  if (offenseNumberInput) offenseNumberInput.value = String(level);
+  if (offenseNumberLabel) {
+    offenseNumberLabel.textContent = ({ 1: 'First offense', 2: 'Second offense', 3: 'Third offense', 4: 'Fourth offense' })[level] || 'First offense';
+  }
+}
+
+document.querySelectorAll('.add-existing-violator').forEach(function (button) {
+  button.addEventListener('click', function () {
+    const historyModal = button.closest('.modal');
+    const hasNoLicense = button.dataset.noLicense === '1';
+    const hasNoPlate = button.dataset.noPlate === '1';
+
+    driverNameInput.value = button.dataset.driver || '';
+    automaticOffenseFloor = Math.max(1, Math.min(4, Number(button.dataset.offenseLevel || 1)));
+    ticketForm.elements.driver_address.value = button.dataset.address || '';
+    ticketForm.elements.date_of_birth.value = button.dataset.birthDate || '';
+    noLicenseCheck.checked = hasNoLicense;
+    licenseNumberInput.value = hasNoLicense ? 'NO LICENSE' : (button.dataset.license || '');
+    ticketForm.elements.license_expiry_date.value = button.dataset.licenseExpiry || '';
+    syncLicenseFields();
+    noPlateCheck.checked = hasNoPlate;
+    plateNumberInput.disabled = hasNoPlate;
+    plateNumberInput.required = !hasNoPlate;
+    plateNumberInput.value = hasNoPlate ? 'NO PLATE' : (button.dataset.plate || '');
+    vehicleTypeInput.value = button.dataset.vehicle || '';
+    syncTricycleFields();
+    ticketForm.elements.vehicle_owner.value = button.dataset.owner || '';
+    ticketForm.elements.vehicle_registration_number.value = button.dataset.registration || '';
+    ticketForm.elements.vehicle_color.value = button.dataset.color || '';
+    violationLocationInput.value = '';
+
+    const rows = Array.from(violationItems.querySelectorAll('.violation-item-row'));
+    rows.slice(1).forEach(function (row) { row.remove(); });
+    const firstRow = rows[0];
+    firstRow.removeAttribute('data-no-license-auto');
+    firstRow.removeAttribute('data-suggested-offense');
+    firstRow.querySelector('select[name="violation_type[]"]').value = '';
+    firstRow.querySelector('input[name="penalty_amount[]"]').value = '';
+    firstRow.querySelector('input[name="penalty_amount[]"]').dataset.overridden = '0';
+    firstRow.querySelector('.offense-hint').textContent = 'Choose a violation to calculate its price.';
+    refreshViolationItemButtons();
+    updateAutomaticOffenseNumber();
+
+    const historyInstance = bootstrap.Modal.getOrCreateInstance(historyModal);
+    const addModal = document.getElementById('addViolationModal');
+    historyModal.addEventListener('hidden.bs.modal', function () {
+      bootstrap.Modal.getOrCreateInstance(addModal).show();
+    }, { once: true });
+    historyInstance.hide();
+  });
+});
+
 function refreshViolationItemButtons() {
   const rows = violationItems?.querySelectorAll('.violation-item-row') || [];
   rows.forEach(function (row) { row.querySelector('.remove-violation-item').disabled = rows.length === 1; });
 }
-document.getElementById('addViolationItem')?.addEventListener('click', function () {
+
+function addViolationRow(type = '') {
   const source = violationItems?.querySelector('.violation-item-row');
-  if (!source || !violationItems) return;
+  if (!source || !violationItems) return null;
   const clone = source.cloneNode(true);
-  clone.querySelectorAll('select').forEach(function (select) { select.value = ''; });
+  clone.removeAttribute('data-no-license-auto');
+  clone.removeAttribute('data-suggested-offense');
+  const typeSelect = clone.querySelector('select[name="violation_type[]"]');
+  const penaltyInput = clone.querySelector('input[name="penalty_amount[]"]');
+  const hint = clone.querySelector('.offense-hint');
+  typeSelect.value = type;
+  penaltyInput.value = '';
+  penaltyInput.dataset.overridden = '0';
+  hint.textContent = 'Choose a violation to calculate its price.';
   violationItems.appendChild(clone);
   refreshViolationItemButtons();
+  return clone;
+}
+
+async function suggestPenalty(row, force = false) {
+  const type = row?.querySelector('select[name="violation_type[]"]')?.value || '';
+  const penaltyInput = row?.querySelector('input[name="penalty_amount[]"]');
+  const hint = row?.querySelector('.offense-hint');
+  if (!penaltyInput || !hint) return;
+  if (!type) {
+    row.removeAttribute('data-suggested-offense');
+    updateAutomaticOffenseNumber();
+    if (force) penaltyInput.value = '';
+    hint.textContent = 'Choose a violation to calculate its price.';
+    return;
+  }
+  if (!force && penaltyInput.dataset.overridden === '1') return;
+
+  hint.textContent = 'Checking the driver\'s offense history...';
+  const requestedDriver = driverNameInput?.value.trim() || '';
+  const requestedLicense = noLicenseCheck?.checked ? '' : (licenseNumberInput?.value.trim() || '');
+  const requestedBirthDate = ticketForm?.elements.date_of_birth?.value || '';
+  const params = new URLSearchParams({
+    driver_name: requestedDriver,
+    license_number: requestedLicense,
+    date_of_birth: requestedBirthDate,
+    violation_type: type,
+  });
+  try {
+    const response = await fetch(`${offenseAnalysisUrl}?${params.toString()}`, { headers: { Accept: 'application/json' } });
+    const payload = await response.json();
+    if (!response.ok || !payload.success) throw new Error(payload.message || 'Unable to calculate price');
+    if (!row.isConnected || row.querySelector('select[name="violation_type[]"]')?.value !== type || (driverNameInput?.value.trim() || '') !== requestedDriver) return;
+    const analysis = payload.data;
+    row.dataset.suggestedOffense = String(analysis.suggested_offense || 1);
+    updateAutomaticOffenseNumber();
+    if (force || penaltyInput.dataset.overridden !== '1') {
+      penaltyInput.value = Number(analysis.suggested_penalty).toFixed(2);
+      penaltyInput.dataset.overridden = '0';
+    }
+    const repeatText = analysis.previous_offenses > 0
+      ? `${analysis.previous_offenses} matching previous offense(s)`
+      : 'first offense';
+    const matchText = analysis.matched_by ? ` via ${analysis.matched_by}` : '';
+    hint.textContent = `Offense #${analysis.suggested_offense} (${repeatText}${matchText}); suggested PHP ${Number(analysis.suggested_penalty).toLocaleString()}. Editable.`;
+  } catch (error) {
+    row.dataset.suggestedOffense = '1';
+    updateAutomaticOffenseNumber();
+    hint.textContent = 'Automatic pricing is unavailable; enter the amount manually.';
+  }
+}
+
+function ensureNoLicenseViolation() {
+  const rows = Array.from(violationItems?.querySelectorAll('.violation-item-row') || []);
+  const existing = rows.find(row => row.querySelector('select[name="violation_type[]"]')?.value === "No Driver's License");
+  if (existing) {
+    suggestPenalty(existing);
+    return;
+  }
+  let row = rows.find(item => !item.querySelector('select[name="violation_type[]"]')?.value);
+  if (!row) row = addViolationRow();
+  if (!row) return;
+  row.dataset.noLicenseAuto = '1';
+  row.querySelector('select[name="violation_type[]"]').value = "No Driver's License";
+  suggestPenalty(row, true);
+}
+
+noLicenseCheck?.addEventListener('change', function () {
+  syncLicenseFields();
+  if (this.checked) {
+    ensureNoLicenseViolation();
+    return;
+  }
+  const autoRow = Array.from(violationItems?.querySelectorAll('.violation-item-row') || [])
+    .find(row => row.querySelector('select[name="violation_type[]"]')?.value === "No Driver's License");
+  if (!autoRow) return;
+  const rows = violationItems.querySelectorAll('.violation-item-row');
+  if (rows.length > 1) autoRow.remove();
+  else {
+    autoRow.removeAttribute('data-no-license-auto');
+    autoRow.removeAttribute('data-suggested-offense');
+    autoRow.querySelector('select[name="violation_type[]"]').value = '';
+    autoRow.querySelector('input[name="penalty_amount[]"]').value = '';
+    autoRow.querySelector('.offense-hint').textContent = 'Choose a violation to calculate its price.';
+  }
+  refreshViolationItemButtons();
+  updateAutomaticOffenseNumber();
+});
+
+vehicleTypeInput?.addEventListener('change', syncTricycleFields);
+
+noPlateCheck?.addEventListener('change', function () {
+  plateNumberInput.disabled = this.checked;
+  plateNumberInput.required = !this.checked;
+  plateNumberInput.value = this.checked ? 'NO PLATE' : '';
+});
+
+document.getElementById('addViolationItem')?.addEventListener('click', function () {
+  addViolationRow();
+});
+violationItems?.addEventListener('change', function (event) {
+  const select = event.target.closest('select[name="violation_type[]"]');
+  if (!select) return;
+  const row = select.closest('.violation-item-row');
+  row.removeAttribute('data-suggested-offense');
+  updateAutomaticOffenseNumber();
+  const penaltyInput = row.querySelector('input[name="penalty_amount[]"]');
+  penaltyInput.dataset.overridden = '0';
+  if (select.value === "No Driver's License") {
+    noLicenseCheck.checked = true;
+    syncLicenseFields();
+  } else {
+    row.removeAttribute('data-no-license-auto');
+    const stillHasNoLicense = Array.from(violationItems.querySelectorAll('select[name="violation_type[]"]'))
+      .some(item => item.value === "No Driver's License");
+    if (!stillHasNoLicense && noLicenseCheck.checked) {
+      noLicenseCheck.checked = false;
+      syncLicenseFields();
+    }
+  }
+  suggestPenalty(row, true);
+});
+violationItems?.addEventListener('input', function (event) {
+  const input = event.target.closest('input[name="penalty_amount[]"]');
+  if (input) input.dataset.overridden = '1';
 });
 violationItems?.addEventListener('click', function (event) {
   const button = event.target.closest('.remove-violation-item');
   if (!button || button.disabled) return;
-  button.closest('.violation-item-row')?.remove();
+  const row = button.closest('.violation-item-row');
+  const removedNoLicense = row?.querySelector('select[name="violation_type[]"]')?.value === "No Driver's License";
+  row?.remove();
+  updateAutomaticOffenseNumber();
+  if (removedNoLicense && noLicenseCheck?.checked) {
+    noLicenseCheck.checked = false;
+    syncLicenseFields();
+  }
   refreshViolationItemButtons();
+});
+function scheduleOffenseAnalysis() {
+  window.clearTimeout(driverAnalysisTimer);
+  driverAnalysisTimer = window.setTimeout(function () {
+    violationItems?.querySelectorAll('.violation-item-row').forEach(function (row) { suggestPenalty(row); });
+  }, 400);
+}
+driverNameInput?.addEventListener('input', scheduleOffenseAnalysis);
+licenseNumberInput?.addEventListener('input', scheduleOffenseAnalysis);
+ticketForm?.elements.date_of_birth?.addEventListener('change', scheduleOffenseAnalysis);
+noLicenseCheck?.addEventListener('change', scheduleOffenseAnalysis);
+refreshViolationItemButtons();
+updateAutomaticOffenseNumber();
+syncLicenseFields();
+syncTricycleFields();
+
+document.getElementById('addViolationModal')?.addEventListener('hidden.bs.modal', function () {
+  automaticOffenseFloor = 1;
+  updateAutomaticOffenseNumber();
 });
 </script>
 <?php page_end(); ?>

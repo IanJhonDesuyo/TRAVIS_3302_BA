@@ -92,6 +92,13 @@
   const sidebar = document.getElementById('sidebar');
   const backdrop = document.getElementById('backdrop');
   if (toggle && sidebar && backdrop) {
+    const closeMobileSidebar = () => {
+      sidebar.classList.remove('show');
+      backdrop.classList.remove('show');
+      document.body.classList.remove('sidebar-menu-open');
+      toggle.setAttribute('aria-expanded', 'false');
+    };
+
     toggle.addEventListener('click', () => {
       if (window.innerWidth >= 992) {
         document.body.classList.toggle('sidebar-collapsed');
@@ -101,17 +108,45 @@
       } else {
         sidebar.classList.toggle('show');
         backdrop.classList.toggle('show');
-        toggle.setAttribute('aria-expanded', sidebar.classList.contains('show') ? 'true' : 'false');
+        const open = sidebar.classList.contains('show');
+        document.body.classList.toggle('sidebar-menu-open', open);
+        toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
       }
     });
     backdrop.addEventListener('click', () => {
-      sidebar.classList.remove('show');
-      backdrop.classList.remove('show');
-      toggle.setAttribute('aria-expanded', 'false');
+      closeMobileSidebar();
+    });
+
+    sidebar.querySelectorAll('.nav-link').forEach(link => {
+      link.addEventListener('click', () => {
+        if (window.innerWidth < 992) closeMobileSidebar();
+      });
+    });
+
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && sidebar.classList.contains('show')) {
+        closeMobileSidebar();
+        toggle.focus();
+      }
+    });
+
+    let desktopSidebar = window.innerWidth >= 992;
+    window.addEventListener('resize', () => {
+      const isDesktop = window.innerWidth >= 992;
+      if (isDesktop !== desktopSidebar) {
+        desktopSidebar = isDesktop;
+        closeMobileSidebar();
+        if (isDesktop) {
+          const collapsed = document.body.classList.contains('sidebar-collapsed');
+          toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+        }
+      }
     });
 
     if (window.innerWidth >= 992 && localStorage.getItem('travisSidebarCollapsed') === '1') {
       document.body.classList.add('sidebar-collapsed');
+      toggle.setAttribute('aria-expanded', 'false');
+    } else if (window.innerWidth < 992) {
       toggle.setAttribute('aria-expanded', 'false');
     }
   }

@@ -33,8 +33,12 @@ function portal_redirect_for_role(string $role, string $email = ''): string
     return '../Admin/dashboard.php';
 }
 
+$error = (string)($_SESSION['login_error'] ?? '');
+unset($_SESSION['login_error']);
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     require_once __DIR__ . '/../Admin/db_connect.php';
+    require_once __DIR__ . '/audit.php';
 
     $email = trim((string)($_POST['identifier'] ?? ''));
     $password = (string)($_POST['password'] ?? '');
@@ -70,14 +74,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         && password_verify($password, (string)$user['password']);
 
     if (!$isValid) {
+        $accept = strtolower((string)($_SERVER['HTTP_ACCEPT'] ?? ''));
+        $isAjax = strtolower((string)($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '')) === 'xmlhttprequest';
+        if (!$isAjax && !str_contains($accept, 'application/json')) {
+            $_SESSION['login_error'] = 'Incorrect email or password.';
+            header('Location: index.php');
+            exit;
+        }
+
         respond_json([
             'success' => false,
-            'message' => 'Invalid credentials. Please verify your account details or contact the TRAVIS administrator.',
+            'message' => 'Incorrect email or password.',
         ], 401);
     }
 
     travis_login_user($user);
     $_SESSION['login_success'] = true;
+    travis_audit_log($conn, 'login', 'authentication', 'User signed in successfully.', 'success', 'user', (int)$user['user_id'], $_SESSION['user']);
 
     if ($remember) {
         $params = session_get_cookie_params();
@@ -330,54 +343,6 @@ body::before {
     transform: translateY(-2px);
 }
 
-/* Card Header - Mac style */
-.login-card-header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 16px 28px;
-    background: rgba(255, 255, 255, 0.04);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.login-card-header .dot {
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    transition: all 0.2s ease;
-}
-
-.login-card-header .dot.red { 
-    background: #ff5f57;
-    box-shadow: inset 0 1px 2px rgba(0,0,0,0.1);
-}
-.login-card-header .dot.yellow { 
-    background: #febc2e;
-    box-shadow: inset 0 1px 2px rgba(0,0,0,0.1);
-}
-.login-card-header .dot.green { 
-    background: #28c840;
-    box-shadow: inset 0 1px 2px rgba(0,0,0,0.1);
-}
-
-.login-card-header .live {
-    margin-left: auto;
-    font-size: 0.6rem;
-    letter-spacing: 0.1em;
-    color: rgba(255, 255, 255, 0.7);
-    text-transform: uppercase;
-    font-weight: 700;
-    background: rgba(255, 255, 255, 0.06);
-    padding: 4px 14px;
-    border-radius: 999px;
-    border: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.login-card-header .live i {
-    color: #28c840;
-    font-size: 0.55rem;
-}
-
 /* Card Body */
 .login-card-body {
     padding: 42px 44px 44px;
@@ -465,16 +430,17 @@ body::before {
     left: 16px;
     top: 50%;
     transform: translateY(-50%);
-    color: rgba(255, 255, 255, 0.35);
+    color: #526b7a;
     font-size: 1rem;
+    z-index: 2;
     pointer-events: none;
     transition: color 0.3s ease;
 }
 
 .login-card .form-control {
-    background: rgba(255, 255, 255, 0.07);
+    background: #eef4ff;
     border: 2px solid #1a2350;
-    color: #ffffff;
+    color: #17243d;
     border-radius: 14px;
     padding: 0.8rem 1rem 0.8rem 2.8rem;
     font-size: 0.95rem;
@@ -484,19 +450,27 @@ body::before {
 }
 
 .login-card .form-control::placeholder {
-    color: rgba(255, 255, 255, 0.30);
+    color: #78889a;
     font-weight: 400;
 }
 
 .login-card .form-control:focus {
-    background: rgba(255, 255, 255, 0.11);
+    background: #ffffff;
     border-color: #3a4a9a;
     box-shadow: 0 0 0 4px rgba(26, 35, 80, 0.25);
-    color: #ffffff;
+    color: #17243d;
 }
 
-.login-card .form-control:focus ~ .field-icon {
-    color: rgba(255, 255, 255, 0.8);
+.input-icon-group:focus-within .field-icon {
+    color: #1a2350;
+}
+
+.login-card .form-control:-webkit-autofill,
+.login-card .form-control:-webkit-autofill:hover,
+.login-card .form-control:-webkit-autofill:focus {
+    -webkit-text-fill-color: #17243d;
+    -webkit-box-shadow: 0 0 0 1000px #eef4ff inset;
+    caret-color: #17243d;
 }
 
 .input-icon-group .toggle-visibility {
@@ -507,15 +481,16 @@ body::before {
     background: none;
     border: none;
     padding: 0;
-    color: rgba(255, 255, 255, 0.35);
+    color: #526b7a;
     font-size: 1.1rem;
     cursor: pointer;
     line-height: 1;
+    z-index: 2;
     transition: color 0.3s ease;
 }
 
 .input-icon-group .toggle-visibility:hover {
-    color: rgba(255, 255, 255, 0.8);
+    color: #1a2350;
 }
 
 .login-card input[type="password"],
@@ -614,6 +589,54 @@ a.forgot-link:hover::after {
     box-shadow: 0 8px 25px rgba(26, 35, 80, 0.20);
 }
 
+.user-agreement-note {
+    margin: 14px 0 0;
+    color: rgba(255, 255, 255, 0.58);
+    font-size: 0.7rem;
+    line-height: 1.6;
+    text-align: center;
+}
+
+.user-agreement-link {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.88);
+    font: inherit;
+    font-weight: 700;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+.user-agreement-link:hover { color: #fff; }
+
+.agreement-dialog {
+    position: fixed;
+    inset: 0;
+    width: min(520px, calc(100% - 32px));
+    max-height: calc(100dvh - 32px);
+    margin: auto;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.24);
+    border-radius: 20px;
+    color: #17324a;
+    background: #f7f9fc;
+    box-shadow: 0 30px 90px rgba(5, 18, 34, 0.42);
+    overflow-y: auto;
+}
+
+.agreement-dialog::backdrop {
+    background: rgba(5, 18, 34, 0.68);
+    backdrop-filter: blur(5px);
+}
+
+.agreement-dialog-content { padding: 26px; }
+.agreement-dialog h3 { margin: 0 0 8px; font-size: 1.25rem; font-weight: 800; }
+.agreement-dialog p,
+.agreement-dialog li { font-size: 0.8rem; line-height: 1.65; }
+.agreement-dialog ul { margin: 14px 0 20px; padding-left: 20px; }
+.agreement-dialog-close { min-width: 110px; }
+
 /* Divider */
 hr {
     border: none;
@@ -668,7 +691,6 @@ hr {
     .login-card h2 { font-size: 1.5rem; }
     .auth-seal { width: 56px; height: 56px; }
     .logo-holder { gap: 12px; }
-    .login-card-header { padding: 12px 18px; }
 }
 
 /* Production mobile browser layout */
@@ -705,7 +727,6 @@ hr {
         box-shadow: 0 24px 65px rgba(6, 23, 38, .28);
     }
     .login-card:hover { transform: none; }
-    .login-card-header { min-height: 48px; }
     .login-card-body { overflow: visible; }
     .login-card .form-control {
         min-height: 52px;
@@ -724,8 +745,6 @@ hr {
     body { padding-right: 0; padding-left: 0; }
     .login-wrapper { padding-right: 10px; padding-left: 10px; }
     .login-card { border-radius: 20px; }
-    .login-card-header { padding: 10px 14px; }
-    .login-card-header .live { font-size: .58rem; }
     .login-card-body { padding: 22px 17px 24px; }
     .logo-holder { margin-bottom: 1.15rem; }
     .auth-seal { width: 50px; height: 50px; }
@@ -745,7 +764,6 @@ hr {
     .login-wrapper { padding-right: 7px; padding-left: 7px; }
     .login-card-body { padding-right: 14px; padding-left: 14px; }
     .auth-agency small { display: none; }
-    .login-card-header .dot { width: 9px; height: 9px; }
 }
 
 @media (max-height: 700px) and (max-width: 991.98px) {
@@ -809,13 +827,6 @@ hr {
 
 <div class="login-card">
 
-    <div class="login-card-header">
-        <span class="dot red"></span>
-        <span class="dot yellow"></span>
-        <span class="dot green"></span>
-        <span class="live"><i class="bi bi-record-fill me-1"></i> Live &bull; Nasugbu</span>
-    </div>
-
     <div class="login-card-body">
         <div class="logo-holder">
             <img class="auth-seal" src="../../assets/images/nasugbu-seal.jpg" alt="Municipality of Nasugbu Seal">
@@ -862,6 +873,11 @@ hr {
             <button class="btn btn-signin w-100 py-2">
                 <i class="bi bi-box-arrow-in-right me-2"></i>Sign In
             </button>
+
+            <p class="user-agreement-note">
+                By signing in, you agree to the
+                <button class="user-agreement-link" type="button" id="openUserAgreement">User Agreement</button>.
+            </p>
         </form>
 
         <hr>
@@ -881,6 +897,21 @@ hr {
 </div>
 </div>
 
+<dialog class="agreement-dialog" id="userAgreementDialog" aria-labelledby="userAgreementTitle">
+    <div class="agreement-dialog-content">
+        <h3 id="userAgreementTitle">User Agreement</h3>
+        <p>By accessing TRAVIS, you acknowledge and agree that:</p>
+        <ul>
+            <li>This system is restricted to authorized personnel and approved official use.</li>
+            <li>You are responsible for protecting your account credentials and activity performed through your account.</li>
+            <li>Traffic, surveillance, and personal information must be handled only for legitimate operational purposes.</li>
+            <li>System activity may be recorded and reviewed for security, auditing, and compliance.</li>
+            <li>Unauthorized access, disclosure, alteration, or misuse of system data is prohibited.</li>
+        </ul>
+        <button class="btn btn-signin agreement-dialog-close" type="button" id="closeUserAgreement">I Understand</button>
+    </div>
+</dialog>
+
 <script>
 document.getElementById('togglePassword').addEventListener('click', function () {
     var field = document.getElementById('passwordField');
@@ -890,6 +921,17 @@ document.getElementById('togglePassword').addEventListener('click', function () 
     icon.classList.toggle('bi-eye');
     icon.classList.toggle('bi-eye-slash');
     this.setAttribute('aria-label', isPassword ? 'Hide password' : 'Show password');
+});
+
+var agreementDialog = document.getElementById('userAgreementDialog');
+document.getElementById('openUserAgreement').addEventListener('click', function () {
+    agreementDialog.showModal();
+});
+document.getElementById('closeUserAgreement').addEventListener('click', function () {
+    agreementDialog.close();
+});
+agreementDialog.addEventListener('click', function (event) {
+    if (event.target === agreementDialog) agreementDialog.close();
 });
 
 (function updateActiveCameraCount() {

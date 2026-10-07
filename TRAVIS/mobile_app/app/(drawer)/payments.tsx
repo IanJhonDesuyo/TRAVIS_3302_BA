@@ -1,6 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import {
-  SafeAreaView,
   ScrollView,
   View,
   Text,
@@ -15,11 +14,11 @@ import {
   FlatList,
   Platform,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect } from 'expo-router/react-navigation';
 import api from '../../api/axiosConfig';
-import * as Print from 'expo-print';
 
 // ========== COLOR TOKENS ==========
 const COLORS = {
@@ -59,6 +58,7 @@ interface Violation {
 interface Payment {
   payment_id: number;
   receipt_reference?: string;
+  official_receipt_number?: string;
   ticket_number: string;
   driver_name: string;
   plate_number: string;
@@ -72,6 +72,7 @@ interface Payment {
 
 // ========== HELPERS ==========
 const formatCurrency = (amount: number): string => `\u20b1${amount.toLocaleString()}`;
+const safeText = (value: unknown): string => value == null ? '' : String(value);
 const shortCurrency = (amount: number): string => {
   if (amount >= 1_000_000) return `\u20b1${(amount / 1_000_000).toFixed(1)}M`;
   if (amount >= 1_000) return `\u20b1${(amount / 1_000).toFixed(1)}K`;
@@ -118,10 +119,11 @@ export default function PaymentsScreen() {
   const [paymentSearch, setPaymentSearch] = useState('');
   const [selectedViolation, setSelectedViolation] = useState<Violation | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
+  const [confirmVisible, setConfirmVisible] = useState(false);
   const [processing, setProcessing] = useState(false);
+  const [officialReceiptNumber, setOfficialReceiptNumber] = useState('');
   const [handledPaymentLink, setHandledPaymentLink] = useState<string | null>(null);
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
-  const [printingReceipt, setPrintingReceipt] = useState(false);
 
   useEffect(() => {
     if (!violation_id || handledPaymentLink === violation_id || pendingViolations.length === 0) return;
@@ -129,6 +131,7 @@ export default function PaymentsScreen() {
     setHandledPaymentLink(violation_id);
     if (violation) {
       setSelectedViolation(violation);
+      setOfficialReceiptNumber('');
       setModalVisible(true);
     } else {
       Alert.alert('Payment unavailable', 'This violation is no longer pending or overdue.');
@@ -144,12 +147,43 @@ export default function PaymentsScreen() {
         params: { status: 'pending,overdue', limit: 100 },
       });
       if (pendingRes.data.success) {
-        setPendingViolations(pendingRes.data.data);
+        const records = Array.isArray(pendingRes.data.data) ? pendingRes.data.data : [];
+        setPendingViolations(records.map((item: any) => ({
+          ...item,
+          violation_id: Number(item.violation_id || 0),
+          ticket_number: safeText(item.ticket_number),
+          driver_name: safeText(item.driver_name) || 'Unknown driver',
+          license_number: safeText(item.license_number),
+          plate_number: safeText(item.plate_number),
+          vehicle_type: safeText(item.vehicle_type),
+          violation_type: safeText(item.violation_type) || 'Unspecified violation',
+          violation_location: safeText(item.violation_location),
+          violation_date: safeText(item.violation_date),
+          violation_time: safeText(item.violation_time),
+          penalty_amount: Number.isFinite(Number(item.penalty_amount)) ? Number(item.penalty_amount) : 0,
+          status: safeText(item.status).toLowerCase() || 'pending',
+          created_at: safeText(item.created_at),
+        })));
       }
 
       const paymentsRes = await api.get('get_payments.php');
       if (paymentsRes.data.success) {
-        setPayments(paymentsRes.data.data);
+        const records = Array.isArray(paymentsRes.data.data) ? paymentsRes.data.data : [];
+        setPayments(records.map((item: any) => ({
+          ...item,
+          payment_id: Number(item.payment_id || 0),
+          receipt_reference: safeText(item.receipt_reference),
+          official_receipt_number: safeText(item.official_receipt_number),
+          ticket_number: safeText(item.ticket_number),
+          driver_name: safeText(item.driver_name) || 'Unknown driver',
+          plate_number: safeText(item.plate_number),
+          violation_type: safeText(item.violation_type) || 'Unspecified violation',
+          amount_paid: Number.isFinite(Number(item.amount_paid)) ? Number(item.amount_paid) : 0,
+          payment_method: safeText(item.payment_method),
+          payment_status: safeText(item.payment_status).toLowerCase() || 'pending',
+          payment_date: safeText(item.payment_date),
+          received_by_name: safeText(item.received_by_name) || null,
+        })));
       }
 
       const statsRes = await api.get('get_dashboard_stats.php');
@@ -163,9 +197,12 @@ export default function PaymentsScreen() {
           pendingAmount: d.pending_amount || 0,
         });
       }
-    } catch (error) {
-      console.error('Payments fetch error:', error);
-      Alert.alert('Error', 'Failed to load payment data.');
+    } catch (error: any) {
+      console.warn('Payments request failed:', error.response?.status, error.message);
+      Alert.alert(
+        'Unable to load payment data',
+        error.response?.data?.error || error.response?.data?.message || error.message || 'Check the server connection and try again.'
+      );
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -186,17 +223,25 @@ export default function PaymentsScreen() {
   // ===== PROCESS PAYMENT =====
   const handlePaymentConfirm = async () => {
     if (!selectedViolation) return;
+    const normalizedReceipt = officialReceiptNumber.trim().toUpperCase();
+    if (!normalizedReceipt) {
+      Alert.alert('Official receipt required', 'Enter the Treasurer-issued official receipt number.');
+      return;
+    }
     setProcessing(true);
     try {
       const response = await api.post('process_payment.php', {
         violation_id: selectedViolation.violation_id,
         amount_paid: selectedViolation.penalty_amount,
         payment_method: 'cash',
+        official_receipt_number: normalizedReceipt,
       });
       if (response.data.success) {
         Alert.alert('Success', `Payment for ${selectedViolation.ticket_number} recorded.`);
         setModalVisible(false);
+        setConfirmVisible(false);
         setSelectedViolation(null);
+        setOfficialReceiptNumber('');
         fetchData();
       } else {
         Alert.alert('Error', response.data.error || 'Payment failed.');
@@ -206,24 +251,6 @@ export default function PaymentsScreen() {
     } finally {
       setProcessing(false);
     }
-  };
-
-  const printReceipt = async () => {
-    if (!selectedPayment) return;
-    const payment = selectedPayment;
-    const reference = payment.receipt_reference || `PAY-${String(payment.payment_id).padStart(6, '0')}`;
-    const safe = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[character] || character));
-    const details = [
-      ['Ticket Number', payment.ticket_number], ['Driver', payment.driver_name], ['Plate Number', payment.plate_number],
-      ['Violation', payment.violation_type], ['Payment Method', methodLabel(payment.payment_method)],
-      ['Payment Date', payment.payment_date], ['Collecting Officer', payment.received_by_name || 'Not recorded'],
-    ];
-    const rows = details.map(([label, value]) => `<div class="row"><span>${safe(label)}</span><b>${safe(value)}</b></div>`).join('');
-    const html = `<!doctype html><html><head><meta charset="utf-8"><style>@page{size:A5 portrait;margin:14mm}body{font-family:Arial,sans-serif;color:#10202c;margin:0}.head{text-align:center;border-bottom:2px solid #102f49;padding-bottom:12px}.republic{font:10px Georgia,serif;letter-spacing:.1em}.head h1{font:700 20px Georgia,serif;color:#102f49;margin:4px}.head p{font-size:10px;margin:2px;color:#526b64}.title{text-align:center;margin:18px 0}.title strong{display:block;color:#087d78;letter-spacing:.08em}.title span{display:block;font-size:17px;font-weight:700;margin-top:5px}.row{display:flex;justify-content:space-between;gap:18px;padding:9px 0;border-bottom:1px solid #dce5e2;font-size:11px}.row b{text-align:right}.total{display:flex;justify-content:space-between;background:#102f49;color:#fff;padding:14px;border-radius:10px;margin-top:16px;font-weight:700}.note{text-align:center;color:#526b64;font-size:9px;line-height:1.5;margin-top:16px}.signatures{display:grid;grid-template-columns:1fr 1fr;gap:35px;margin-top:38px}.signature{text-align:center;border-top:1px solid #10202c;padding-top:5px;font-size:9px}</style></head><body><div class="head"><div class="republic">REPUBLIC OF THE PHILIPPINES</div><h1>Municipality of Nasugbu</h1><p>Municipal Treasurer's Office · Traffic Management Office</p></div><div class="title"><strong>OFFICIAL PAYMENT RECEIPT</strong><span>${safe(reference)}</span></div>${rows}<div class="total"><span>TOTAL AMOUNT PAID</span><span>&#8369;${Number(payment.amount_paid).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div><p class="note">Payment received in settlement of the traffic violation stated above. This receipt is subject to verification in the official TRAVIS payment ledger.</p><div class="signatures"><div class="signature">Collecting Officer / Date</div><div class="signature">Payor / Date</div></div></body></html>`;
-    setPrintingReceipt(true);
-    try { await Print.printAsync({ html }); }
-    catch { Alert.alert('Print unavailable', 'The receipt could not be sent to the system print service.'); }
-    finally { setPrintingReceipt(false); }
   };
 
   // ===== FILTERS =====
@@ -279,7 +306,7 @@ export default function PaymentsScreen() {
         <Text style={styles.penalty}>{formatCurrency(item.penalty_amount)}</Text>
         <TouchableOpacity
           style={styles.processButton}
-          onPress={() => { setSelectedViolation(item); setModalVisible(true); }}
+          onPress={() => { setSelectedViolation(item); setOfficialReceiptNumber(''); setModalVisible(true); }}
           activeOpacity={0.8}
         >
           <Text style={styles.processButtonText}>Process Payment</Text>
@@ -484,7 +511,17 @@ export default function PaymentsScreen() {
                     <Text style={[styles.methodOptionText, styles.methodOptionTextActive]}>Cash</Text>
                     <Ionicons name="checkmark-circle" size={17} color={COLORS.success} style={{ marginLeft: 'auto' }} />
                   </View>
-                  <Text style={styles.modalNote}>A payment reference will be generated from the saved payment ID.</Text>
+                  <Text style={[styles.modalFormLabel, { marginTop: 16 }]}>Official Receipt Number</Text>
+                  <TextInput
+                    style={styles.receiptInput}
+                    placeholder="Enter Treasurer-issued OR number"
+                    placeholderTextColor={COLORS.textTertiary}
+                    value={officialReceiptNumber}
+                    onChangeText={setOfficialReceiptNumber}
+                    autoCapitalize="characters"
+                    maxLength={120}
+                  />
+                  <Text style={styles.modalNote}>Must match the printed official receipt. Duplicate OR numbers are not allowed.</Text>
                 </View>
 
                 <View style={styles.modalActions}>
@@ -497,7 +534,13 @@ export default function PaymentsScreen() {
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.confirmModalButton}
-                    onPress={handlePaymentConfirm}
+                    onPress={() => {
+                      if (!officialReceiptNumber.trim()) {
+                        Alert.alert('Official receipt required', 'Enter the official receipt number before continuing.');
+                        return;
+                      }
+                      setModalVisible(false); setConfirmVisible(true);
+                    }}
                     disabled={processing}
                   >
                     {processing ? (
@@ -512,6 +555,35 @@ export default function PaymentsScreen() {
           </View>
         </View>
       </Modal>
+      <Modal animationType="fade" transparent visible={confirmVisible} onRequestClose={() => { setConfirmVisible(false); setModalVisible(true); }}>
+        <View style={styles.confirmOverlay}>
+          <View style={styles.confirmCard} accessibilityRole="alert">
+            <View style={styles.confirmAccent} />
+            <TouchableOpacity style={styles.confirmClose} onPress={() => { setConfirmVisible(false); setModalVisible(true); }} disabled={processing} accessibilityLabel="Close confirmation">
+              <Ionicons name="close" size={20} color={COLORS.textTertiary} />
+            </TouchableOpacity>
+            <View style={styles.confirmBody}>
+              <View style={styles.confirmIcon}><Ionicons name="cash-outline" size={25} color={COLORS.primary} /></View>
+              <Text style={styles.confirmEyebrow}>PAYMENT VERIFICATION</Text>
+              <Text style={styles.confirmTitle}>Confirm cash payment?</Text>
+              <Text style={styles.confirmCopy}>Review the transaction before recording it. A completed payment cannot be recorded again for this violation.</Text>
+              {selectedViolation && <View style={styles.confirmSummary}>
+                <View style={styles.confirmRow}><Text style={styles.confirmLabel}>Ticket number</Text><Text style={[styles.confirmValue, { fontFamily: mono }]}>{selectedViolation.ticket_number}</Text></View>
+                <View style={styles.confirmRow}><Text style={styles.confirmLabel}>Payment method</Text><View style={styles.confirmCash}><Ionicons name="cash-outline" size={14} color={COLORS.success} /><Text style={styles.confirmValue}>Cash</Text></View></View>
+                <View style={styles.confirmRow}><Text style={styles.confirmLabel}>Official receipt no.</Text><Text style={styles.confirmValue}>{officialReceiptNumber.trim().toUpperCase()}</Text></View>
+                <View style={[styles.confirmRow, styles.confirmTotalRow]}><Text style={styles.confirmLabel}>Amount to collect</Text><Text style={styles.confirmTotal}>{formatCurrency(selectedViolation.penalty_amount)}</Text></View>
+              </View>}
+              <View style={styles.confirmActions}>
+                <TouchableOpacity style={styles.confirmCancel} onPress={() => { setConfirmVisible(false); setModalVisible(true); }} disabled={processing}><Text style={styles.confirmCancelText}>Cancel</Text></TouchableOpacity>
+                <TouchableOpacity style={styles.confirmSubmit} onPress={handlePaymentConfirm} disabled={processing}>
+                  {processing ? <ActivityIndicator size="small" color="#FFF" /> : <><Ionicons name="checkmark-circle-outline" size={17} color="#FFF" /><Text style={styles.confirmSubmitText}>Record Payment</Text></>}
+                </TouchableOpacity>
+              </View>
+              <View style={styles.confirmNote}><Ionicons name="shield-checkmark-outline" size={13} color={COLORS.textTertiary} /><Text style={styles.confirmNoteText}>The payment will be saved to the official TRAVIS ledger.</Text></View>
+            </View>
+          </View>
+        </View>
+      </Modal>
       <Modal animationType="slide" transparent visible={!!selectedPayment} onRequestClose={() => setSelectedPayment(null)}>
         <View style={styles.modalOverlay}>
           <View style={styles.receiptSheet}>
@@ -520,10 +592,9 @@ export default function PaymentsScreen() {
               <TouchableOpacity onPress={() => setSelectedPayment(null)}><Ionicons name="close" size={22} color={COLORS.textTertiary} /></TouchableOpacity>
             </View>
             {selectedPayment && <ScrollView contentContainerStyle={styles.receiptBody}>
-              {[['Ticket Number', selectedPayment.ticket_number], ['Driver', selectedPayment.driver_name], ['Plate Number', selectedPayment.plate_number], ['Violation', selectedPayment.violation_type], ['Payment Method', methodLabel(selectedPayment.payment_method)], ['Payment Date', selectedPayment.payment_date], ['Collecting Officer', selectedPayment.received_by_name || 'Not recorded']].map(([label, value]) => <View key={label} style={styles.receiptRow}><Text style={styles.receiptLabel}>{label}</Text><Text style={styles.receiptValue}>{value}</Text></View>)}
+              {[['Official Receipt Number', selectedPayment.official_receipt_number || 'Legacy record'], ['Ticket Number', selectedPayment.ticket_number], ['Driver', selectedPayment.driver_name], ['Plate Number', selectedPayment.plate_number], ['Violation', selectedPayment.violation_type], ['Payment Method', methodLabel(selectedPayment.payment_method)], ['Payment Date', selectedPayment.payment_date], ['Collecting Officer', selectedPayment.received_by_name || 'Not recorded']].map(([label, value]) => <View key={label} style={styles.receiptRow}><Text style={styles.receiptLabel}>{label}</Text><Text style={styles.receiptValue}>{value}</Text></View>)}
               <View style={styles.receiptTotal}><Text style={styles.receiptTotalLabel}>TOTAL AMOUNT PAID</Text><Text style={styles.receiptTotalValue}>{formatCurrency(selectedPayment.amount_paid)}</Text></View>
               <Text style={styles.receiptNote}>This receipt is subject to verification in the official TRAVIS payment ledger.</Text>
-              <TouchableOpacity style={styles.printReceiptButton} onPress={printReceipt} disabled={printingReceipt}>{printingReceipt ? <ActivityIndicator color="#FFF" /> : <Ionicons name="print-outline" size={18} color="#FFF" />}<Text style={styles.printReceiptText}>Print Receipt</Text></TouchableOpacity>
             </ScrollView>}
           </View>
         </View>
@@ -601,7 +672,7 @@ const styles = StyleSheet.create({
   locationDate: { fontSize: 11, color: COLORS.textTertiary },
   itemDivider: { height: 1, backgroundColor: COLORS.border, marginVertical: 10 },
   pendingFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  penalty: { fontSize: 16, fontWeight: '700', color: COLORS.textPrimary, fontFamily: mono },
+  penalty: { fontSize: 16, fontWeight: '700', color: COLORS.textPrimary },
   processButton: { backgroundColor: COLORS.primary, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 20 },
   processButtonText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
 
@@ -616,7 +687,7 @@ const styles = StyleSheet.create({
   paymentFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   paymentMethodRow: { flexDirection: 'row', alignItems: 'center' },
   methodText: { fontSize: 12, color: COLORS.textSecondary, marginLeft: 6 },
-  paymentAmount: { fontSize: 15, fontWeight: '700', color: COLORS.textPrimary, fontFamily: mono },
+  paymentAmount: { fontSize: 15, fontWeight: '700', color: COLORS.textPrimary },
   paymentMeta: { fontSize: 11, color: COLORS.textTertiary, marginTop: 8 },
   receiptButton: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 5, borderWidth: 1, borderColor: COLORS.border, borderRadius: 9, paddingHorizontal: 10, paddingVertical: 7, marginTop: 10 },
   receiptButtonText: { color: COLORS.primary, fontSize: 11, fontWeight: '800' },
@@ -634,8 +705,6 @@ const styles = StyleSheet.create({
   receiptTotalLabel: { color: '#C5D5E0', fontSize: 10, fontWeight: '800' },
   receiptTotalValue: { color: '#FFF', fontSize: 18, fontWeight: '900' },
   receiptNote: { color: COLORS.textTertiary, fontSize: 10, lineHeight: 15, textAlign: 'center', marginVertical: 14 },
-  printReceiptButton: { height: 46, backgroundColor: COLORS.primary, borderRadius: 11, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
-  printReceiptText: { color: '#FFF', fontWeight: '900', fontSize: 12 },
   modalContent: { backgroundColor: COLORS.surface, borderRadius: 22, width: '92%', maxHeight: '85%', borderWidth: 1, borderColor: COLORS.border, overflow: 'hidden' },
   modalHeader: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
@@ -652,7 +721,7 @@ const styles = StyleSheet.create({
   },
   modalDetailLabel: { fontSize: 12, color: COLORS.textTertiary },
   modalDetailValue: { fontSize: 13, fontWeight: '600', color: COLORS.textPrimary, textAlign: 'right', flex: 1, marginLeft: 12 },
-  modalPenalty: { fontSize: 16, fontWeight: '700', fontFamily: mono },
+  modalPenalty: { fontSize: 16, fontWeight: '700' },
 
   modalForm: { marginBottom: 8 },
   modalFormLabel: { fontSize: 13, fontWeight: '600', color: COLORS.textPrimary, marginBottom: 10 },
@@ -665,6 +734,7 @@ const styles = StyleSheet.create({
   methodOptionActive: { backgroundColor: COLORS.primary + '14', borderColor: COLORS.primary },
   methodOptionText: { fontSize: 12, fontWeight: '600', color: COLORS.textSecondary, marginLeft: 6 },
   methodOptionTextActive: { color: COLORS.primary },
+  receiptInput: { borderWidth: 1, borderColor: COLORS.border, borderRadius: 10, backgroundColor: COLORS.surface, color: COLORS.textPrimary, paddingHorizontal: 12, paddingVertical: 11, fontSize: 13 },
   modalNote: { fontSize: 11, color: COLORS.textTertiary, marginTop: 10, fontStyle: 'italic' },
 
   modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 8, paddingBottom: 4 },
@@ -678,4 +748,27 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
   },
   confirmModalButtonText: { fontSize: 13, fontWeight: '700', color: '#FFFFFF' },
+  confirmOverlay: { flex: 1, backgroundColor: 'rgba(15,23,42,.68)', justifyContent: 'center', alignItems: 'center', padding: 18 },
+  confirmCard: { width: '100%', maxWidth: 460, overflow: 'hidden', borderRadius: 22, borderWidth: 1, borderColor: COLORS.primary + '40', backgroundColor: COLORS.surface, ...softShadow },
+  confirmAccent: { height: 6, backgroundColor: COLORS.primary },
+  confirmClose: { position: 'absolute', right: 14, top: 18, zIndex: 2, width: 32, height: 32, borderRadius: 9, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.bg },
+  confirmBody: { padding: 22 },
+  confirmIcon: { width: 50, height: 50, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.primary + '16', marginBottom: 14 },
+  confirmEyebrow: { color: COLORS.primary, fontSize: 10, fontWeight: '900', letterSpacing: 1.2, marginBottom: 5 },
+  confirmTitle: { color: COLORS.textPrimary, fontSize: 20, fontWeight: '800', marginBottom: 7 },
+  confirmCopy: { color: COLORS.textSecondary, fontSize: 12, lineHeight: 18, marginBottom: 16 },
+  confirmSummary: { overflow: 'hidden', borderWidth: 1, borderColor: COLORS.border, borderRadius: 14, backgroundColor: COLORS.bg },
+  confirmRow: { minHeight: 45, paddingHorizontal: 13, paddingVertical: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  confirmLabel: { color: COLORS.textTertiary, fontSize: 11 },
+  confirmValue: { color: COLORS.textPrimary, fontSize: 12, fontWeight: '800', textAlign: 'right' },
+  confirmCash: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  confirmTotalRow: { borderBottomWidth: 0, backgroundColor: COLORS.primary + '0D' },
+  confirmTotal: { color: COLORS.primary, fontSize: 17, fontWeight: '900' },
+  confirmActions: { flexDirection: 'row', gap: 10, marginTop: 18 },
+  confirmCancel: { flex: 1, height: 44, borderRadius: 11, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.surface, alignItems: 'center', justifyContent: 'center' },
+  confirmCancelText: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '800' },
+  confirmSubmit: { flex: 1.4, height: 44, borderRadius: 11, backgroundColor: COLORS.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  confirmSubmitText: { color: '#FFF', fontSize: 12, fontWeight: '900' },
+  confirmNote: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 5, marginTop: 12 },
+  confirmNoteText: { color: COLORS.textTertiary, fontSize: 10 },
 });

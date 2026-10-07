@@ -58,8 +58,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt->bind_param('sssss', $fullName, $email, $passwordHash, $role, $status);
 
                 if ($stmt->execute()) {
+                    $newUserId = (int)$conn->insert_id;
                     $message = 'User account created successfully.';
                     $messageType = 'success';
+                    audit_log('create', 'user_management', 'Created user account for ' . $fullName . ' (' . $role . ').', 'success', 'user', $newUserId);
                 } else {
                     $message = 'Failed to create the user account.';
                     $messageType = 'danger';
@@ -109,6 +111,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($stmt->execute()) {
                     $message = 'User account updated successfully.';
                     $messageType = 'success';
+                    audit_log('update', 'user_management', 'Updated user account for ' . $fullName . '.', 'success', 'user', $userId);
                 } else {
                     $message = 'Failed to update the user account.';
                     $messageType = 'danger';
@@ -134,9 +137,80 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($stmt->execute()) {
                 $message = 'Password reset successfully.';
                 $messageType = 'success';
+                audit_log('reset_password', 'user_management', 'Reset a user account password.', 'success', 'user', $userId);
             } else {
                 $message = 'Failed to reset the password.';
                 $messageType = 'danger';
+            }
+        }
+    }
+
+    if ($action === 'delete_user') {
+        $userId = (int)($_POST['user_id'] ?? 0);
+        $adminPassword = (string)($_POST['admin_password'] ?? '');
+        $submittedCsrf = (string)($_POST['csrf_token'] ?? '');
+        $currentAdminId = (int)($_SESSION['user']['id'] ?? 0);
+
+        if (!hash_equals(csrf_token(), $submittedCsrf)) {
+            $message = 'Your session token expired. Refresh the page and try again.';
+            $messageType = 'danger';
+        } elseif ($userId <= 0 || $adminPassword === '') {
+            $message = 'Enter your administrator password to confirm deletion.';
+            $messageType = 'danger';
+        } elseif ($userId === $currentAdminId) {
+            $message = 'You cannot delete the administrator account currently signed in.';
+            $messageType = 'warning';
+        } else {
+            $adminStatement = $conn->prepare(
+                'SELECT password FROM users WHERE user_id = ? LIMIT 1'
+            );
+            $adminStatement->bind_param('i', $currentAdminId);
+            $adminStatement->execute();
+            $adminAccount = $adminStatement->get_result()->fetch_assoc();
+            $adminStatement->close();
+
+            if (!$adminAccount || !password_verify($adminPassword, (string)$adminAccount['password'])) {
+                $message = 'The administrator password is incorrect. The user was not deleted.';
+                $messageType = 'danger';
+                audit_log('delete', 'user_management', 'Rejected user deletion because administrator password confirmation failed.', 'failed', 'user', $userId);
+            } else {
+                $targetStatement = $conn->prepare('SELECT full_name, email, role FROM users WHERE user_id = ? LIMIT 1');
+                $targetStatement->bind_param('i', $userId);
+                $targetStatement->execute();
+                $targetUser = $targetStatement->get_result()->fetch_assoc();
+                $targetStatement->close();
+
+                if (!$targetUser) {
+                    $message = 'The selected user account no longer exists.';
+                    $messageType = 'warning';
+                } else {
+                    try {
+                        $deleteStatement = $conn->prepare('DELETE FROM users WHERE user_id = ?');
+                        $deleteStatement->bind_param('i', $userId);
+                        $deleted = $deleteStatement->execute() && $deleteStatement->affected_rows === 1;
+                        $deleteStatement->close();
+
+                        if ($deleted) {
+                            $message = 'User account deleted successfully.';
+                            $messageType = 'success';
+                            audit_log(
+                                'delete',
+                                'user_management',
+                                'Deleted user account for ' . (string)$targetUser['full_name'] . ' (' . (string)$targetUser['email'] . ', ' . (string)$targetUser['role'] . ').',
+                                'success',
+                                'user',
+                                $userId
+                            );
+                        } else {
+                            $message = 'The user account could not be deleted.';
+                            $messageType = 'danger';
+                        }
+                    } catch (mysqli_sql_exception $error) {
+                        error_log('TRAVIS user deletion: ' . $error->getMessage());
+                        $message = 'The account is linked to protected records and could not be deleted. Deactivate it instead.';
+                        $messageType = 'danger';
+                    }
+                }
             }
         }
     }
@@ -155,6 +229,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($stmt->execute()) {
                 $message = 'Account status updated successfully.';
                 $messageType = 'success';
+                audit_log('change_status', 'user_management', 'Changed user account status to ' . $status . '.', 'success', 'user', $userId);
             } else {
                 $message = 'Failed to update the account status.';
                 $messageType = 'danger';
@@ -783,6 +858,19 @@ div[style*="border-radius: 999px"]:not(.tag){
                     </button>
                   </form>
                 <?php endif; ?>
+
+                <?php if ((int)$user['user_id'] !== (int)($_SESSION['user']['id'] ?? 0)): ?>
+                  <button
+                    class="btn btn-sm btn-light text-danger"
+                    type="button"
+                    data-bs-toggle="modal"
+                    data-bs-target="#deleteUser<?= (int)$user['user_id'] ?>"
+                    title="Delete user permanently"
+                    aria-label="Delete <?= esc($user['full_name']) ?> permanently"
+                  >
+                    <i class="bi bi-trash3"></i>
+                  </button>
+                <?php endif; ?>
               </td>
             </tr>
           <?php endforeach; ?>
@@ -957,6 +1045,54 @@ div[style*="border-radius: 999px"]:not(.tag){
       </div>
     </div>
   </div>
+
+  <?php if ((int)$user['user_id'] !== (int)($_SESSION['user']['id'] ?? 0)): ?>
+    <div class="modal fade" id="deleteUser<?= (int)$user['user_id'] ?>" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <form method="post" autocomplete="off">
+            <div class="modal-header">
+              <div>
+                <h5 class="modal-title text-danger">Delete User Account</h5>
+                <small class="text-muted">This permanently removes the account and cannot be undone.</small>
+              </div>
+              <button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+
+            <div class="modal-body">
+              <input type="hidden" name="action" value="delete_user">
+              <input type="hidden" name="user_id" value="<?= (int)$user['user_id'] ?>">
+              <input type="hidden" name="csrf_token" value="<?= esc(csrf_token()) ?>">
+
+              <div class="alert alert-warning mb-3">
+                <strong><?= esc($user['full_name']) ?></strong><br>
+                <span><?= esc($user['email']) ?> · <?= esc($user['role']) ?></span>
+              </div>
+
+              <label class="form-label" for="deleteAdminPassword<?= (int)$user['user_id'] ?>">Administrator Password</label>
+              <input
+                type="password"
+                class="form-control"
+                id="deleteAdminPassword<?= (int)$user['user_id'] ?>"
+                name="admin_password"
+                autocomplete="current-password"
+                placeholder="Enter your password to confirm"
+                required
+              >
+              <small class="text-muted d-block mt-2">Historical audit, payment, alert, and report records will remain in the system.</small>
+            </div>
+
+            <div class="modal-footer">
+              <button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button>
+              <button class="btn btn-danger" type="submit">
+                <i class="bi bi-trash3 me-1"></i>Delete User Permanently
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  <?php endif; ?>
 <?php endforeach; ?>
 
 <?php page_end(); ?>

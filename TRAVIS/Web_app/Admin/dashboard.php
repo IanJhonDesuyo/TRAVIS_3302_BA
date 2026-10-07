@@ -579,6 +579,26 @@ header.topbar,
     overflow-wrap: anywhere;
 }
 
+#currentMonitoringCard .monitoring-state-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    margin-bottom: 12px;
+    padding: 10px 12px;
+    border: 1px solid rgba(184, 134, 11, .24);
+    border-radius: 10px;
+    background: rgba(251, 191, 36, .08);
+    color: #795f16;
+    font-size: .76rem;
+    line-height: 1.5;
+}
+
+#currentMonitoringCard .monitoring-state-notice i {
+    flex: 0 0 auto;
+    margin-top: 2px;
+    color: #b8860b;
+}
+
 /* ==== Tags ==== */
 .tag {
     display: inline-block;
@@ -926,8 +946,42 @@ body.municipal-portal #currentMonitoringCard {
 
 body.municipal-portal #currentMonitoringCard .metric-grid {
     display: grid !important;
-    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
     gap: 12px !important;
+}
+
+body.municipal-portal #currentMonitoringCard .monitoring-offline-state {
+    display: flex;
+    min-height: 150px;
+    padding: 24px;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    text-align: left;
+    border: 1px dashed rgba(16, 47, 73, .22);
+    border-radius: 14px;
+    background: rgba(247, 250, 249, .68);
+}
+
+body.municipal-portal #currentMonitoringCard .monitoring-offline-icon {
+    display: grid;
+    width: 48px;
+    height: 48px;
+    place-items: center;
+    flex: 0 0 48px;
+    color: #8a6818;
+    background: rgba(235, 148, 31, .12);
+    border-radius: 14px;
+    font-size: 1.25rem;
+}
+
+body.municipal-portal #currentMonitoringCard .monitoring-offline-copy strong,
+body.municipal-portal #currentMonitoringCard .monitoring-offline-copy small {
+    display: block;
+}
+
+body.municipal-portal #currentMonitoringCard .monitoring-offline-copy small {
+    margin: 4px 0 12px;
 }
 
 body.municipal-portal #currentMonitoringCard .mini-metric {
@@ -974,20 +1028,73 @@ body.municipal-portal #currentMonitoringCard .mini-metric strong {
 </style>
 
 <?php
+$overviewPeriod = strtolower(trim((string)($_GET['overview_period'] ?? 'today')));
+$allowedOverviewPeriods = ['all', 'today', 'week', 'month', 'custom'];
+if (!in_array($overviewPeriod, $allowedOverviewPeriods, true)) {
+    $overviewPeriod = 'all';
+}
+
+$overviewFrom = trim((string)($_GET['overview_from'] ?? ''));
+$overviewTo = trim((string)($_GET['overview_to'] ?? ''));
+$isValidOverviewDate = static function (string $date): bool {
+    $parsed = DateTimeImmutable::createFromFormat('!Y-m-d', $date);
+    return $parsed !== false && $parsed->format('Y-m-d') === $date;
+};
+
+$overviewDateCondition = '1=1';
+$overviewLabel = 'All Records';
+if ($overviewPeriod === 'today') {
+    $overviewDateCondition = '%s = CURDATE()';
+    $overviewLabel = 'Today';
+} elseif ($overviewPeriod === 'week') {
+    $overviewDateCondition = 'YEARWEEK(%s, 1) = YEARWEEK(CURDATE(), 1)';
+    $overviewLabel = 'This Week';
+} elseif ($overviewPeriod === 'month') {
+    $overviewDateCondition = 'YEAR(%s) = YEAR(CURDATE()) AND MONTH(%s) = MONTH(CURDATE())';
+    $overviewLabel = 'This Month';
+} elseif ($overviewPeriod === 'custom') {
+    if ($isValidOverviewDate($overviewFrom) && $isValidOverviewDate($overviewTo) && $overviewFrom <= $overviewTo) {
+        $overviewDateCondition = "%s BETWEEN '{$overviewFrom}' AND '{$overviewTo}'";
+        $overviewLabel = date('M j, Y', strtotime($overviewFrom)) . ' – ' . date('M j, Y', strtotime($overviewTo));
+    } else {
+        $overviewPeriod = 'all';
+        $overviewLabel = 'All Records';
+        $overviewFrom = '';
+        $overviewTo = '';
+    }
+}
+
+$overviewConditionFor = static function (string $column) use ($overviewDateCondition): string {
+    $placeholderCount = substr_count($overviewDateCondition, '%s');
+    return $placeholderCount > 0
+        ? vsprintf($overviewDateCondition, array_fill(0, $placeholderCount, $column))
+        : $overviewDateCondition;
+};
+
+$overviewMonitoringCondition = $overviewConditionFor('DATE(recorded_at)');
 $todaySummary = fetch_one("
     SELECT
-        COALESCE(MAX(inbound_count), 0) AS inbound_total,
-        COALESCE(MAX(outbound_count), 0) AS outbound_total,
-        SUM(CASE
-            WHEN LOWER(congestion_level) IN ('heavy', 'high', 'severe', 'critical')
-            THEN 1 ELSE 0
-        END) AS congestion_events,
-        SUM(CASE
-            WHEN LOWER(potential_collision) NOT IN ('none', 'no', 'false', '0', '')
-            THEN 1 ELSE 0
-        END) AS collision_events
-    FROM camera_monitoring_logs
-    WHERE DATE(recorded_at) = CURDATE()
+        COALESCE(SUM(daily_camera.inbound_total), 0) AS inbound_total,
+        COALESCE(SUM(daily_camera.outbound_total), 0) AS outbound_total
+    FROM (
+        SELECT DATE(recorded_at) AS recorded_date, camera_id,
+               MAX(inbound_count) AS inbound_total,
+               MAX(outbound_count) AS outbound_total
+        FROM camera_monitoring_logs
+        WHERE {$overviewMonitoringCondition}
+        GROUP BY DATE(recorded_at), camera_id
+    ) daily_camera
+") ?: [];
+
+// Monitoring logs are periodic AI samples, not unique incidents. Alerts are
+// already deduplicated by camera, incident state, and cooldown, so they are
+// the authoritative event-level records for these dashboard counters.
+$monitoringIncidentSummary = fetch_one("
+    SELECT
+        COALESCE(SUM(LOWER(alert_type) = 'congestion'), 0) AS congestion_events,
+        COALESCE(SUM(LOWER(alert_type) = 'collision'), 0) AS collision_events
+    FROM monitoring_alerts
+    WHERE " . $overviewConditionFor('DATE(generated_at)') . "
 ") ?: [];
 
 $violationSummary = fetch_one("
@@ -996,7 +1103,7 @@ $violationSummary = fetch_one("
         SUM(CASE WHEN LOWER(status) = 'paid' THEN 1 ELSE 0 END) AS paid_today,
         SUM(CASE WHEN LOWER(status) IN ('pending', 'unpaid', 'overdue') THEN 1 ELSE 0 END) AS unpaid_today
     FROM violations
-    WHERE violation_date = CURDATE()
+    WHERE " . $overviewConditionFor('violation_date') . "
 ") ?: [];
 
 $allPendingViolations = scalar("
@@ -1010,7 +1117,7 @@ $paymentSummary = fetch_one("
         COALESCE(SUM(amount_paid), 0) AS collection_today,
         COUNT(*) AS completed_payments_today
     FROM payments
-    WHERE DATE(payment_date) = CURDATE()
+    WHERE " . $overviewConditionFor('DATE(payment_date)') . "
       AND LOWER(payment_status) = 'completed'
 ") ?: [];
 
@@ -1019,9 +1126,10 @@ $alertSummary = fetch_one("
         COUNT(*) AS alerts_today,
         SUM(CASE WHEN LOWER(status) = 'active' THEN 1 ELSE 0 END) AS active_alerts
     FROM monitoring_alerts
-    WHERE DATE(generated_at) = CURDATE()
+    WHERE " . $overviewConditionFor('DATE(generated_at)') . "
 ") ?: [];
 
+$monitoringStaleAfterSeconds = 120;
 $latestMonitoring = fetch_one("
     SELECT
         l.vehicle_count,
@@ -1031,6 +1139,7 @@ $latestMonitoring = fetch_one("
         l.officer_presence,
         l.potential_collision,
         l.recorded_at,
+        GREATEST(0, TIMESTAMPDIFF(SECOND, l.recorded_at, NOW())) AS record_age_seconds,
         c.camera_name,
         c.location,
         c.status AS camera_status
@@ -1042,30 +1151,20 @@ $latestMonitoring = fetch_one("
 
 $onlineCameras = scalar("
     SELECT COUNT(*)
-    FROM cameras
-    WHERE LOWER(status) = 'online'
+    FROM cameras c
+    WHERE LOWER(c.status) = 'online'
+      AND EXISTS (
+          SELECT 1
+          FROM camera_monitoring_logs l
+          WHERE l.camera_id = c.camera_id
+            AND l.recorded_at >= DATE_SUB(NOW(), INTERVAL {$monitoringStaleAfterSeconds} SECOND)
+      )
 ", 0);
 
 $totalCameras = scalar("SELECT COUNT(*) FROM cameras", 0);
 
 $trendData = monthly_violation_counts();
-
-$topViolationRows = fetch_all("
-    SELECT violation_type, COUNT(*) AS total
-    FROM violations
-    WHERE YEAR(violation_date) = YEAR(CURDATE())
-    GROUP BY violation_type
-    ORDER BY total DESC
-    LIMIT 6
-");
-
-$topViolationLabels = [];
-$topViolationData = [];
-
-foreach ($topViolationRows as $row) {
-    $topViolationLabels[] = (string) $row['violation_type'];
-    $topViolationData[] = (int) $row['total'];
-}
+$monthlyCollectionData = monthly_collection_totals();
 
 $recentAlerts = fetch_all("
     SELECT alert_type, severity, message, status, generated_at
@@ -1091,8 +1190,8 @@ $recentViolations = fetch_all("
 $inboundToday = (int) ($todaySummary['inbound_total'] ?? 0);
 $outboundToday = (int) ($todaySummary['outbound_total'] ?? 0);
 $vehiclesToday = $inboundToday + $outboundToday;
-$congestionEvents = (int) ($todaySummary['congestion_events'] ?? 0);
-$collisionEvents = (int) ($todaySummary['collision_events'] ?? 0);
+$congestionEvents = (int) ($monitoringIncidentSummary['congestion_events'] ?? 0);
+$collisionEvents = (int) ($monitoringIncidentSummary['collision_events'] ?? 0);
 
 $violationsToday = (int) ($violationSummary['total_today'] ?? 0);
 $paidViolationsToday = (int) ($violationSummary['paid_today'] ?? 0);
@@ -1107,39 +1206,167 @@ $activeAlerts = (int) ($alertSummary['active_alerts'] ?? 0);
 $currentVehicles = (int) ($latestMonitoring['vehicle_count'] ?? 0);
 $currentInbound = (int) ($latestMonitoring['inbound_count'] ?? 0);
 $currentOutbound = (int) ($latestMonitoring['outbound_count'] ?? 0);
+$monitoringRecordAgeSeconds = (int) ($latestMonitoring['record_age_seconds'] ?? PHP_INT_MAX);
+$isMonitoringLive = $latestMonitoring !== null
+    && $monitoringRecordAgeSeconds <= $monitoringStaleAfterSeconds;
+$monitoringStatusLabel = $isMonitoringLive ? 'Online' : 'Offline';
+$monitoringRecordedAt = trim((string) ($latestMonitoring['recorded_at'] ?? ''));
+$monitoringRecordedAtLabel = $monitoringRecordedAt !== '' ? $monitoringRecordedAt : 'No timestamp';
+$monitoringRecordedAtTimestamp = $monitoringRecordedAt !== '' ? strtotime($monitoringRecordedAt) : false;
+if ($monitoringRecordedAtTimestamp !== false) {
+    $monitoringRecordedAtLabel = date('F j, Y, g:i A', $monitoringRecordedAtTimestamp);
+}
+$latestTrafficDate = (string)scalar("SELECT COALESCE(DATE(MAX(recorded_at)), CURDATE()) FROM camera_monitoring_logs", date('Y-m-d'));
 
 page_start('Dashboard', 'dashboard', 'Search violations, plates, locations...');
 ?>
 
+<style>
+.dashboard-section-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 6px 0 14px;
+}
+.dashboard-section-heading::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: rgba(16, 47, 73, .12);
+}
+.dashboard-section-heading span {
+  color: #526b64;
+  font-size: .7rem;
+  font-weight: 800;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.dashboard-overview-heading {
+  align-items: flex-end;
+  justify-content: space-between;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(16, 47, 73, .12);
+}
+.dashboard-overview-heading::after { display: none; }
+.overview-filter-form {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.overview-filter-form .dashboard-filter { min-width: 145px; }
+.overview-filter-form .overview-custom-date { min-width: 155px; }
+.overview-period-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: rgba(8, 125, 120, .09);
+  color: #087d78;
+  font-size: .64rem;
+  font-weight: 800;
+  letter-spacing: normal;
+  text-transform: none;
+}
+.dashboard-filter-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.dashboard-filter {
+  display: grid;
+  gap: 5px;
+  min-width: 175px;
+}
+.dashboard-filter label {
+  margin: 0;
+  color: #526b64;
+  font-size: .64rem;
+  font-weight: 800;
+  letter-spacing: .07em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+.dashboard-filter .form-control,
+.dashboard-filter .form-select {
+  width: 100% !important;
+  min-height: 42px;
+  padding: .5rem .75rem;
+  border: 1px solid #9bb7bd !important;
+  border-radius: 10px !important;
+  background-color: #fff !important;
+  color: #102f49 !important;
+  font-size: .78rem;
+  font-weight: 700;
+  box-shadow: 0 3px 10px rgba(16, 47, 73, .05) !important;
+}
+.dashboard-filter .form-control:focus,
+.dashboard-filter .form-select:focus {
+  border-color: #087d78 !important;
+  box-shadow: 0 0 0 3px rgba(8, 125, 120, .12) !important;
+}
+.dashboard-filter-action {
+  min-height: 42px;
+  padding-right: 16px;
+  padding-left: 16px;
+  border-radius: 10px !important;
+  font-weight: 700;
+}
+@media (max-width: 767.98px) {
+  .dashboard-filter-row,
+  .dashboard-filter { width: 100%; }
+  .dashboard-filter-action { width: 100%; }
+  .section-head { align-items: flex-start !important; }
+  .dashboard-overview-heading { align-items: stretch; flex-direction: column; }
+  .overview-filter-form { justify-content: stretch; }
+  .overview-filter-form .dashboard-filter { flex: 1 1 145px; width: auto; }
+}
+</style>
+
 <div class="d-flex justify-content-between flex-wrap mb-4 gap-2">
   <div>
-    <div class="dashboard-title-row">
-      <div>
-        <span class="dashboard-eyebrow">TRAVIS COMMAND CENTER</span>
-        <h3 class="page-title">Operations Dashboard</h3>
-        <p class="page-sub">Real-time traffic monitoring, predictive insights, and hotspot intelligence.</p>
-      </div>
-      <span class="system-online-badge"><span class="system-online-dot"></span>AI Services Online</span>
-    </div>
-  </div>
-
-  <div class="d-flex gap-2">
-    <a class="btn btn-light" href="<?= esc(app_url('reports.php')) ?>">
-      <i class="bi bi-download me-1"></i>Reports
-    </a>
-
-    <a class="btn btn-primary" href="<?= esc(app_url('monitoring.php')) ?>">
-      <i class="bi bi-camera-video me-1"></i>Open Monitoring
-    </a>
+    <span class="dashboard-eyebrow">TRAVIS COMMAND CENTER</span>
+    <h3 class="page-title">Operations Dashboard</h3>
+    <p class="page-sub">Real-time traffic monitoring, predictive insights, and hotspot intelligence.</p>
   </div>
 </div>
 
 <!-- Main statistics -->
+<div class="dashboard-section-heading dashboard-overview-heading">
+  <span>Operational overview <span class="overview-period-badge"><i class="bi bi-funnel"></i><?= esc($overviewLabel) ?></span></span>
+  <form class="overview-filter-form" method="get" action="">
+    <div class="dashboard-filter">
+      <label for="overviewPeriod">Show records</label>
+      <select class="form-select" id="overviewPeriod" name="overview_period">
+        <option value="all" <?= $overviewPeriod === 'all' ? 'selected' : '' ?>>All Records</option>
+        <option value="today" <?= $overviewPeriod === 'today' ? 'selected' : '' ?>>Today</option>
+        <option value="week" <?= $overviewPeriod === 'week' ? 'selected' : '' ?>>This Week</option>
+        <option value="month" <?= $overviewPeriod === 'month' ? 'selected' : '' ?>>This Month</option>
+        <option value="custom" <?= $overviewPeriod === 'custom' ? 'selected' : '' ?>>Custom Range</option>
+      </select>
+    </div>
+    <div class="dashboard-filter overview-custom-date" <?= $overviewPeriod === 'custom' ? '' : 'hidden' ?>>
+      <label for="overviewFrom">From</label>
+      <input class="form-control" type="date" id="overviewFrom" name="overview_from" value="<?= esc($overviewFrom) ?>" max="<?= esc(date('Y-m-d')) ?>">
+    </div>
+    <div class="dashboard-filter overview-custom-date" <?= $overviewPeriod === 'custom' ? '' : 'hidden' ?>>
+      <label for="overviewTo">To</label>
+      <input class="form-control" type="date" id="overviewTo" name="overview_to" value="<?= esc($overviewTo) ?>" max="<?= esc(date('Y-m-d')) ?>">
+    </div>
+    <button class="btn btn-primary dashboard-filter-action" type="submit"><i class="bi bi-funnel me-1"></i>Apply</button>
+  </form>
+</div>
 <div class="row g-3 mb-4">
   <div class="col-sm-6 col-xl-3">
-    <div class="stat-card dashboard-stat-card h-100">
+    <div class="stat-card dashboard-stat-card dashboard-kpi dashboard-kpi-vehicles h-100">
       <div class="stat-icon tone-primary"><i class="bi bi-car-front"></i></div>
-      <div class="stat-label">Vehicles Counted Today</div>
+      <div class="stat-label">Vehicles Counted</div>
       <div class="stat-value"><?= num($vehiclesToday) ?></div>
       <small class="text-muted">
         <?= num($inboundToday) ?> inbound • <?= num($outboundToday) ?> outbound
@@ -1148,9 +1375,9 @@ page_start('Dashboard', 'dashboard', 'Search violations, plates, locations...');
   </div>
 
   <div class="col-sm-6 col-xl-3">
-    <div class="stat-card dashboard-stat-card h-100">
+    <div class="stat-card dashboard-stat-card dashboard-kpi dashboard-kpi-violations h-100">
       <div class="stat-icon tone-warning"><i class="bi bi-cone-striped"></i></div>
-      <div class="stat-label">Violations Today</div>
+      <div class="stat-label">Violations</div>
       <div class="stat-value"><?= num($violationsToday) ?></div>
       <small class="text-muted">
         <?= num($paidViolationsToday) ?> paid • <?= num($unpaidViolationsToday) ?> unpaid
@@ -1159,204 +1386,195 @@ page_start('Dashboard', 'dashboard', 'Search violations, plates, locations...');
   </div>
 
   <div class="col-sm-6 col-xl-3">
-    <div class="stat-card dashboard-stat-card h-100">
+    <div class="stat-card dashboard-stat-card dashboard-kpi dashboard-kpi-collections h-100">
       <div class="stat-icon tone-success"><i class="bi bi-cash-stack"></i></div>
-      <div class="stat-label">Collected Today</div>
+      <div class="stat-label">Total Collected</div>
       <div class="stat-value"><?= short_money($paymentsToday) ?></div>
       <small class="text-muted"><?= num($completedPaymentsToday) ?> completed payments</small>
     </div>
   </div>
 
   <div class="col-sm-6 col-xl-3">
-    <div class="stat-card dashboard-stat-card h-100">
+    <div class="stat-card dashboard-stat-card dashboard-kpi dashboard-kpi-alerts h-100">
       <div class="stat-icon tone-danger"><i class="bi bi-exclamation-triangle"></i></div>
       <div class="stat-label">Active Alerts</div>
       <div class="stat-value"><?= num($activeAlerts) ?></div>
-      <small class="text-muted"><?= num($alertsToday) ?> generated today</small>
+      <small class="text-muted"><?= num($alertsToday) ?> generated in selected period</small>
     </div>
   </div>
 </div>
 
-<!-- AI Decision Support -->
+<style>
+.dated-traffic-card{overflow:hidden;border:1px solid #78b8c6!important;background:radial-gradient(circle at 95% 10%,rgba(8,125,120,.12),transparent 24%),linear-gradient(135deg,#fff,#eaf8fa)!important}
+.dated-traffic-card .section-head{align-items:center}
+.dated-traffic-grid{display:grid;grid-template-columns:minmax(220px,1.2fr) repeat(3,minmax(0,1fr));gap:14px;align-items:stretch;min-width:0}
+.dated-traffic-main,.dated-traffic-metric{position:relative;min-width:0;overflow:hidden;padding:20px;border:1px solid rgba(16,47,73,.11);border-radius:16px;background:#fff;box-shadow:0 8px 20px rgba(16,47,73,.06)}
+.dated-traffic-main{border-color:rgba(16,47,73,.11);background:#fff!important;color:#102f49!important}.dated-traffic-main:after{content:"";position:absolute;width:115px;height:115px;right:-35px;bottom:-55px;border-radius:50%;background:rgba(8,125,120,.07)}.dated-traffic-main small{color:#60736d!important}.dated-traffic-main strong{display:block;margin:7px 0 3px;color:#102f49!important;font-size:2.45rem;line-height:1}.dated-traffic-main span{position:relative;z-index:1;font-size:.76rem;color:#526b64!important}
+.dated-traffic-metric:nth-child(2){border-color:#e3bd61;background:linear-gradient(145deg,#fff,#fff6dd)}.dated-traffic-metric:nth-child(3){border-color:#8298d8;background:linear-gradient(145deg,#fff,#edf1ff)}.dated-traffic-metric:nth-child(4){border-color:#71c49f;background:linear-gradient(145deg,#fff,#eaf9f2)}
+.dated-traffic-icon{display:grid;width:36px;height:36px;margin-bottom:13px;place-items:center;border-radius:10px;font-size:1rem}.dated-traffic-metric:nth-child(2) .dated-traffic-icon{color:#b47700;background:#fff0bf}.dated-traffic-metric:nth-child(3) .dated-traffic-icon{color:#526dc0;background:#e1e7ff}.dated-traffic-metric:nth-child(4) .dated-traffic-icon{color:#16845d;background:#d9f3e7}
+.dated-traffic-metric small{display:block;color:#60736d!important;font-size:.65rem;font-weight:800;text-transform:uppercase;letter-spacing:.055em}.dated-traffic-metric strong{display:block;margin-top:7px;color:#102f49!important;font-size:1.18rem;line-height:1.25;overflow-wrap:anywhere}.dated-traffic-metric > span:not(.dated-traffic-icon){display:block;margin-top:6px;color:#667a74!important;font-size:.69rem;line-height:1.4}
+@media(max-width:1199.98px){.dated-traffic-grid{grid-template-columns:1fr 1fr}}@media(max-width:575.98px){.dated-traffic-grid{grid-template-columns:1fr}.dated-traffic-card .section-head{align-items:flex-start}}
+</style>
+<div class="dashboard-section-heading"><span>Historical analytics</span></div>
+<div class="section-card dated-traffic-card mb-4">
+  <div class="section-head"><div><span class="dashboard-eyebrow">HISTORICAL TRAFFIC</span><h5 class="mb-1">Vehicle Count by Date</h5><small class="text-muted">Select a recorded date to compare traffic volume and identify busier days.</small></div><div class="dashboard-filter-row"><div class="dashboard-filter"><label for="vehicleCountDate">Traffic date</label><input class="form-control" type="date" id="vehicleCountDate" value="<?= esc($latestTrafficDate) ?>" max="<?= esc(date('Y-m-d')) ?>"></div></div></div>
+  <div class="dated-traffic-grid">
+    <div class="dated-traffic-main"><small id="vehicleDateLabel">Selected date</small><strong id="datedVehicleTotal">—</strong><span id="datedVehicleDirections">Loading vehicle counts…</span></div>
+    <div class="dated-traffic-metric"><span class="dated-traffic-icon"><i class="bi bi-bar-chart-line"></i></span><small>Compared with average</small><strong id="datedVehicleComparison">—</strong><span id="datedVehicleAverage">Daily average unavailable</span></div>
+    <div class="dated-traffic-metric"><span class="dated-traffic-icon"><i class="bi bi-trophy"></i></span><small>Busiest recorded date</small><strong id="busiestTrafficDate">—</strong><span id="busiestTrafficTotal">No recorded data</span></div>
+    <div class="dated-traffic-metric"><span class="dated-traffic-icon"><i class="bi bi-lightbulb"></i></span><small>Interpretation</small><strong id="datedTrafficLevel">—</strong><span id="datedTrafficNarrative">Select a date to review traffic.</span></div>
+  </div>
+</div>
+
+<style>
+#monthlyExecutiveSummary { border-width: 2px; transition: background-color .25s ease, border-color .25s ease; overflow: hidden; }
+#monthlyExecutiveSummary.monthly-state-critical { background: linear-gradient(135deg, #fffafa 0%, #fff0f1 100%) !important; border-color: #dc3545 !important; box-shadow: 0 14px 35px rgba(220,53,69,.12) !important; }
+#monthlyExecutiveSummary.monthly-state-warning { background: linear-gradient(135deg, #fffdf7 0%, #fff5d9 100%) !important; border-color: #e5a000 !important; box-shadow: 0 14px 35px rgba(229,160,0,.12) !important; }
+#monthlyExecutiveSummary.monthly-state-good { background: linear-gradient(135deg, #f9fffb 0%, #e9f9ef 100%) !important; border-color: #2f9e5b !important; box-shadow: 0 14px 35px rgba(47,158,91,.12) !important; }
+#monthlyExecutiveSummary .monthly-state-icon { font-size: 1.1rem; }
+.dashboard-kpi { position: relative; overflow: hidden; border-width: 1px !important; }
+.dashboard-kpi::after { content: ''; position: absolute; width: 110px; height: 110px; border-radius: 50%; right: -42px; top: -50px; opacity: .35; pointer-events: none; }
+.dashboard-kpi-vehicles { background: linear-gradient(145deg, #ffffff, #eef1ff) !important; border-color: #9ba8df !important; }
+.dashboard-kpi-vehicles::after { background: #7182d2; }
+.dashboard-kpi-violations { background: linear-gradient(145deg, #ffffff, #fff5d9) !important; border-color: #e6bd58 !important; }
+.dashboard-kpi-violations::after { background: #f4bf32; }
+.dashboard-kpi-collections { background: linear-gradient(145deg, #ffffff, #e7faf3) !important; border-color: #68c9a6 !important; }
+.dashboard-kpi-collections::after { background: #42c49a; }
+.dashboard-kpi-alerts { background: linear-gradient(145deg, #ffffff, #fff0ed) !important; border-color: #ee9a8e !important; }
+.dashboard-kpi-alerts::after { background: #ef7464; }
+.dashboard-kpi .stat-icon { box-shadow: 0 8px 22px rgba(16,47,73,.12); }
+.dashboard-kpi .stat-value { color: #102f49 !important; }
+#monthlyExecutiveSummary .monthly-kpi { border-width: 1px !important; position: relative; overflow: hidden; }
+#monthlyExecutiveSummary .monthly-kpi-violations { background: linear-gradient(145deg, #fff, #eef2ff) !important; border-color: #9aa9df !important; }
+#monthlyExecutiveSummary .monthly-kpi-collected { background: linear-gradient(145deg, #fff, #e9faf2) !important; border-color: #72c9a7 !important; }
+#monthlyExecutiveSummary .monthly-kpi-offense { background: linear-gradient(145deg, #fff, #fff4dc) !important; border-color: #e7bc58 !important; }
+#monthlyExecutiveSummary .monthly-kpi-location { background: linear-gradient(145deg, #fff, #e9f7fa) !important; border-color: #6eb7c4 !important; }
+</style>
+<div class="section-card mb-4" id="monthlyExecutiveSummary">
+  <div class="section-head">
+    <div>
+      <span class="dashboard-eyebrow">MONTHLY EXECUTIVE SUMMARY</span>
+      <h5 class="mb-1" id="monthlySummaryTitle"><?= esc(date('F Y')) ?></h5>
+      <small class="text-muted">Performance, collections, enforcement patterns, and month-over-month movement</small>
+    </div>
+    <div class="dashboard-filter-row">
+      <span class="tag" id="monthlySummaryStatus"><i class="bi bi-circle-fill me-1 monthly-state-icon"></i>Loading</span>
+      <div class="dashboard-filter">
+        <label for="monthlySummaryMonth">Summary month</label>
+        <input class="form-control" type="month" id="monthlySummaryMonth" value="<?= esc(date('Y-m')) ?>">
+      </div>
+    </div>
+  </div>
+  <div class="row g-3 mt-1">
+    <div class="col-sm-6 col-xl-3"><div class="stat-card monthly-kpi monthly-kpi-violations h-100"><div class="stat-label"><i class="bi bi-graph-up-arrow me-1 text-primary"></i>Monthly Violations</div><div class="stat-value" id="monthlyViolationCount">—</div><small id="monthlyViolationChange" class="text-muted">Compared with last month</small></div></div>
+    <div class="col-sm-6 col-xl-3"><div class="stat-card monthly-kpi monthly-kpi-collected h-100"><div class="stat-label"><i class="bi bi-cash-stack me-1 text-success"></i>Collected</div><div class="stat-value" id="monthlyCollected">—</div><small id="monthlyCollectionRate" class="text-muted">Collection rate</small></div></div>
+    <div class="col-sm-6 col-xl-3"><div class="stat-card monthly-kpi monthly-kpi-offense h-100"><div class="stat-label"><i class="bi bi-cone-striped me-1 text-warning"></i>Leading Violation</div><div class="h5 mt-2 mb-1" id="monthlyTopViolation">—</div><small id="monthlyTopViolationCount" class="text-muted">No records</small></div></div>
+    <div class="col-sm-6 col-xl-3"><div class="stat-card monthly-kpi monthly-kpi-location h-100"><div class="stat-label"><i class="bi bi-geo-alt-fill me-1 text-info"></i>Highest Activity Area</div><div class="h5 mt-2 mb-1" id="monthlyTopLocation">—</div><small id="monthlyPeakPeriod" class="text-muted">Peak period unavailable</small></div></div>
+  </div>
+  <div class="alert alert-light border mt-3 mb-0" role="note">
+    <strong><i class="bi bi-lightbulb me-1"></i>Management interpretation:</strong>
+    <span id="monthlySummaryNarrative">Loading monthly performance summary...</span>
+  </div>
+</div>
+
+<!-- AI executive preview; full analysis belongs in Decision Support. -->
+<style>
+body.municipal-portal #aiDecisionCard{
+  position:relative;overflow:hidden;padding:0!important;border:1px solid rgba(8,125,120,.28)!important;border-radius:22px!important;
+  background:linear-gradient(135deg,rgba(255,255,255,.97),rgba(240,250,249,.96))!important;
+  box-shadow:0 18px 44px rgba(16,47,73,.12)!important
+}
+body.municipal-portal #aiDecisionCard::before{content:"";position:absolute;inset:0 auto 0 0;width:6px;background:linear-gradient(180deg,#2563eb,#12b8b0,#18a878)}
+body.municipal-portal #aiDecisionCard::after{content:"";position:absolute;width:280px;height:280px;right:-110px;top:-165px;border-radius:50%;background:radial-gradient(circle,rgba(56,189,248,.16),rgba(56,189,248,0) 70%);pointer-events:none}
+body.municipal-portal #aiDecisionCard .ai-section-head{position:relative;z-index:1;align-items:center;margin:0;padding:24px 26px 20px;border-bottom:1px solid rgba(16,47,73,.09)}
+.ai-preview-heading{display:flex;align-items:center;gap:14px}
+.ai-preview-heading-icon{display:grid;place-items:center;flex:0 0 48px;width:48px;height:48px;border-radius:15px;color:#087d78;background:linear-gradient(145deg,#e1f8f4,#e5f1ff);border:1px solid rgba(8,125,120,.16);font-size:1.2rem;box-shadow:0 8px 20px rgba(8,125,120,.10)}
+.ai-preview-heading .ai-kicker{display:block;margin-bottom:4px}
+body.municipal-portal #aiDecisionCard .ai-full-link{position:relative;z-index:1;height:42px!important;padding:0 18px!important;background:linear-gradient(135deg,#087d78,#0a9b8e)!important;box-shadow:0 10px 22px rgba(8,125,120,.22)!important}
+.ai-preview-body{position:relative;z-index:1;padding:20px 26px 26px}
+.ai-preview-grid{display:grid;grid-template-columns:1.05fr .85fr 1.15fr 1.25fr;gap:14px}
+body.municipal-portal #aiDecisionCard .ai-preview-item{position:relative;min-width:0;min-height:142px;padding:17px!important;overflow:hidden;border:1px solid rgba(16,47,73,.11)!important;border-radius:16px!important;background:rgba(255,255,255,.82)!important;box-shadow:0 8px 20px rgba(16,47,73,.055)!important;transition:transform .22s ease,box-shadow .22s ease,border-color .22s ease}
+body.municipal-portal #aiDecisionCard .ai-preview-item:hover{transform:translateY(-3px);border-color:rgba(8,125,120,.28)!important;box-shadow:0 13px 26px rgba(16,47,73,.09)!important}
+.ai-preview-item::after{content:"";position:absolute;right:-25px;bottom:-38px;width:90px;height:90px;border-radius:50%;background:var(--preview-glow,rgba(8,125,120,.07))}
+.ai-preview-item-head{display:flex;align-items:center;gap:9px;margin-bottom:14px}
+.ai-preview-item-icon{display:grid;place-items:center;flex:0 0 34px;width:34px;height:34px;border-radius:10px;color:var(--preview-color,#087d78);background:var(--preview-soft,#e6f7f4);font-size:.9rem}
+.ai-preview-item small{display:block;margin:0;color:#60736d!important;font-size:.64rem;font-weight:800;letter-spacing:.055em;line-height:1.35;text-transform:uppercase;white-space:normal!important}
+.ai-preview-item strong{position:relative;z-index:1;display:block;color:#102f49!important;font-size:1rem;line-height:1.42;overflow-wrap:anywhere}
+.ai-preview-risk{--preview-color:#2563eb;--preview-soft:#eaf1ff;--preview-glow:rgba(37,99,235,.08);background:linear-gradient(145deg,#fff,#f2f6ff)!important}
+.ai-preview-confidence-card{--preview-color:#526dc0;--preview-soft:#eef1ff;--preview-glow:rgba(82,109,192,.08)}
+.ai-preview-location{--preview-color:#087d78;--preview-soft:#e5f7f4;--preview-glow:rgba(8,125,120,.08)}
+.ai-preview-action{--preview-color:#b47700;--preview-soft:#fff2c9;--preview-glow:rgba(235,148,31,.10)}
+.ai-preview-risk .ai-risk-badge{position:relative;z-index:1;display:inline-flex;align-items:center;min-width:128px;justify-content:center;padding:9px 16px;border-radius:999px;font-size:1.02rem;font-weight:900;letter-spacing:.055em}
+.ai-preview-confidence-value{display:flex!important;align-items:baseline;gap:5px;font-size:1.45rem!important}
+.ai-preview-confidence-value span{color:#71849a;font-size:.7rem;font-weight:700}
+.ai-preview-confidence{position:relative;z-index:1;height:8px;margin-top:12px;border-radius:999px;background:rgba(16,47,73,.09);overflow:hidden}
+.ai-preview-confidence span{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#526dc0,#26a7c7);box-shadow:0 0 12px rgba(38,167,199,.25)}
+.ai-preview-caption{position:relative;z-index:1;display:block;margin-top:8px;color:#748680!important;font-size:.66rem!important;letter-spacing:0!important;text-transform:none!important}
+@media(max-width:1199.98px){.ai-preview-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:767.98px){body.municipal-portal #aiDecisionCard .ai-section-head{align-items:flex-start;padding:20px;flex-direction:column}.ai-preview-body{padding:16px 20px 20px}.ai-preview-heading-icon{display:none}.ai-full-link{width:100%!important}.ai-preview-grid{grid-template-columns:1fr}}
+</style>
+<div class="dashboard-section-heading"><span>AI intelligence</span></div>
 <div class="section-card ai-decision-card mb-4" id="aiDecisionCard">
   <div class="section-head ai-section-head">
-    <div>
-      <span class="ai-kicker"><i class="bi bi-cpu me-1"></i>TRAVIS AI ENGINE</span>
-      <h5 class="mb-1">AI Decision Support Center</h5>
-      <small class="text-muted">Random Forest monthly risk prediction combined with K-Means hotspot intelligence</small>
-    </div>
-
-    <div class="d-flex align-items-center gap-2 flex-wrap">
-      <label class="small text-muted mb-0" for="aiPredictionMonth">Forecast period</label>
-      <input class="form-control form-control-sm" type="month" id="aiPredictionMonth" value="<?= esc(date('Y-m', strtotime('first day of next month'))) ?>" min="2000-01" max="2100-12" style="width:155px">
-      <button class="btn btn-sm btn-light" type="button" id="refreshPredictionBtn">
-        <i class="bi bi-arrow-clockwise me-1"></i>Predict
-      </button>
-    </div>
-  </div>
-
-  <div id="aiPredictionLoading" class="ai-loading-state">
-    <div class="spinner-border spinner-border-sm me-2" role="status"></div>
-    Loading monthly risk prediction...
-  </div>
-
-  <div id="aiPredictionError" class="alert alert-danger d-none mb-0" role="alert"></div>
-
-  <div id="aiPredictionContent" class="d-none">
-    <div class="row g-4 ai-top-row">
-      <div class="col-lg-7">
-        <div class="ai-kpi-card ai-monthly-card h-100">
-          <div class="ai-card-header">
-            <span class="ai-card-icon ai-icon-blue">
-              <i class="bi bi-graph-up-arrow"></i>
-            </span>
-            <div>
-              <h6>Monthly Risk Prediction</h6>
-              <small>Random Forest risk forecast</small>
-            </div>
-          </div>
-
-          <div class="ai-monthly-body">
-            <div>
-              <div class="ai-label">Expected monthly risk</div>
-              <div class="ai-risk-badge" id="aiRiskBadge">—</div>
-              <div class="ai-period" id="aiPredictionPeriod">—</div>
-            </div>
-
-            <div class="ai-confidence-card">
-              <div class="d-flex justify-content-between align-items-center gap-3">
-                <span>Prediction confidence</span>
-                <strong id="aiConfidenceText">—</strong>
-              </div>
-              <div class="progress ai-confidence-progress">
-                <div
-                  class="progress-bar"
-                  id="aiConfidenceBar"
-                  role="progressbar"
-                  style="width:0%"
-                  aria-valuemin="0"
-                  aria-valuemax="100"
-                ></div>
-              </div>
-            </div>
-          </div>
-
-          <p class="ai-model-note mb-0">
-            This prediction is based on historical TMO records and should be reviewed together with current traffic conditions.
-          </p>
-        </div>
-      </div>
-
-      <div class="col-lg-5">
-        <div class="ai-kpi-card ai-deployment-card h-100">
-          <div class="ai-card-header">
-            <span class="ai-card-icon ai-icon-teal">
-              <i class="bi bi-people"></i>
-            </span>
-            <div>
-              <h6>Deployment Guidance</h6>
-              <small>Recommended operational resources</small>
-            </div>
-          </div>
-
-          <div class="deployment-kpi-grid">
-            <div class="deployment-kpi">
-              <small>Priority</small>
-              <strong id="aiDeploymentPriority">—</strong>
-            </div>
-            <div class="deployment-kpi">
-              <small>Personnel</small>
-              <strong id="aiSuggestedPersonnel">—</strong>
-            </div>
-            <div class="deployment-kpi">
-              <small>Monitoring</small>
-              <strong id="aiMonitoringIntensity">—</strong>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="ai-subsection-heading">
+    <div class="ai-preview-heading">
+      <span class="ai-preview-heading-icon" aria-hidden="true"><i class="bi bi-cpu-fill"></i></span>
       <div>
-        <h6>Historical Hotspot Classification</h6>
-        <small>K-Means clustering groups all monitored locations by historical risk level.</small>
+        <span class="ai-kicker">TRAVIS AI ENGINE</span>
+        <h5 class="mb-1">Decision-Support Snapshot</h5>
+        <small class="text-muted">Next-month outlook and the most important operational signal</small>
       </div>
-      <span class="ai-highlight-note">
-        Monthly forecast: <strong id="hotspotMonthlyHighlight">—</strong>
-      </span>
     </div>
+    <a class="btn btn-primary ai-full-link" href="<?= esc(app_url('decision_support.php')) ?>">
+      <i class="bi bi-graph-up-arrow me-1"></i>View Full Analysis
+    </a>
+  </div>
 
-    <div id="hotspotLoading" class="hotspot-loading-card">
+  <div class="ai-preview-body">
+    <div id="aiPredictionLoading" class="ai-loading-state">
       <div class="spinner-border spinner-border-sm me-2" role="status"></div>
-      Loading hotspot classifications...
+      Loading decision-support snapshot...
     </div>
+    <div id="aiPredictionError" class="alert alert-danger d-none mb-0" role="alert"></div>
 
-    <div id="hotspotError" class="alert alert-danger d-none mb-3"></div>
-
-    <div id="hotspotContent" class="d-none">
-      <div class="row g-3 hotspot-kpi-grid">
-        <div class="col-lg-4">
-          <div class="hotspot-risk-card hotspot-card-high" id="hotspotCardHigh">
-            <div class="hotspot-card-head">
-              <span class="hotspot-card-icon"><i class="bi bi-exclamation-triangle"></i></span>
-              <div>
-                <span class="hotspot-card-label">High Risk</span>
-                <strong id="highRiskCount">0</strong>
-                <small>locations</small>
-              </div>
-            </div>
-            <ul class="hotspot-card-list" id="highRiskLocations"></ul>
-          </div>
+    <div id="aiPredictionContent" class="d-none">
+    <div class="ai-preview-grid">
+      <div class="ai-preview-item ai-preview-risk">
+        <div class="ai-preview-item-head">
+          <span class="ai-preview-item-icon"><i class="bi bi-shield-exclamation"></i></span>
+          <small>Forecast risk<br><span id="aiPredictionPeriod">—</span></small>
         </div>
-
-        <div class="col-lg-4">
-          <div class="hotspot-risk-card hotspot-card-medium" id="hotspotCardMedium">
-            <div class="hotspot-card-head">
-              <span class="hotspot-card-icon"><i class="bi bi-exclamation-circle"></i></span>
-              <div>
-                <span class="hotspot-card-label">Medium Risk</span>
-                <strong id="mediumRiskCount">0</strong>
-                <small>locations</small>
-              </div>
-            </div>
-            <ul class="hotspot-card-list" id="mediumRiskLocations"></ul>
-          </div>
+        <span class="ai-risk-badge" id="aiRiskBadge">—</span>
+      </div>
+      <div class="ai-preview-item ai-preview-confidence-card">
+        <div class="ai-preview-item-head">
+          <span class="ai-preview-item-icon"><i class="bi bi-speedometer2"></i></span>
+          <small>Prediction confidence</small>
         </div>
-
-        <div class="col-lg-4">
-          <div class="hotspot-risk-card hotspot-card-low" id="hotspotCardLow">
-            <div class="hotspot-card-head">
-              <span class="hotspot-card-icon"><i class="bi bi-check-circle"></i></span>
-              <div>
-                <span class="hotspot-card-label">Low Risk</span>
-                <strong id="lowRiskCount">0</strong>
-                <small>locations</small>
-              </div>
-            </div>
-            <ul class="hotspot-card-list" id="lowRiskLocations"></ul>
-          </div>
+        <strong class="ai-preview-confidence-value"><span id="aiConfidenceText">—</span></strong>
+        <div class="ai-preview-confidence" aria-hidden="true"><span id="aiConfidenceBar" style="width:0%"></span></div>
+        <small class="ai-preview-caption">Model certainty</small>
+      </div>
+      <div class="ai-preview-item ai-preview-location">
+        <div class="ai-preview-item-head">
+          <span class="ai-preview-item-icon"><i class="bi bi-geo-alt-fill"></i></span>
+          <small>Priority location</small>
         </div>
+        <strong id="aiPriorityLocation">—</strong>
+      </div>
+      <div class="ai-preview-item ai-preview-action">
+        <div class="ai-preview-item-head">
+          <span class="ai-preview-item-icon"><i class="bi bi-lightning-charge-fill"></i></span>
+          <small>Immediate action</small>
+        </div>
+        <strong id="aiImmediateAction">—</strong>
       </div>
     </div>
-
-    <div class="ai-kpi-card ai-actions-card mt-4">
-      <div class="ai-card-header">
-        <span class="ai-card-icon ai-icon-amber">
-          <i class="bi bi-lightbulb"></i>
-        </span>
-        <div>
-          <h6>Recommended Actions</h6>
-          <small>Suggested operational response based on the monthly forecast</small>
-        </div>
-      </div>
-
-      <ul class="ai-action-grid" id="aiRecommendations"></ul>
     </div>
   </div>
 </div>
 
 <!-- Compact operational counters -->
+<div class="dashboard-section-heading"><span>Live operations</span></div>
 <div class="row g-3 mb-4">
   <div class="col-6 col-md-3">
     <div class="section-card compact-metric h-100">
@@ -1367,14 +1585,14 @@ page_start('Dashboard', 'dashboard', 'Search violations, plates, locations...');
 
   <div class="col-6 col-md-3">
     <div class="section-card compact-metric h-100">
-      <small class="text-muted">Congestion Events Today</small>
+      <small class="text-muted">Congestion Events &middot; <?= esc($overviewLabel) ?></small>
       <h4 class="mb-0 mt-1"><?= num($congestionEvents) ?></h4>
     </div>
   </div>
 
   <div class="col-6 col-md-3">
     <div class="section-card compact-metric h-100">
-      <small class="text-muted">Potential Collisions Today</small>
+      <small class="text-muted">Collision Alerts &middot; <?= esc($overviewLabel) ?></small>
       <h4 class="mb-0 mt-1"><?= num($collisionEvents) ?></h4>
     </div>
   </div>
@@ -1387,31 +1605,21 @@ page_start('Dashboard', 'dashboard', 'Search violations, plates, locations...');
   </div>
 </div>
 
-<!-- Current monitoring -->
-<div class="section-card mb-4" id="currentMonitoringCard">
+<!-- Live monitoring summary: stale records are intentionally not displayed. -->
+<div class="section-card mb-4 <?= $isMonitoringLive ? 'monitoring-live' : 'monitoring-stale' ?>" id="currentMonitoringCard">
   <div class="section-head">
     <div>
-      <h6>Current Monitoring Status</h6>
-      <small class="text-muted">Latest computer-vision monitoring record</small>
+      <h6>Live Computer-Vision Status</h6>
+      <small class="text-muted"><?= $isMonitoringLive ? 'Current detection results from the active CV worker' : 'Live results appear only while Computer Vision is running' ?></small>
     </div>
 
-    <span class="tag <?= tag_class($latestMonitoring['camera_status'] ?? 'offline') ?>">
-      <?= esc($latestMonitoring['camera_status'] ?? 'offline') ?>
+    <span class="tag <?= $isMonitoringLive ? 'tag-success' : 'tag-offline' ?>">
+      <?= esc($monitoringStatusLabel) ?>
     </span>
   </div>
 
-  <?php if ($latestMonitoring): ?>
+  <?php if ($isMonitoringLive): ?>
     <div class="metric-grid">
-      <div class="mini-metric">
-        <small>Camera</small>
-        <strong><?= esc($latestMonitoring['camera_name'] ?? 'Unnamed camera') ?></strong>
-      </div>
-
-      <div class="mini-metric">
-        <small>Location</small>
-        <strong><?= esc($latestMonitoring['location'] ?? 'Not set') ?></strong>
-      </div>
-
       <div class="mini-metric">
         <small>Visible Vehicles</small>
         <strong><?= num($currentVehicles) ?></strong>
@@ -1438,50 +1646,59 @@ page_start('Dashboard', 'dashboard', 'Search violations, plates, locations...');
       </div>
 
       <div class="mini-metric">
-        <small>Potential Collision</small>
+        <small>Collision</small>
         <strong><?= esc($latestMonitoring['potential_collision'] ?? 'none') ?></strong>
       </div>
     </div>
 
     <div class="mt-3 small text-muted">
-      Last updated: <?= esc($latestMonitoring['recorded_at'] ?? 'No timestamp') ?>
+      Last updated:
+      <time<?= $monitoringRecordedAt !== '' ? ' datetime="' . esc($monitoringRecordedAt) . '"' : '' ?>><?= esc($monitoringRecordedAtLabel) ?></time>
     </div>
   <?php else: ?>
-    <?php empty_state('No camera monitoring data is available yet. Start an analysis to populate this section.'); ?>
+    <div class="monitoring-offline-state" role="status">
+      <span class="monitoring-offline-icon" aria-hidden="true"><i class="bi bi-camera-video-off"></i></span>
+      <div class="monitoring-offline-copy">
+        <strong>Computer Vision is not currently sending live data.</strong>
+        <small class="text-muted">Previous monitoring-session values are hidden to prevent them from being mistaken for current road conditions.</small>
+        <a class="btn btn-light" href="<?= esc(app_url('monitoring.php')) ?>">
+          <i class="bi bi-camera-video me-1"></i>Open Monitoring
+        </a>
+      </div>
+    </div>
   <?php endif; ?>
 </div>
 
-<!-- Two essential charts only -->
+<!-- Treasurer-style violation and collection charts -->
+<div class="dashboard-section-heading"><span>Performance trends</span></div>
 <div class="row g-3 mb-4">
-  <div class="col-lg-7">
+  <div class="col-lg-6">
     <div class="section-card h-100">
       <div class="section-head">
         <div>
-          <h6>Monthly Violation Trends</h6>
-          <small class="text-muted">Current year</small>
+          <h6>Violation Records</h6>
+          <small class="text-muted">Monthly records · <?= esc(date('Y')) ?></small>
         </div>
       </div>
-
-      <canvas id="trendChart" height="115"></canvas>
-      <div id="trendEmpty" class="mt-3"></div>
-      <div id="trendInterpretation" class="alert alert-light border mt-3 mb-0 small" role="note"></div>
+      <div style="height:240px"><canvas id="trendChart"></canvas></div>
     </div>
   </div>
 
-  <div class="col-lg-5">
+  <div class="col-lg-6">
     <div class="section-card h-100">
       <div class="section-head">
-        <h6>Top Violation Types</h6>
+        <div>
+          <h6>Monthly Collection</h6>
+          <small class="text-muted">Completed payments · <?= esc(date('Y')) ?></small>
+        </div>
       </div>
-
-      <canvas id="topViolationChart" height="155"></canvas>
-      <div id="topViolationEmpty" class="mt-3"></div>
-      <div id="topViolationInterpretation" class="alert alert-light border mt-3 mb-0 small" role="note"></div>
+      <div style="height:240px"><canvas id="monthlyCollectionChart"></canvas></div>
     </div>
   </div>
 </div>
 
 <!-- Recent operational activity -->
+<div class="dashboard-section-heading"><span>Recent activity</span></div>
 <div class="row g-3">
   <div class="col-lg-6">
     <div class="section-card h-100">
@@ -1538,72 +1755,29 @@ page_start('Dashboard', 'dashboard', 'Search violations, plates, locations...');
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>
+const overviewPeriodSelect = document.getElementById('overviewPeriod');
+const overviewCustomDateFields = document.querySelectorAll('.overview-custom-date');
+const syncOverviewCustomDates = () => {
+  const showCustomDates = overviewPeriodSelect?.value === 'custom';
+  overviewCustomDateFields.forEach((field) => {
+    field.hidden = !showCustomDates;
+  });
+};
+overviewPeriodSelect?.addEventListener('change', syncOverviewCustomDates);
+syncOverviewCustomDates();
+
 const MONTHLY_PREDICTION_ENDPOINT = '../api/predict_monthly.php';
+const MONTHLY_SUMMARY_ENDPOINT = '../../api/get_monthly_summary.php';
 const HOTSPOT_ENDPOINT = '../api/predict_hotspot.php';
 
 const months = <?= json_encode(month_labels()) ?>;
 const trendData = <?= json_encode($trendData) ?>;
-const topViolationLabels = <?= json_encode($topViolationLabels) ?>;
-const topViolationData = <?= json_encode($topViolationData) ?>;
-
-const chartBlues = ['#1a2350', '#2a3a7a', '#3a4a9a', '#4a5aba', '#5a6aca', '#6a7ada'];
-const blueGrid = 'rgba(26, 35, 80, .08)';
-const blueTicks = '#5a6a8a';
-
-function showEmpty(id, message) {
-  const target = document.getElementById(id);
-  if (target) {
-    target.innerHTML = '<div class="empty-state">' + message + '</div>';
-  }
-}
-
-function setInterpretation(id, message) {
-  const target = document.getElementById(id);
-  if (!target) return;
-  target.textContent = message;
-  target.hidden = !message;
-}
-
-function total(values) {
-  return values.reduce((sum, value) => sum + Number(value || 0), 0);
-}
-
-function maxIndex(values) {
-  return values.reduce(
-    (best, value, index, all) =>
-      Number(value || 0) > Number(all[best] || 0) ? index : best,
-    0
-  );
-}
+const monthlyCollectionData = <?= json_encode($monthlyCollectionData) ?>;
+const adminChartGrid = 'rgba(148, 163, 184, .16)';
+const adminChartTicks = '#c9d8ea';
 
 function normalizeRisk(value) {
   return String(value || '').trim().toLowerCase().replace(' risk', '');
-}
-
-function getDecisionGuidance(riskLevel) {
-  const risk = normalizeRisk(riskLevel);
-
-  if (risk === 'high') {
-    return {
-      priority: 'High',
-      personnel: '5–6 enforcers',
-      monitoring: 'Intensive monitoring'
-    };
-  }
-
-  if (risk === 'medium') {
-    return {
-      priority: 'Medium',
-      personnel: '3–4 enforcers',
-      monitoring: 'Enhanced monitoring'
-    };
-  }
-
-  return {
-    priority: 'Low',
-    personnel: 'Regular staffing',
-    monitoring: 'Routine monitoring'
-  };
 }
 
 function applyRiskStyle(element, riskLevel) {
@@ -1624,12 +1798,60 @@ function applyRiskStyle(element, riskLevel) {
   }
 }
 
+function formatMonthlyMoney(value) {
+  return new Intl.NumberFormat('en-PH', {
+    style: 'currency',
+    currency: 'PHP',
+    maximumFractionDigits: 0
+  }).format(Number(value || 0));
+}
 
-function riskEndpointValue(riskLevel) {
-  const risk = normalizeRisk(riskLevel);
-  if (risk === 'high') return 'high';
-  if (risk === 'medium') return 'medium';
-  return 'low';
+async function loadMonthlySummary() {
+  const selectedMonth = document.getElementById('monthlySummaryMonth')?.value || '';
+  const endpoint = selectedMonth
+    ? `${MONTHLY_SUMMARY_ENDPOINT}?month=${encodeURIComponent(selectedMonth)}`
+    : MONTHLY_SUMMARY_ENDPOINT;
+
+  try {
+    const response = await fetch(endpoint, { cache: 'no-store', credentials: 'same-origin' });
+    const payload = await response.json();
+    if (!response.ok || !payload.success) throw new Error(payload.message || 'Unable to load monthly summary.');
+
+    const summary = payload.data;
+    const change = Number(summary.change_percent || 0);
+    const status = String(summary.status || 'Stable');
+    const statusElement = document.getElementById('monthlySummaryStatus');
+    const summaryCard = document.getElementById('monthlyExecutiveSummary');
+    const stateClass = status === 'Critical' ? 'monthly-state-critical' : status === 'Needs Attention' ? 'monthly-state-warning' : 'monthly-state-good';
+    const badgeClass = status === 'Critical' ? 'text-bg-danger' : status === 'Needs Attention' ? 'text-bg-warning' : 'text-bg-success';
+    const iconClass = status === 'Critical' ? 'bi-exclamation-octagon-fill' : status === 'Needs Attention' ? 'bi-exclamation-triangle-fill' : 'bi-check-circle-fill';
+    summaryCard.classList.remove('monthly-state-critical', 'monthly-state-warning', 'monthly-state-good');
+    summaryCard.classList.add(stateClass);
+    statusElement.innerHTML = `<i class="bi ${iconClass} me-1"></i>${status.toUpperCase()}`;
+    statusElement.className = `tag ${badgeClass}`;
+
+    document.getElementById('monthlySummaryTitle').textContent = summary.month_label;
+    document.getElementById('monthlyViolationCount').textContent = Number(summary.violations || 0).toLocaleString();
+    document.getElementById('monthlyViolationChange').textContent = `${change > 0 ? '▲' : change < 0 ? '▼' : '•'} ${Math.abs(change)}% vs previous month`;
+    document.getElementById('monthlyViolationChange').className = change > 0 ? 'text-danger' : change < 0 ? 'text-success' : 'text-muted';
+    document.getElementById('monthlyCollected').textContent = formatMonthlyMoney(summary.collected_amount);
+    const collectedAmount = Number(summary.collected_amount || 0);
+    const pendingAmount = Number(summary.pending_amount || 0);
+    const collectionMessage = pendingAmount > 0
+      ? `${formatMonthlyMoney(pendingAmount)} still unpaid`
+      : collectedAmount > 0
+        ? 'No unpaid balance'
+        : 'No payments recorded';
+    document.getElementById('monthlyCollectionRate').textContent = collectionMessage;
+    document.getElementById('monthlyTopViolation').textContent = summary.top_violation?.label || 'No data';
+    document.getElementById('monthlyTopViolationCount').textContent = `${Number(summary.top_violation?.total || 0).toLocaleString()} recorded cases`;
+    document.getElementById('monthlyTopLocation').textContent = summary.top_location?.label || 'No data';
+    document.getElementById('monthlyPeakPeriod').textContent = `Peak: ${summary.peak_day}, ${summary.peak_hour}`;
+    document.getElementById('monthlySummaryNarrative').textContent = summary.summary;
+  } catch (error) {
+    document.getElementById('monthlySummaryStatus').textContent = 'UNAVAILABLE';
+    document.getElementById('monthlySummaryNarrative').textContent = error.message || 'Monthly summary is temporarily unavailable.';
+  }
 }
 
 function getHotspotLocations(payload) {
@@ -1666,116 +1888,6 @@ function sortHotspots(records) {
   );
 }
 
-function renderHotspotGroup(risk, records) {
-  const normalized = risk.charAt(0).toUpperCase() + risk.slice(1);
-  const countElement = document.getElementById(`${risk}RiskCount`);
-  const listElement = document.getElementById(`${risk}RiskLocations`);
-
-  countElement.textContent = records.length;
-  listElement.innerHTML = '';
-
-  sortHotspots(records).forEach((record, index) => {
-    const locationName =
-      record.Location ||
-      record.location ||
-      record.violation_location ||
-      'Unnamed location';
-
-    const totalViolations =
-      record['Total Violations'] ??
-      record.Total_Violations ??
-      record.total ??
-      record.frequency_count ??
-      null;
-
-    const item = document.createElement('li');
-    item.innerHTML = `
-      <span class="hotspot-list-rank">${index + 1}</span>
-      <span class="hotspot-list-copy">
-        <strong>${locationName}</strong>
-        ${totalViolations !== null
-          ? `<small>${Number(totalViolations).toLocaleString()} historical records</small>`
-          : ''}
-      </span>
-    `;
-    listElement.appendChild(item);
-  });
-
-  if (!records.length) {
-    const item = document.createElement('li');
-    item.className = 'hotspot-list-empty';
-    item.textContent = `No ${normalized.toLowerCase()}-risk locations found.`;
-    listElement.appendChild(item);
-  }
-}
-
-function highlightPredictedHotspotCard(riskLevel) {
-  const risk = riskEndpointValue(riskLevel);
-
-  ['High', 'Medium', 'Low'].forEach(level => {
-    document
-      .getElementById(`hotspotCard${level}`)
-      ?.classList.remove('hotspot-card-highlighted');
-  });
-
-  const activeCard = document.getElementById(
-    `hotspotCard${risk.charAt(0).toUpperCase()}${risk.slice(1)}`
-  );
-
-  activeCard?.classList.add('hotspot-card-highlighted');
-
-  document.getElementById('hotspotMonthlyHighlight').textContent =
-    `${risk.charAt(0).toUpperCase()}${risk.slice(1)} Risk`;
-}
-
-async function loadHotspots(monthlyRiskLevel = 'High') {
-  const loading = document.getElementById('hotspotLoading');
-  const errorBox = document.getElementById('hotspotError');
-  const content = document.getElementById('hotspotContent');
-
-  loading.classList.remove('d-none');
-  errorBox.classList.add('d-none');
-  content.classList.add('d-none');
-
-  try {
-    const controller = new AbortController();
-    const timeoutId = window.setTimeout(() => controller.abort(), 10000);
-
-    const response = await fetch(HOTSPOT_ENDPOINT, {
-      method: 'GET',
-      headers: { 'Accept': 'application/json' },
-      cache: 'no-store',
-      signal: controller.signal
-    });
-
-    window.clearTimeout(timeoutId);
-
-    const payload = await response.json();
-
-    if (!response.ok || !payload.success) {
-      throw new Error(payload.message || 'Unable to load hotspot results.');
-    }
-
-    const records = getHotspotLocations(payload);
-    const groups = classifyHotspots(records);
-
-    renderHotspotGroup('high', groups.high);
-    renderHotspotGroup('medium', groups.medium);
-    renderHotspotGroup('low', groups.low);
-    highlightPredictedHotspotCard(monthlyRiskLevel);
-
-    loading.classList.add('d-none');
-    content.classList.remove('d-none');
-  } catch (error) {
-    loading.classList.add('d-none');
-    errorBox.textContent =
-      error.name === 'AbortError'
-        ? 'The hotspot request timed out. Make sure the Flask API is running on port 5001.'
-        : `${error.message} Make sure predict_hotspot.php and the Flask API are available.`;
-    errorBox.classList.remove('d-none');
-  }
-}
-
 async function loadMonthlyPrediction() {
   const loading = document.getElementById('aiPredictionLoading');
   const errorBox = document.getElementById('aiPredictionError');
@@ -1786,31 +1898,49 @@ async function loadMonthlyPrediction() {
   content.classList.add('d-none');
 
   try {
-    const selectedPeriod = document.getElementById('aiPredictionMonth')?.value || '';
-    const [selectedYear, selectedMonth] = selectedPeriod.split('-').map(Number);
-    const predictionUrl = selectedYear && selectedMonth
-      ? `${MONTHLY_PREDICTION_ENDPOINT}?year=${selectedYear}&month=${selectedMonth}`
-      : MONTHLY_PREDICTION_ENDPOINT;
-
-    const response = await fetch(predictionUrl, {
+    const now = new Date();
+    const forecastDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const predictionUrl = `${MONTHLY_PREDICTION_ENDPOINT}?year=${forecastDate.getFullYear()}&month=${forecastDate.getMonth() + 1}`;
+    const requestOptions = {
       method: 'GET',
-      headers: {
-        'Accept': 'application/json'
-      },
+      headers: { 'Accept': 'application/json' },
       cache: 'no-store'
-    });
+    };
+    const [predictionResponse, hotspotResponse] = await Promise.all([
+      fetch(predictionUrl, requestOptions),
+      fetch(HOTSPOT_ENDPOINT, requestOptions)
+    ]);
+    const [payload, hotspotPayload] = await Promise.all([
+      predictionResponse.json(),
+      hotspotResponse.json()
+    ]);
 
-    const payload = await response.json();
-
-    if (!response.ok || !payload.success) {
+    if (!predictionResponse.ok || !payload.success) {
       throw new Error(payload.message || 'Unable to load the prediction.');
+    }
+    if (!hotspotResponse.ok || !hotspotPayload.success) {
+      throw new Error(hotspotPayload.message || 'Unable to load hotspot results.');
     }
 
     const prediction = payload.data || payload.prediction || {};
     const riskLevel = prediction.risk_level || 'Unknown';
     const confidence = Number(prediction.confidence || 0);
-    const recommendations = prediction.recommendations || [];
-    const guidance = getDecisionGuidance(riskLevel);
+    const hotspots = classifyHotspots(getHotspotLocations(hotspotPayload));
+    const priorityRecord =
+      sortHotspots(hotspots.high)[0] ||
+      sortHotspots(hotspots.medium)[0] ||
+      sortHotspots(hotspots.low)[0];
+    const priorityLocation =
+      priorityRecord?.Location ||
+      priorityRecord?.location ||
+      priorityRecord?.violation_location ||
+      'No hotspot data';
+    const normalizedRisk = normalizeRisk(riskLevel);
+    const immediateAction = normalizedRisk === 'high'
+      ? 'Plan a focused 7-day operation at the priority location'
+      : normalizedRisk === 'medium'
+        ? 'Observe the priority location and check results twice a week'
+        : 'Continue regular monitoring';
 
     const riskBadge = document.getElementById('aiRiskBadge');
     riskBadge.textContent = String(riskLevel).toUpperCase();
@@ -1824,28 +1954,11 @@ async function loadMonthlyPrediction() {
 
     const confidenceBar = document.getElementById('aiConfidenceBar');
     confidenceBar.style.width = `${Math.max(0, Math.min(100, confidence))}%`;
-    applyRiskStyle(confidenceBar, riskLevel);
-
-    document.getElementById('aiDeploymentPriority').textContent = guidance.priority;
-    document.getElementById('aiSuggestedPersonnel').textContent = guidance.personnel;
-    document.getElementById('aiMonitoringIntensity').textContent = guidance.monitoring;
-
-    const recommendationList = document.getElementById('aiRecommendations');
-    recommendationList.innerHTML = '';
-
-    const actions = recommendations.length
-      ? recommendations
-      : ['Review the prediction together with current monitoring data.'];
-
-    actions.forEach(action => {
-      const item = document.createElement('li');
-      item.innerHTML = `<i class="bi bi-check-circle-fill"></i><span>${action}</span>`;
-      recommendationList.appendChild(item);
-    });
+    document.getElementById('aiPriorityLocation').textContent = priorityLocation;
+    document.getElementById('aiImmediateAction').textContent = immediateAction;
 
     loading.classList.add('d-none');
     content.classList.remove('d-none');
-    await loadHotspots(riskLevel);
   } catch (error) {
     loading.classList.add('d-none');
     errorBox.textContent =
@@ -1854,108 +1967,160 @@ async function loadMonthlyPrediction() {
   }
 }
 
-document.getElementById('refreshPredictionBtn')?.addEventListener(
-  'click',
-  loadMonthlyPrediction
-);  
-document.getElementById('aiPredictionMonth')?.addEventListener('change', loadMonthlyPrediction);
+document.getElementById('monthlySummaryMonth')?.addEventListener('change', loadMonthlySummary);
 
+loadMonthlySummary();
 loadMonthlyPrediction();
-setInterval(loadMonthlyPrediction, 60000);
 
-if (total(trendData) > 0) {
-  new Chart(document.getElementById('trendChart'), {
-    type: 'line',
-    data: {
-      labels: months,
-      datasets: [{
-        label: 'Violations',
-        data: trendData,
-        borderColor: '#1a2350',
-        backgroundColor: 'rgba(26,35,80,.08)',
-        pointBackgroundColor: '#2a3a7a',
-        pointBorderColor: '#ffffff',
-        fill: true,
-        tension: .4,
-        borderWidth: 3,
-        pointRadius: 3,
-        pointHoverRadius: 5
-      }]
+Chart.defaults.font.family = "'Poppins', sans-serif";
+Chart.defaults.color = adminChartTicks;
+
+function violationChartOptions() {
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#102f49',
+        titleColor: '#ffffff',
+        bodyColor: '#e8f0ed',
+        padding: 12,
+        cornerRadius: 8,
+        callbacks: {
+          label: context => {
+            const count = Number(context.parsed.y || 0);
+            return `${count.toLocaleString()} violation${count === 1 ? '' : 's'}`;
+          }
+        }
+      }
     },
-    options: {
-      responsive: true,
-      plugins: { legend: { display: false } },
-      scales: {
-        x: {
-          grid: { display: false },
-          ticks: { color: blueTicks }
-        },
-        y: {
-          beginAtZero: true,
-          grid: { color: blueGrid },
-          ticks: { precision: 0, color: blueTicks }
+    scales: {
+      x: { grid: { display: false }, ticks: { color: adminChartTicks } },
+      y: {
+        beginAtZero: true,
+        grid: { color: adminChartGrid },
+        ticks: { precision: 0, color: adminChartTicks }
+      }
+    }
+  };
+}
+
+function collectionChartOptions() {
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#102f49',
+        titleColor: '#ffffff',
+        bodyColor: '#e8f0ed',
+        padding: 12,
+        cornerRadius: 8,
+        callbacks: {
+          label: context => `₱${Number(context.parsed.y || 0).toLocaleString()}`
+        }
+      }
+    },
+    scales: {
+      x: { grid: { display: false }, ticks: { color: adminChartTicks } },
+      y: {
+        beginAtZero: true,
+        grid: { color: adminChartGrid },
+        ticks: {
+          color: adminChartTicks,
+          callback: value => `₱${Number(value).toLocaleString()}`
         }
       }
     }
-  });
-
-  const peak = maxIndex(trendData);
-  setInterpretation(
-    'trendInterpretation',
-    `Interpretation: ${months[peak]} recorded the highest monthly count at ${Number(trendData[peak]).toLocaleString()}.`
-  );
-} else {
-  showEmpty('trendEmpty', 'No violation trend data yet.');
-  setInterpretation(
-    'trendInterpretation',
-    'Interpretation: No current-year violation trend can be identified yet.'
-  );
+  };
 }
 
-if (total(topViolationData) > 0) {
-  new Chart(document.getElementById('topViolationChart'), {
-    type: 'bar',
-    data: {
-      labels: topViolationLabels,
-      datasets: [{
-        label: 'Recorded Violations',
-        data: topViolationData,
-        backgroundColor: topViolationLabels.map(
-          (_, index) => chartBlues[(index + 1) % chartBlues.length]
-        ),
-        borderRadius: 7
-      }]
-    },
-    options: {
-      responsive: true,
-      indexAxis: 'y',
-      plugins: { legend: { display: false } },
-      scales: {
-        x: {
-          beginAtZero: true,
-          grid: { color: blueGrid },
-          ticks: { precision: 0, color: blueTicks }
-        },
-        y: {
-          grid: { display: false },
-          ticks: { color: blueTicks }
-        }
-      }
+const violationContext = document.getElementById('trendChart').getContext('2d');
+const violationGradient = violationContext.createLinearGradient(0, 0, 0, 240);
+violationGradient.addColorStop(0, 'rgba(8, 125, 120, .34)');
+violationGradient.addColorStop(1, 'rgba(8, 125, 120, 0)');
+
+new Chart(violationContext, {
+  type: 'line',
+  data: {
+    labels: months,
+    datasets: [{
+      label: 'Violation Records',
+      data: trendData,
+      borderColor: '#087d78',
+      backgroundColor: violationGradient,
+      fill: true,
+      tension: .4,
+      borderWidth: 3,
+      pointBackgroundColor: '#eb941f',
+      pointBorderColor: '#fffdf7',
+      pointBorderWidth: 2,
+      pointRadius: 4,
+      pointHoverRadius: 6
+    }]
+  },
+  options: violationChartOptions()
+});
+
+const collectionContext = document.getElementById('monthlyCollectionChart').getContext('2d');
+const collectionGradient = collectionContext.createLinearGradient(0, 0, 0, 240);
+collectionGradient.addColorStop(0, '#087d78');
+collectionGradient.addColorStop(1, '#eb941f');
+
+new Chart(collectionContext, {
+  type: 'bar',
+  data: {
+    labels: months,
+    datasets: [{
+      label: 'Monthly Collection',
+      data: monthlyCollectionData,
+      backgroundColor: collectionGradient,
+      borderRadius: 6,
+      borderSkipped: false
+    }]
+  },
+  options: collectionChartOptions()
+});
+</script>
+
+<script>
+(() => {
+  const picker = document.getElementById('vehicleCountDate');
+  if (!picker) return;
+  const loadVehicleDate = async () => {
+    const total = document.getElementById('datedVehicleTotal');
+    total.textContent = '…';
+    try {
+      const response = await fetch(`../api/vehicle_count_by_date.php?date=${encodeURIComponent(picker.value)}`, {cache:'no-store',credentials:'same-origin'});
+      const payload = await response.json();
+      if (!response.ok || !payload.success) throw new Error(payload.message || 'Unable to load vehicle counts.');
+      const data = payload.data;
+      const difference = Number(data.difference_percent || 0);
+      const comparisonText = Math.abs(difference) < 1
+        ? 'Near average'
+        : difference > 100
+          ? `About ${(1 + (difference / 100)).toFixed(1)} times the average`
+          : `${Math.abs(difference).toFixed(1)}% ${difference > 0 ? 'higher' : 'lower'}`;
+      document.getElementById('vehicleDateLabel').textContent = data.date_label;
+      total.textContent = Number(data.vehicle_total).toLocaleString();
+      document.getElementById('datedVehicleDirections').textContent = `${Number(data.inbound_total).toLocaleString()} inbound · ${Number(data.outbound_total).toLocaleString()} outbound`;
+      document.getElementById('datedVehicleComparison').textContent = comparisonText;
+      document.getElementById('datedVehicleAverage').textContent = `${Number(data.daily_average).toLocaleString()} vehicles daily average`;
+      document.getElementById('busiestTrafficDate').textContent = data.busiest_date || 'No data';
+      document.getElementById('busiestTrafficTotal').textContent = data.busiest_date ? `${Number(data.busiest_total).toLocaleString()} vehicles recorded` : 'No recorded data';
+      const level = difference >= 20 ? 'Busier than usual' : difference <= -20 ? 'Quieter than usual' : 'Typical traffic volume';
+      document.getElementById('datedTrafficLevel').textContent = data.vehicle_total > 0 ? level : 'No traffic record';
+      document.getElementById('datedTrafficNarrative').textContent = data.vehicle_total > 0 ? `Based on ${Number(data.recorded_days).toLocaleString()} recorded days.` : 'No monitoring data was saved on this date.';
+    } catch (error) {
+      total.textContent = 'Unavailable';
+      document.getElementById('datedTrafficNarrative').textContent = error.message;
     }
-  });
-
-  const leadingViolation = maxIndex(topViolationData);
-  setInterpretation(
-    'topViolationInterpretation',
-    `Interpretation: ${topViolationLabels[leadingViolation]} is the leading violation type with ${Number(topViolationData[leadingViolation]).toLocaleString()} records.`
-  );
-} else {
-  showEmpty('topViolationEmpty', 'No violation type data available.');
-  setInterpretation(
-    'topViolationInterpretation',
-    'Interpretation: No violation-type pattern can be identified yet.'
-  );
-}
+  };
+  picker.addEventListener('change', loadVehicleDate);
+  loadVehicleDate();
+})();
 </script>
 
 <?php page_end(false); ?>

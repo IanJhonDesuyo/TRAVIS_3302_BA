@@ -12,12 +12,9 @@ function payment_post(string $key, string $default = ''): string
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'record_payment') {
     $violationId = (int)($_POST['violation_id'] ?? 0);
     $amountPaid = (float)payment_post('amount_paid', '0');
-    $paymentMethod = payment_post('payment_method', 'cash');
-
-    $allowedMethods = ['cash', 'gcash', 'bank_transfer', 'other'];
-    if (!in_array($paymentMethod, $allowedMethods, true)) {
-        $paymentMethod = 'cash';
-    }
+    $officialReceiptNumber = strtoupper(payment_post('official_receipt_number'));
+    // The Municipal Treasurer accepts cash payments only.
+    $paymentMethod = 'cash';
 
     $conn->begin_transaction();
 
@@ -36,6 +33,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'recor
         if ($violation['status'] === 'paid') throw new RuntimeException('This violation has already been paid.');
         if ($violation['status'] === 'cancelled') throw new RuntimeException('Cancelled violations cannot be paid.');
         if ($amountPaid <= 0) throw new RuntimeException('Enter a valid payment amount.');
+        if ($officialReceiptNumber === '' || mb_strlen($officialReceiptNumber) > 120) {
+            throw new RuntimeException('Enter a valid official receipt number.');
+        }
+        if (!preg_match('/^[A-Z0-9][A-Z0-9 .\/-]*$/', $officialReceiptNumber)) {
+            throw new RuntimeException('Official receipt number contains unsupported characters.');
+        }
 
         $penalty = (float)$violation['penalty_amount'];
         if (abs($amountPaid - $penalty) > 0.009) {
@@ -57,10 +60,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'recor
         }
 
         $stmt = $conn->prepare("
-            INSERT INTO payments (violation_id, amount_paid, payment_status, payment_method)
-            VALUES (?, ?, 'completed', ?)
+            INSERT INTO payments (violation_id, amount_paid, payment_status, payment_method, received_by, receipt_reference, official_receipt_number)
+            VALUES (?, ?, 'completed', ?, ?, NULL, ?)
         ");
-        $stmt->bind_param('ids', $violationId, $amountPaid, $paymentMethod);
+        $receivedBy = (int)($_SESSION['user_id'] ?? $_SESSION['user']['id'] ?? 0);
+        $stmt->bind_param('idsis', $violationId, $amountPaid, $paymentMethod, $receivedBy, $officialReceiptNumber);
         $stmt->execute();
 
         $paymentId = $conn->insert_id;
@@ -74,14 +78,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'recor
 
         $conn->commit();
 
-        $message = 'Payment recorded successfully. Payment reference: PAY-' . str_pad((string)$paymentId, 6, '0', STR_PAD_LEFT);
+        $message = 'Payment recorded successfully. Official Receipt No.: ' . $officialReceiptNumber;
         $messageType = 'success';
-        if (defined('TRAVIS_AUTO_PRINT_PAYMENT_RECEIPT') && TRAVIS_AUTO_PRINT_PAYMENT_RECEIPT) {
-            $autoPrintPaymentId = (int)$paymentId;
-        }
+        audit_log('record_payment', 'payments', 'Recorded cash payment with OR ' . $officialReceiptNumber . ' for ticket ' . $violation['ticket_number'] . '.', 'success', 'payment', $paymentId);
     } catch (Throwable $e) {
         $conn->rollback();
-        $message = $e->getMessage() ?: 'Failed to record the payment.';
+        $message = (int)$e->getCode() === 1062
+            ? 'That official receipt number has already been used.'
+            : ($e->getMessage() ?: 'Failed to record the payment.');
         $messageType = 'danger';
     }
 }
@@ -99,10 +103,6 @@ if ($selectedViolationId > 0) {
 $pendingSearch = trim((string)($_GET['pending_search'] ?? ''));
 $paymentSearch = trim((string)($_GET['payment_search'] ?? ''));
 $methodFilter = trim((string)($_GET['method'] ?? ''));
-$requestedReceiptId = max(0, (int)($_GET['receipt_id'] ?? 0));
-if ($requestedReceiptId > 0) {
-    $autoPrintPaymentId = $requestedReceiptId;
-}
 
 $pendingWhere = "WHERE v.status IN ('pending', 'overdue')";
 $pendingParams = [];
@@ -139,10 +139,10 @@ $paymentParams = [];
 $paymentTypes = '';
 
 if ($paymentSearch !== '') {
-    $paymentWhere[] = "(v.ticket_number LIKE ? OR v.driver_name LIKE ? OR v.plate_number LIKE ?)";
+    $paymentWhere[] = "(v.ticket_number LIKE ? OR v.driver_name LIKE ? OR v.plate_number LIKE ? OR p.official_receipt_number LIKE ?)";
     $like = "%{$paymentSearch}%";
-    array_push($paymentParams, $like, $like, $like);
-    $paymentTypes .= 'sss';
+    array_push($paymentParams, $like, $like, $like, $like);
+    $paymentTypes .= 'ssss';
 }
 
 if ($methodFilter !== '') {
@@ -516,6 +516,19 @@ div[style*="border-radius: 999px"]:not(.tag){
     background:rgba(255,255,255,.06) !important;
     color:#fff !important;
 }
+
+.payment-processing-layout{display:grid;gap:16px;}
+.payment-review-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;}
+.payment-review-item{min-width:0;padding:12px 14px;border:1px solid rgba(16,47,73,.11);border-radius:12px;background:rgba(8,125,120,.045);}
+.payment-review-item>span{display:block;margin-bottom:5px;color:#60736d;font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;}
+.payment-review-item>strong{display:block;color:#10202c;font-size:.86rem;line-height:1.35;overflow-wrap:anywhere;}
+.payment-review-penalty{background:rgba(8,125,120,.09);}
+.payment-review-penalty>strong{color:#087d78;font-size:1.08rem;}
+.payment-entry-panel{display:grid;grid-template-columns:1.2fr .7fr 1.2fr;gap:14px;align-items:start;padding:16px;border:1px solid rgba(8,125,120,.2);border-radius:14px;background:linear-gradient(135deg,rgba(8,125,120,.055),rgba(255,255,255,.55));}
+.payment-entry-action{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) minmax(220px,340px);gap:14px;align-items:stretch;}
+.payment-entry-action .btn{min-height:48px;}
+@media(max-width:991.98px){.payment-review-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.payment-entry-panel{grid-template-columns:1fr 1fr}.payment-entry-panel>div:nth-of-type(3){grid-column:1/-1}}
+@media(max-width:575.98px){.payment-review-grid,.payment-entry-panel,.payment-entry-action{grid-template-columns:1fr}.payment-entry-panel>div:nth-of-type(3),.payment-entry-action{grid-column:auto}}
 </style>
 
 <div class="d-flex justify-content-between flex-wrap mb-4 gap-2">
@@ -577,26 +590,23 @@ div[style*="border-radius: 999px"]:not(.tag){
     <?php elseif ($selectedViolation['status'] === 'cancelled'): ?>
       <div class="alert alert-warning mb-0">This violation was cancelled and cannot be paid.</div>
     <?php else: ?>
-      <div class="row g-4">
-        <div class="col-lg-7">
-          <div class="row g-3">
-            <div class="col-md-6"><strong>Ticket Number</strong><br><?= esc($selectedViolation['ticket_number']) ?></div>
-            <div class="col-md-6"><strong>Status</strong><br><span class="tag <?= tag_class($selectedViolation['status']) ?>"><?= esc(ucfirst($selectedViolation['status'])) ?></span></div>
-            <div class="col-md-6"><strong>Driver</strong><br><?= esc($selectedViolation['driver_name']) ?></div>
-            <div class="col-md-6"><strong>Plate Number</strong><br><?= esc($selectedViolation['plate_number']) ?></div>
-            <div class="col-md-6"><strong>Violation</strong><br><?= esc($selectedViolation['violation_type']) ?></div>
-            <div class="col-md-6"><strong>Location</strong><br><?= esc($selectedViolation['violation_location']) ?></div>
-            <div class="col-md-6"><strong>Date & Time</strong><br><?= esc($selectedViolation['violation_date'] . ' ' . $selectedViolation['violation_time']) ?></div>
-            <div class="col-md-6"><strong>Penalty</strong><br><span class="fs-5 fw-semibold"><?= peso($selectedViolation['penalty_amount']) ?></span></div>
-          </div>
+      <div class="payment-processing-layout">
+        <div class="payment-review-grid">
+          <div class="payment-review-item"><span>Ticket Number</span><strong><?= esc($selectedViolation['ticket_number']) ?></strong></div>
+          <div class="payment-review-item"><span>Driver</span><strong><?= esc($selectedViolation['driver_name']) ?></strong></div>
+          <div class="payment-review-item"><span>Plate Number</span><strong><?= esc($selectedViolation['plate_number']) ?></strong></div>
+          <div class="payment-review-item"><span>Status</span><strong><span class="tag <?= tag_class($selectedViolation['status']) ?>"><?= esc(ucfirst($selectedViolation['status'])) ?></span></strong></div>
+          <div class="payment-review-item"><span>Violation</span><strong><?= esc($selectedViolation['violation_type']) ?></strong></div>
+          <div class="payment-review-item"><span>Location</span><strong><?= esc($selectedViolation['violation_location']) ?></strong></div>
+          <div class="payment-review-item"><span>Date &amp; Time</span><strong><?= esc($selectedViolation['violation_date'] . ' ' . $selectedViolation['violation_time']) ?></strong></div>
+          <div class="payment-review-item payment-review-penalty"><span>Penalty</span><strong><?= peso($selectedViolation['penalty_amount']) ?></strong></div>
         </div>
 
-        <div class="col-lg-5">
-          <form method="post" class="border rounded-3 p-3">
+          <form method="post" class="payment-entry-panel" id="recordPaymentForm">
             <input type="hidden" name="action" value="record_payment">
             <input type="hidden" name="violation_id" value="<?= (int)$selectedViolation['violation_id'] ?>">
 
-            <div class="mb-3">
+            <div>
               <label class="form-label">Violation Fee / Amount Paid</label>
               <select name="amount_paid" class="form-select" required>
                 <option value="<?= esc($selectedViolation['penalty_amount']) ?>"><?= peso($selectedViolation['penalty_amount']) ?> &mdash; <?= esc($selectedViolation['violation_type']) ?></option>
@@ -604,23 +614,85 @@ div[style*="border-radius: 999px"]:not(.tag){
               <small class="text-muted">The fee is taken from the selected violation and cannot be changed during payment.</small>
             </div>
 
-            <div class="mb-3">
+            <div>
               <label class="form-label">Payment Method</label>
-              <select name="payment_method" class="form-select" required>
-                <option value="cash">Cash</option>
-                <option value="gcash">GCash</option>
-                <option value="bank_transfer">Bank Transfer</option>
-                <option value="other">Other</option>
-              </select>
+              <input type="hidden" name="payment_method" value="cash">
+              <div class="form-control d-flex align-items-center gap-2" aria-label="Payment method: Cash">
+                <i class="bi bi-cash-stack text-success"></i><strong>Cash</strong>
+              </div>
             </div>
 
-            <div class="alert alert-light border small">A payment reference will be generated from the saved payment ID.</div>
-            <button class="btn btn-success w-100" onclick="return confirm('Confirm and record this payment?');"><i class="bi bi-check2-circle me-1"></i>Confirm Payment</button>
+            <div>
+              <label class="form-label" for="officialReceiptNumber">Official Receipt Number</label>
+              <input type="text" class="form-control text-uppercase" id="officialReceiptNumber" name="official_receipt_number" maxlength="120" placeholder="Enter Treasurer-issued OR number" autocomplete="off" required>
+              <small class="text-muted">Use the number printed on the official receipt. Duplicate numbers are not allowed.</small>
+            </div>
+
+            <div class="payment-entry-action">
+              <div class="alert alert-light border small mb-0">The OR number will be saved together with an internal system payment reference.</div>
+              <button class="btn btn-success" id="openPaymentConfirmation" type="button"><i class="bi bi-check2-circle me-1"></i>Confirm Payment</button>
+            </div>
           </form>
-        </div>
       </div>
     <?php endif; ?>
   </div>
+<?php endif; ?>
+
+<?php if ($selectedViolation): ?>
+<div class="modal fade payment-confirm-modal" id="confirmPaymentModal" tabindex="-1" aria-labelledby="confirmPaymentTitle" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="payment-confirm-accent"></div>
+      <button type="button" class="btn-close payment-confirm-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      <div class="modal-body">
+        <div class="payment-confirm-icon"><i class="bi bi-cash-coin"></i></div>
+        <span class="payment-confirm-eyebrow">Payment verification</span>
+        <h3 id="confirmPaymentTitle">Confirm cash payment?</h3>
+        <p class="payment-confirm-copy">Review the transaction before recording it. A completed payment cannot be recorded again for this violation.</p>
+
+        <div class="payment-confirm-summary">
+          <div><span>Ticket number</span><strong><?= esc($selectedViolation['ticket_number']) ?></strong></div>
+          <div><span>Payment method</span><strong><i class="bi bi-cash-stack me-1"></i>Cash</strong></div>
+          <div><span>Official receipt no.</span><strong id="confirmOfficialReceipt">&mdash;</strong></div>
+          <div class="payment-confirm-total"><span>Amount to collect</span><strong><?= peso($selectedViolation['penalty_amount']) ?></strong></div>
+        </div>
+
+        <div class="payment-confirm-actions">
+          <button type="button" class="btn payment-confirm-cancel" data-bs-dismiss="modal"><i class="bi bi-x-lg"></i>Cancel</button>
+          <button type="submit" class="btn payment-confirm-submit" form="recordPaymentForm"><i class="bi bi-check2-circle"></i>Record Payment</button>
+        </div>
+        <small class="payment-confirm-note"><i class="bi bi-shield-check me-1"></i>The payment will be saved to the official TRAVIS ledger.</small>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+document.getElementById('openPaymentConfirmation')?.addEventListener('click', function () {
+  const form = document.getElementById('recordPaymentForm');
+  if (!form?.reportValidity()) return;
+  const receipt = document.getElementById('officialReceiptNumber')?.value.trim().toUpperCase() || '';
+  document.getElementById('confirmOfficialReceipt').textContent = receipt;
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('confirmPaymentModal')).show();
+});
+</script>
+<style>
+body.municipal-portal .payment-confirm-modal .modal-dialog{width:min(460px,calc(100vw - 2rem))!important;max-width:460px!important}
+body.municipal-portal .payment-confirm-modal .modal-content{position:relative;overflow:hidden;border:1px solid rgba(8,125,120,.24)!important;border-radius:20px!important;background:linear-gradient(145deg,#fff,#fbfaf5)!important;box-shadow:0 24px 60px rgba(16,47,73,.25)!important}
+.payment-confirm-accent{height:6px;background:linear-gradient(90deg,#087d78,#34d399)}
+.payment-confirm-modal .modal-body{padding:24px!important;text-align:left!important}
+.payment-confirm-close{position:absolute;right:16px;top:17px;z-index:2;padding:9px!important;border-radius:9px;background-color:rgba(16,47,73,.08)}
+.payment-confirm-icon{display:grid;width:50px;height:50px;place-items:center;margin-bottom:14px;border-radius:15px;color:#087d78;background:rgba(8,125,120,.11);font-size:24px}
+.payment-confirm-eyebrow{display:block;margin-bottom:5px;color:#087d78;font-size:.68rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase}
+.payment-confirm-modal h3{margin:0 38px 7px 0;color:#10202c;font-size:1.25rem;font-weight:800}
+.payment-confirm-copy{margin:0 0 16px;color:#60736d;font-size:.82rem;line-height:1.55}
+.payment-confirm-summary{overflow:hidden;border:1px solid rgba(16,47,73,.14);border-radius:14px;background:rgba(247,249,246,.85)}
+.payment-confirm-summary>div{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:11px 14px;border-bottom:1px solid rgba(16,47,73,.1)}
+.payment-confirm-summary>div:last-child{border-bottom:0}.payment-confirm-summary span{color:#60736d;font-size:.76rem}.payment-confirm-summary strong{color:#10202c;font-size:.82rem;text-align:right}
+.payment-confirm-summary .payment-confirm-total{background:rgba(8,125,120,.07)}.payment-confirm-summary .payment-confirm-total strong{color:#087d78;font-size:1.05rem}
+.payment-confirm-actions{display:grid;grid-template-columns:1fr 1.35fr;gap:10px;margin-top:18px}.payment-confirm-actions .btn{min-height:42px;border-radius:11px;font-size:.8rem;font-weight:800;display:flex;align-items:center;justify-content:center;gap:7px}
+.payment-confirm-cancel{color:#526b64!important;border:1px solid rgba(16,47,73,.2)!important;background:#fff!important}.payment-confirm-submit{color:#fff!important;border:0!important;background:linear-gradient(135deg,#087d78,#16a37f)!important;box-shadow:0 10px 22px rgba(8,125,120,.2)}
+.payment-confirm-note{display:block;margin-top:12px;color:#71817c;text-align:center;font-size:.68rem}
+</style>
 <?php endif; ?>
 
 <div class="section-card mb-4">
@@ -666,13 +738,10 @@ div[style*="border-radius: 999px"]:not(.tag){
     <form method="get" class="d-flex flex-wrap gap-2">
       <?php if ($selectedViolationId > 0): ?><input type="hidden" name="violation_id" value="<?= $selectedViolationId ?>"><?php endif; ?>
       <input type="hidden" name="pending_search" value="<?= esc($pendingSearch) ?>">
-      <input class="form-control form-control-sm" name="payment_search" value="<?= esc($paymentSearch) ?>" placeholder="Ticket, driver, or plate..." style="width:200px;">
+      <input class="form-control form-control-sm" name="payment_search" value="<?= esc($paymentSearch) ?>" placeholder="OR, ticket, driver, plate..." style="width:220px;">
       <select class="form-select form-select-sm" name="method" style="width:140px;">
         <option value="">All Methods</option>
         <option value="cash" <?= $methodFilter === 'cash' ? 'selected' : '' ?>>Cash</option>
-        <option value="gcash" <?= $methodFilter === 'gcash' ? 'selected' : '' ?>>GCash</option>
-        <option value="bank_transfer" <?= $methodFilter === 'bank_transfer' ? 'selected' : '' ?>>Bank Transfer</option>
-        <option value="other" <?= $methodFilter === 'other' ? 'selected' : '' ?>>Other</option>
       </select>
       <button class="btn btn-sm btn-primary">Filter</button>
     </form>
@@ -683,11 +752,12 @@ div[style*="border-radius: 999px"]:not(.tag){
   <?php else: ?>
     <div class="table-responsive table-scroll">
       <table class="table align-middle">
-        <thead><tr><th>Reference</th><th>Ticket</th><th>Driver / Plate</th><th>Violation</th><th>Amount</th><th>Method</th><th>Date</th><th>Status</th><th>Received By</th><th class="text-end no-print">Receipt</th></tr></thead>
+        <thead><tr><th>Official Receipt</th><th>System Reference</th><th>Ticket</th><th>Driver / Plate</th><th>Violation</th><th>Amount</th><th>Method</th><th>Date</th><th>Status</th><th>Received By</th></tr></thead>
         <tbody>
           <?php foreach ($payments as $p): ?>
             <tr>
-              <td class="fw-semibold">PAY-<?= str_pad((string)$p['payment_id'], 6, '0', STR_PAD_LEFT) ?></td>
+              <td class="fw-semibold"><?= esc($p['official_receipt_number'] ?? 'Legacy record') ?></td>
+              <td>PAY-<?= str_pad((string)$p['payment_id'], 6, '0', STR_PAD_LEFT) ?></td>
               <td><?= esc($p['ticket_number']) ?></td>
               <td><?= esc($p['driver_name']) ?><br><small class="text-muted"><?= esc($p['plate_number']) ?></small></td>
               <td><?= esc($p['violation_type']) ?></td>
@@ -696,24 +766,6 @@ div[style*="border-radius: 999px"]:not(.tag){
               <td class="text-muted"><?= esc($p['payment_date']) ?></td>
               <td><span class="tag <?= tag_class($p['payment_status']) ?>"><?= esc(ucfirst($p['payment_status'])) ?></span></td>
               <td><?= esc($p['received_by_name'] ?? 'Not recorded') ?></td>
-              <td class="text-end no-print">
-                <?php if (strtolower((string)$p['payment_status']) === 'completed'): ?>
-                  <button class="btn btn-sm btn-light payment-receipt-button" type="button"
-                    data-reference="<?= esc(payment_reference((int)$p['payment_id'])) ?>"
-                    data-ticket="<?= esc($p['ticket_number']) ?>"
-                    data-plate="<?= esc($p['plate_number']) ?>"
-                    data-driver="<?= esc($p['driver_name']) ?>"
-                    data-violation="<?= esc($p['violation_type']) ?>"
-                    data-amount="<?= esc(peso($p['amount_paid'])) ?>"
-                    data-method="<?= esc(payment_method_label($p['payment_method'])) ?>"
-                    data-date="<?= esc($p['payment_date']) ?>"
-                    data-received-by="<?= esc($p['received_by_name'] ?? 'Not recorded') ?>">
-                    <i class="bi bi-receipt me-1"></i>Print
-                  </button>
-                <?php else: ?>
-                  <span class="text-muted">—</span>
-                <?php endif; ?>
-              </td>
             </tr>
           <?php endforeach; ?>
         </tbody>
@@ -759,117 +811,4 @@ div[style*="border-radius: 999px"]:not(.tag){
     window.setTimeout(cleanup, 2000);
   });
 </script>
-<script>
-  document.querySelectorAll('.payment-receipt-button').forEach(function (button) {
-    button.addEventListener('click', function () {
-      var data = button.dataset;
-      var escapeHtml = function (value) {
-        return String(value || '').replace(/[&<>"']/g, function (character) {
-          return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[character];
-        });
-      };
-      var field = function (label, value) {
-        return '<div class="field"><strong>' + label + '</strong><span>' + escapeHtml(value) + '</span></div>';
-      };
-      var frame = document.createElement('iframe');
-      frame.setAttribute('title', 'Payment receipt print frame');
-      frame.style.position = 'fixed';
-      frame.style.width = '1px';
-      frame.style.height = '1px';
-      frame.style.opacity = '0';
-      frame.style.pointerEvents = 'none';
-      document.body.appendChild(frame);
-      var receiptDocument = frame.contentWindow.document;
-      receiptDocument.open();
-      receiptDocument.write('<!doctype html><html><head><title>' + escapeHtml(data.reference) + '</title><style>' +
-        '@page{size:A4 portrait;margin:16mm}*{box-sizing:border-box}body{margin:0;color:#111827;font-family:Arial,sans-serif}.receipt{width:180mm;margin:auto;padding:10mm}.header{text-align:center;border-bottom:2px solid #102f49;padding-bottom:16px;margin-bottom:22px}.republic{font-family:Georgia,serif;font-size:12px;letter-spacing:.08em}.office{text-transform:uppercase;letter-spacing:.1em;color:#102f49;font:700 20px Georgia,serif;margin-top:4px}.department{font-size:13px;margin-top:3px}h1{margin:16px 0 4px;color:#102f49;font:700 23px Georgia,serif;text-transform:uppercase;letter-spacing:.05em}.reference{color:#526b64;font-size:13px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px 32px}.field{display:flex;flex-direction:column;gap:5px;border-bottom:1px solid #d1d5db;padding-bottom:9px}.field strong{color:#52606d;font-size:11px;text-transform:uppercase;letter-spacing:.05em}.total{display:flex;justify-content:space-between;align-items:center;margin-top:24px;padding:16px;border:2px solid #102f49;background:#f8fafc}.total strong{font-size:22px;color:#102f49}.cert{font-size:12px;line-height:1.5;color:#4b5563;margin:20px 0}.signatures{display:grid;grid-template-columns:1fr 1fr;gap:64px;margin-top:48px;text-align:center}.signatures span{display:block;border-bottom:1px solid #111827;padding-bottom:5px;font-weight:700}.signatures small{display:block;margin-top:6px;color:#4b5563}footer{text-align:center;border-top:1px solid #d1d5db;margin-top:34px;padding-top:12px;font-size:10px;color:#6b7280;letter-spacing:.06em}' +
-        '</style></head><body><main class="receipt"><header class="header"><div class="republic">Republic of the Philippines</div><div class="office">Municipality of Nasugbu</div><div class="department">Traffic Management Office</div><h1>Official Payment Receipt</h1><div class="reference">Receipt No. ' + escapeHtml(data.reference) + '</div></header><section class="grid">' +
-        field('Ticket Number', data.ticket) + field('Plate Number', data.plate) + field('Driver', data.driver) + field('Violation', data.violation) + field('Amount Paid', data.amount) + field('Payment Method', data.method) + field('Payment Date', data.date) + field('Received By', data.receivedBy) +
-        '</section><div class="total"><span>Total Amount Paid</span><strong>' + escapeHtml(data.amount) + '</strong></div><p class="cert">Payment received in settlement of the traffic violation stated above. This computer-generated receipt is valid subject to verification in the official TRAVIS payment ledger.</p><div class="signatures"><div><span>' + escapeHtml(data.receivedBy) + '</span><small>Collecting Officer</small></div><div><span>&nbsp;</span><small>Payor\'s Signature</small></div></div><footer>TRAVIS · Traffic Violation Recognition and AI Surveillance</footer></main></body></html>');
-      receiptDocument.close();
-      frame.contentWindow.focus();
-      frame.contentWindow.print();
-      window.setTimeout(function () { frame.remove(); }, 2000);
-    });
-  });
-</script>
-
-<?php if (!empty($autoPrintPaymentId)): ?>
-  <?php
-  $printReceipt = fetch_one("
-      SELECT p.*, v.ticket_number, v.plate_number, v.driver_name, v.violation_type,
-             u.full_name AS received_by_name
-      FROM payments p
-      JOIN violations v ON v.violation_id = p.violation_id
-      LEFT JOIN users u ON u.user_id = p.received_by
-      WHERE p.payment_id = ?
-      LIMIT 1
-  ", [(string)$autoPrintPaymentId]);
-  ?>
-  <?php if ($printReceipt): ?>
-    <div id="treasurerReceiptSheet" class="treasurer-receipt-sheet" aria-hidden="true">
-      <header class="receipt-header">
-        <div class="receipt-republic">Republic of the Philippines</div>
-        <div class="receipt-office">Municipality of Nasugbu</div>
-        <div class="receipt-department">Traffic Management Office</div>
-        <h2>Official Payment Receipt</h2>
-        <div class="receipt-reference">Receipt No. <?= esc(payment_reference((int)$printReceipt['payment_id'])) ?></div>
-      </header>
-      <div class="receipt-grid">
-        <div><strong>Ticket Number</strong><span><?= esc($printReceipt['ticket_number']) ?></span></div>
-        <div><strong>Plate Number</strong><span><?= esc($printReceipt['plate_number']) ?></span></div>
-        <div><strong>Driver</strong><span><?= esc($printReceipt['driver_name']) ?></span></div>
-        <div><strong>Violation</strong><span><?= esc($printReceipt['violation_type']) ?></span></div>
-        <div><strong>Amount Paid</strong><span><?= peso($printReceipt['amount_paid']) ?></span></div>
-        <div><strong>Payment Method</strong><span><?= esc(payment_method_label($printReceipt['payment_method'])) ?></span></div>
-        <div><strong>Payment Date</strong><span><?= esc($printReceipt['payment_date']) ?></span></div>
-        <div><strong>Received By</strong><span><?= esc($printReceipt['received_by_name'] ?? 'Treasury Personnel') ?></span></div>
-      </div>
-      <div class="receipt-total"><span>Total Amount Paid</span><strong><?= peso($printReceipt['amount_paid']) ?></strong></div>
-      <p class="receipt-certification">Payment received in settlement of the traffic violation stated above. This computer-generated receipt is valid subject to verification in the official TRAVIS payment ledger.</p>
-      <div class="receipt-signatures"><div><span><?= esc($printReceipt['received_by_name'] ?? 'Treasury Personnel') ?></span><small>Collecting Officer</small></div><div><span>&nbsp;</span><small>Payor's Signature</small></div></div>
-      <footer>TRAVIS · Traffic Violation Recognition and AI Surveillance</footer>
-    </div>
-    <style>
-      .treasurer-receipt-sheet{display:none!important;position:fixed;left:0;top:0;width:720px;max-width:100%;padding:2.5rem;background:#fff;color:#111827;visibility:hidden;z-index:-1;font-family:Arial,sans-serif}
-      .receipt-header{text-align:center;border-bottom:2px solid #102f49;padding-bottom:1rem;margin-bottom:1.4rem}
-      .receipt-republic{font-family:Georgia,serif;font-size:.78rem;letter-spacing:.08em}
-      .treasurer-receipt-sheet .receipt-office{text-transform:uppercase;letter-spacing:.1em;color:#102f49;font:700 1.25rem Georgia,serif;margin-top:.2rem}
-      .receipt-department{font-size:.82rem;margin-top:.2rem}
-      .treasurer-receipt-sheet h2{margin:1rem 0 .25rem;color:#102f49;font:700 1.45rem Georgia,serif;text-transform:uppercase;letter-spacing:.05em}
-      .treasurer-receipt-sheet .receipt-reference{color:#526b64;font-size:.85rem}
-      .treasurer-receipt-sheet .receipt-grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem 2rem}
-      .treasurer-receipt-sheet .receipt-grid div{display:flex;flex-direction:column;gap:.25rem;border-bottom:1px solid #d1d5db;padding-bottom:.55rem}
-      .treasurer-receipt-sheet .receipt-grid strong{color:#52606d;font-size:.7rem;text-transform:uppercase;letter-spacing:.05em}
-      .receipt-total{display:flex;justify-content:space-between;align-items:center;margin-top:1.5rem;padding:1rem;border:2px solid #102f49;background:#f8fafc}
-      .receipt-total strong{font-size:1.35rem;color:#102f49}
-      .receipt-certification{font-size:.75rem;line-height:1.5;color:#4b5563;margin:1.25rem 0}
-      .receipt-signatures{display:grid;grid-template-columns:1fr 1fr;gap:4rem;margin-top:2.5rem;text-align:center}
-      .receipt-signatures span{display:block;border-bottom:1px solid #111827;padding-bottom:.25rem;font-weight:700}
-      .receipt-signatures small{display:block;margin-top:.35rem;color:#4b5563}
-      .treasurer-receipt-sheet footer{text-align:center;border-top:1px solid #d1d5db;margin-top:2rem;padding-top:.75rem;font-size:.68rem;color:#6b7280;letter-spacing:.06em}
-      @media print{
-        @page{size:A4 portrait;margin:16mm}
-        body.printing-treasurer-receipt *{visibility:hidden!important}
-        body.printing-treasurer-receipt .treasurer-receipt-sheet,
-        body.printing-treasurer-receipt .treasurer-receipt-sheet *{visibility:visible!important}
-        body.printing-treasurer-receipt .treasurer-receipt-sheet{display:block!important;position:absolute;z-index:99999;left:50%;transform:translateX(-50%);width:180mm;padding:10mm}
-      }
-    </style>
-    <script>
-      document.addEventListener('DOMContentLoaded', function () {
-        document.body.classList.add('printing-treasurer-receipt');
-        var cleanup = function () {
-          document.body.classList.remove('printing-treasurer-receipt');
-          window.removeEventListener('afterprint', cleanup);
-        };
-        window.addEventListener('afterprint', cleanup);
-        // Allow the receipt and its print styles to finish rendering first.
-        window.setTimeout(function () { window.print(); }, 100);
-        window.setTimeout(cleanup, 2000);
-      });
-    </script>
-  <?php endif; ?>
-<?php endif; ?>
-
 <?php page_end(); ?>

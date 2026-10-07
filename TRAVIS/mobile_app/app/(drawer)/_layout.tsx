@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Drawer } from 'expo-router/drawer';
 import {
+  Drawer,
   DrawerContentScrollView,
   DrawerItem,
-} from '@react-navigation/drawer';
+} from 'expo-router/drawer';
 import { View, Text, StyleSheet, Dimensions, TouchableOpacity, Modal, Platform, Image, ImageBackground } from 'react-native';
 import { useRouter, usePathname, Href, Redirect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -40,6 +40,34 @@ const softShadow = {
   shadowRadius: 16,
   elevation: 4,
 };
+
+function MajorFunctionBar() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const isActive = (route: string) => pathname === route || pathname.endsWith(route);
+  const itemColor = (route: string) => isActive(route) ? COLORS.primary : COLORS.textTertiary;
+
+  return (
+    <View style={styles.majorFunctionBar}>
+      <TouchableOpacity style={styles.majorFunctionItem} onPress={() => router.push({ pathname: '/(drawer)/violations', params: { open: 'ocr', nonce: String(Date.now()) } })} activeOpacity={0.7} accessibilityLabel="Open OCR ticket scanner">
+        <Ionicons name="scan-outline" size={20} color={COLORS.primary} />
+        <Text style={styles.majorFunctionLabel}>OCR Scan</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.majorFunctionItem} onPress={() => router.push('/(drawer)/monitoring')} activeOpacity={0.7} accessibilityLabel="Open live monitoring">
+        <Ionicons name="videocam-outline" size={20} color={itemColor('/monitoring')} />
+        <Text style={[styles.majorFunctionLabel, isActive('/monitoring') && styles.majorFunctionLabelActive]}>Monitoring</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.majorFunctionItem} onPress={() => router.push('/(drawer)/violations')} activeOpacity={0.7} accessibilityLabel="Open violation records">
+        <Ionicons name="alert-circle-outline" size={20} color={itemColor('/violations')} />
+        <Text style={[styles.majorFunctionLabel, isActive('/violations') && styles.majorFunctionLabelActive]}>Violations</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.majorFunctionItem} onPress={() => router.push('/(drawer)/decision-support')} activeOpacity={0.7} accessibilityLabel="Open decision support">
+        <Ionicons name="bulb-outline" size={20} color={itemColor('/decision-support')} />
+        <Text style={[styles.majorFunctionLabel, isActive('/decision-support') && styles.majorFunctionLabelActive]}>Decision</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
 
 // ========== CUSTOM DRAWER CONTENT ==========
 function CustomDrawerContent(props: any & { user: TravisUser }) {
@@ -264,7 +292,7 @@ export default function DrawerLayout() {
           maxWidth: 300,
           backgroundColor: '#073643',
         },
-        sceneStyle: { backgroundColor: 'transparent' },
+        sceneStyle: { backgroundColor: 'transparent', paddingBottom: 82 },
         overlayColor: 'rgba(15, 23, 42, 0.5)',
         headerShadowVisible: false,
       }}
@@ -325,6 +353,7 @@ export default function DrawerLayout() {
         }}
       />
       </Drawer>
+      <MajorFunctionBar />
       <ActionableAlertCard />
     </ImageBackground>
   );
@@ -334,9 +363,28 @@ export default function DrawerLayout() {
 const styles = StyleSheet.create({
   appBackground: { flex: 1, backgroundColor: '#E9E8E1' },
   appOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute',
+    inset: 0,
     backgroundColor: 'rgba(247, 245, 238, 0.62)',
   },
+  majorFunctionBar: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    bottom: 10,
+    zIndex: 20,
+    flexDirection: 'row',
+    paddingVertical: 11,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surface,
+    ...softShadow,
+    elevation: 12,
+  },
+  majorFunctionItem: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 3 },
+  majorFunctionLabel: { marginTop: 4, color: COLORS.textSecondary, fontSize: 9.5, fontWeight: '700', textAlign: 'center' },
+  majorFunctionLabelActive: { color: COLORS.primary, fontWeight: '900' },
   drawerContent: {
     paddingTop: 0,
     paddingBottom: 20,

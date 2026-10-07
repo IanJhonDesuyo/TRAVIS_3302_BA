@@ -11,6 +11,11 @@ $settings = [
     'confidence_threshold' => 0.50,
     'enable_officer_detection' => 1,
     'enable_collision_detection' => 0,
+    'enforcer_schedule_enabled' => 0,
+    'enforcer_duty_start' => '06:00',
+    'enforcer_duty_end' => '18:00',
+    'enforcer_break_start' => '12:00',
+    'enforcer_break_end' => '13:00',
 ];
 
 $table = $conn->query("SHOW TABLES LIKE 'system_settings'");
@@ -18,8 +23,8 @@ if ($table && $table->num_rows > 0) {
     $result = $conn->query("SELECT setting_key, setting_value FROM system_settings");
     while ($result && ($row = $result->fetch_assoc())) {
         $key = (string)$row['setting_key'];
-        if (array_key_exists($key, $settings) && is_numeric($row['setting_value'])) {
-            $settings[$key] = (float)$row['setting_value'];
+        if (array_key_exists($key, $settings)) {
+            $settings[$key] = is_numeric($row['setting_value']) ? (float)$row['setting_value'] : (string)$row['setting_value'];
         }
     }
 }

@@ -1,4 +1,9 @@
 <?php
+declare(strict_types=1);
+
+require_once __DIR__ . '/ml_service.php';
+require_once __DIR__ . '/../Admin/db_connect.php';
+require_once __DIR__ . '/hybrid_bridge.php';
 
 header("Content-Type: application/json");
 
@@ -24,6 +29,27 @@ if ($_SERVER["REQUEST_METHOD"] === "GET") {
 
 }
 
+if ($input['year'] < 2000 || $input['year'] > 2100 || $input['month'] < 1 || $input['month'] > 12) {
+    http_response_code(422);
+    echo json_encode(['success' => false, 'message' => 'Select a valid month and year between 2000 and 2100.']);
+    exit;
+}
+
+if (!travis_is_edge_host()) {
+    try {
+        $result = travis_dispatch_edge_job($conn, 'ml_monthly', $input, 35);
+        if (!empty($result['pending'])) http_response_code(503);
+        echo json_encode($result, JSON_UNESCAPED_SLASHES);
+    } catch (Throwable $error) {
+        error_log('TRAVIS monthly hybrid prediction: ' . $error->getMessage());
+        http_response_code(503);
+        echo json_encode(['success' => false, 'message' => $error->getMessage()]);
+    }
+    exit;
+}
+
+ensure_ml_service_running();
+
 $flask_api = "http://127.0.0.1:5001/predict/monthly";
 
 $response = false;
@@ -48,15 +74,6 @@ for ($attempt = 1; $attempt <= 20; $attempt++) {
     curl_close($ch);
     $ch = null;
     if ($attempt < 20) usleep(750000);
-}
-
-if ($input['year'] < 2000 || $input['year'] > 2100 || $input['month'] < 1 || $input['month'] > 12) {
-    http_response_code(422);
-    echo json_encode([
-        'success' => false,
-        'message' => 'Select a valid month and year between 2000 and 2100.'
-    ]);
-    exit;
 }
 
 if ($response === false || !$ch) {

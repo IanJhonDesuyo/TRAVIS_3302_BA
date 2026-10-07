@@ -29,6 +29,13 @@ $defaults = [
     'enable_collision_detection' => '0',
     'notify_congestion' => '1',
     'notify_collision' => '1',
+    'notify_officer_absence' => '1',
+    'officer_absence_seconds' => '180',
+    'enforcer_schedule_enabled' => '0',
+    'enforcer_duty_start' => '06:00',
+    'enforcer_duty_end' => '18:00',
+    'enforcer_break_start' => '12:00',
+    'enforcer_break_end' => '13:00',
 ];
 
 try {
@@ -61,6 +68,13 @@ try {
             'enable_collision_detection' => $settings['enable_collision_detection'] === '1',
             'notify_congestion' => $settings['notify_congestion'] === '1',
             'notify_collision' => $settings['notify_collision'] === '1',
+            'notify_officer_absence' => $settings['notify_officer_absence'] === '1',
+            'officer_absence_seconds' => (int)$settings['officer_absence_seconds'],
+            'enforcer_schedule_enabled' => $settings['enforcer_schedule_enabled'] === '1',
+            'enforcer_duty_start' => $settings['enforcer_duty_start'],
+            'enforcer_duty_end' => $settings['enforcer_duty_end'],
+            'enforcer_break_start' => $settings['enforcer_break_start'],
+            'enforcer_break_end' => $settings['enforcer_break_end'],
         ],
     ]);
 } catch (Throwable $exception) {

@@ -33,6 +33,7 @@ $violationId = filter_var($input['violation_id'] ?? null, FILTER_VALIDATE_INT, [
 ]);
 $paymentMethod = 'cash';
 $amountInput = $input['amount_paid'] ?? null;
+$officialReceiptNumber = strtoupper(trim((string)($input['official_receipt_number'] ?? '')));
 
 if ($violationId === false || !is_scalar($amountInput)) {
     http_response_code(400);
@@ -51,6 +52,11 @@ $amountPaid = number_format((float)$amountText, 2, '.', '');
 if ($amountPaid === '0.00') {
     http_response_code(400);
     echo json_encode(['error' => 'Amount must be greater than zero']);
+    exit;
+}
+if ($officialReceiptNumber === '' || mb_strlen($officialReceiptNumber) > 120 || !preg_match('/^[A-Z0-9][A-Z0-9 .\/-]*$/', $officialReceiptNumber)) {
+    http_response_code(400);
+    echo json_encode(['error' => 'Enter a valid official receipt number']);
     exit;
 }
 
@@ -83,8 +89,8 @@ try {
     // Insert payment
     $sql = "INSERT INTO payments (
         violation_id, amount_paid, payment_method, payment_status, 
-        received_by, payment_date, receipt_reference
-    ) VALUES (?, ?, ?, 'completed', ?, NOW(), ?)";
+        received_by, payment_date, receipt_reference, official_receipt_number
+    ) VALUES (?, ?, ?, 'completed', ?, NOW(), ?, ?)";
     
     $stmt = $pdo->prepare($sql);
     $stmt->execute([
@@ -92,7 +98,8 @@ try {
         $amountPaid,
         $paymentMethod,
         $_SESSION['user_id'],
-        $receiptReference
+        $receiptReference,
+        $officialReceiptNumber
     ]);
     
     $paymentId = $pdo->lastInsertId();
@@ -111,9 +118,19 @@ try {
         'success' => true,
         'message' => 'Payment processed successfully',
         'payment_id' => $paymentId,
-        'receipt_reference' => $receiptReference
+        'receipt_reference' => $receiptReference,
+        'official_receipt_number' => $officialReceiptNumber
     ]);
     
+} catch (PDOException $e) {
+    $pdo->rollBack();
+    if ((string)$e->getCode() === '23000') {
+        http_response_code(409);
+        echo json_encode(['error' => 'That official receipt number has already been used']);
+    } else {
+        http_response_code(400);
+        echo json_encode(['error' => 'Unable to record the payment']);
+    }
 } catch (Exception $e) {
     $pdo->rollBack();
     http_response_code(400);

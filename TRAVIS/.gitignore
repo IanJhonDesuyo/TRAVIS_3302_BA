@@ -6,6 +6,7 @@ venv/
 __pycache__/
 *.py[cod]
 Machine_Learning/ml-api.log
+storage/hybrid-worker.log
 
 # =========================
 # Computer Vision
@@ -17,6 +18,8 @@ computer_vision/uploads/
 computer_vision/venv/
 computer_vision/.venv/
 computer_vision/camera_config.json
+computer_vision/phone_camera_config.json
+computer_vision/edge_config.json
 
 # AI Model
 computer_vision/*.pt
@@ -38,6 +41,18 @@ uploads/snapshots/
 # Environment
 # =========================
 .env
+.env.*
+config/local.php
+storage/service_api.key
+storage/mediamtx-test.yml
+storage/mediamtx-test.log
+storage/mediamtx-test-error.log
+tools/mediamtx/
+
+# Generated deployment packages
+deploy/build/
+deploy/*.zip
+deploy/hostinger-config/
 
 # =========================
 # OS Files

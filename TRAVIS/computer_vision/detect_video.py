@@ -91,6 +91,23 @@ last_logged_collision_status = None
 last_logged_officer_status = None
 
 
+def write_local_analysis_status(state, message, source_type):
+    """Keep the laptop dashboard in sync with the detector process."""
+    status_path = Path(__file__).resolve().parent.parent / "Web_app" / "api" / "analysis_status.json"
+    status_payload = {
+        "analysis_status": state,
+        "ai_status": state,
+        "message": message,
+        "source_type": source_type,
+        "stream_owner": "shared",
+        "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "updated_at_epoch": int(time.time()),
+    }
+    temporary_status_path = status_path.with_suffix(".json.tmp")
+    temporary_status_path.write_text(json.dumps(status_payload, indent=4), encoding="utf-8")
+    os.replace(temporary_status_path, status_path)
+
+
 def report_startup_error(message):
     """Persist and relay a terminal live-camera failure immediately."""
     source_type = selected_source.source_type or (
@@ -109,19 +126,7 @@ def report_startup_error(message):
         "message": message,
         "source_type": source_type,
     })
-    status_path = Path(__file__).resolve().parent.parent / "Web_app" / "api" / "analysis_status.json"
-    status_payload = {
-        "analysis_status": "Error",
-        "ai_status": "Error",
-        "message": message,
-        "source_type": source_type,
-        "stream_owner": "shared",
-        "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "updated_at_epoch": int(time.time()),
-    }
-    temporary_status_path = status_path.with_suffix(".json.tmp")
-    temporary_status_path.write_text(json.dumps(status_payload, indent=4), encoding="utf-8")
-    os.replace(temporary_status_path, status_path)
+    write_local_analysis_status("Error", message, source_type)
 
 
 # ============================
@@ -155,8 +160,7 @@ try:
     cap = camera.open()
 except Exception as error:
     failure_message = (
-        "The Tapo RTSP stream could not be opened. Confirm that port 554 is enabled, "
-        "verify the Camera Account credentials, and use Standard quality."
+        str(error) or "The Tapo RTSP stream could not be opened."
         if config.VIDEO_SOURCE == "tapo"
         else str(error)
     )
@@ -173,6 +177,15 @@ print(f"Capture Resolution: {width} x {height}")
 fps = cap.get(cv2.CAP_PROP_FPS)
 total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) if config.VIDEO_SOURCE == "video" else 0
 current_frame = 0
+# Safe terminal-state defaults. A live source can disconnect before the first
+# inference result, so shutdown/reporting must not reference unassigned values.
+visible_vehicle_count = 0
+inbound_count = 0
+outbound_count = 0
+congestion_level = "Unknown"
+officer_presence = "Unknown"
+potential_collision = "None"
+alert_status = "NORMAL"
 live_frame_version = -1
 live_reconnect_cycles = 0
 live_connection_error = None
@@ -260,7 +273,9 @@ while True:
         if is_live_source:
             live_reconnect_cycles += 1
             if live_reconnect_cycles > 3:
+                capture_error = str(camera.metrics().get("capture_error", "")).strip()
                 live_connection_error = (
+                    capture_error or
                     "The Tapo camera stopped delivering usable RTSP frames after three reconnect attempts. "
                     "Check Wi-Fi stability, Camera Account/RTSP settings, and restart the camera."
                     if config.VIDEO_SOURCE == "tapo"
@@ -285,7 +300,34 @@ while True:
         if config.VIDEO_SOURCE == "video"
         else current_frame + 1
     )
-   
+
+    if is_live_source and current_frame == 1:
+        # Prove camera connectivity immediately. The first CPU inference can
+        # take much longer than later frames, so publish the verified raw frame
+        # and a fresh startup heartbeat before YOLO warm-up begins.
+        update_frame(frame)
+        live_source_type = selected_source.source_type or f"{config.VIDEO_SOURCE}_camera"
+        startup_message = "Camera connected. Warming up the AI model..."
+        write_local_analysis_status("Running", startup_message, live_source_type)
+        send_status_update_now(config.STATUS_API_URL, {
+            "vehicle_count": 0,
+            "inbound_count": 0,
+            "outbound_count": 0,
+            "congestion_level": "Unknown",
+            "officer_presence": "Unknown",
+            "potential_collision": "None",
+            "alert_status": "NORMAL",
+            "ai_status": "Starting",
+            "analysis_status": "Starting",
+            "message": startup_message,
+            "source_type": live_source_type,
+            "calibration_profile": calibration.name,
+            "current_frame": 1,
+            "total_frames": 0,
+            "progress_percent": 0,
+            "running_time_seconds": int(time.time() - source_started_at),
+            **camera.metrics(),
+        })
 
     visible_vehicle_count = 0
     visible_person_count = 0

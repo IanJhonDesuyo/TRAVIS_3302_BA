@@ -93,9 +93,18 @@ function page_start(string $title, string $active = '', string $search = 'Search
     echo '<div class="municipal-topbar-scene"><div class="municipal-topbar-copy"><strong>Municipality of Nasugbu</strong><small>Traffic Management Office · Treasury Portal</small></div></div>';
     echo '<div class="ms-auto d-flex align-items-center topbar-actions"><small class="topbar-clock d-none d-md-inline-flex" id="liveClock"></small>';
     $pendingCount = scalar("SELECT COUNT(*) FROM violations WHERE status IN ('pending', 'overdue')", 0);
-    echo '<a href="' . esc(app_url('notifications.php')) . '" class="btn position-relative bell topbar-notification" aria-label="Open notifications"><i class="bi bi-bell"></i>';
-    if ((int)$pendingCount > 0) echo '<span class="ping"></span>';
-    echo '</a><div class="dropdown"><button class="btn topbar-profile d-flex align-items-center gap-2" data-bs-toggle="dropdown" aria-label="Open account menu"><span class="avatar">' . esc($init) . '</span><span class="d-none d-md-flex flex-column align-items-start lh-sm"><span class="small fw-semibold">' . esc($name) . '</span><span class="role-pill">' . esc($role) . '</span></span></button>';
+    $notificationPreview = fetch_all("SELECT ticket_number, plate_number, violation_type, created_at FROM violations WHERE status IN ('pending','overdue') ORDER BY created_at DESC, violation_id DESC LIMIT 4");
+    echo '<div class="dropdown notification-dropdown"><button type="button" class="btn position-relative bell topbar-notification" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" aria-label="Show recent notifications"><i class="bi bi-bell"></i>';
+    if ((int)$pendingCount > 0) echo '<span class="badge bg-danger">' . ((int)$pendingCount > 99 ? '99+' : num($pendingCount)) . '</span>';
+    echo '</button><div class="dropdown-menu dropdown-menu-end notification-preview"><div class="notification-preview-head"><strong>Recent Notifications</strong><span>' . num($pendingCount) . ' pending</span></div>';
+    if (!$notificationPreview) {
+        echo '<div class="notification-preview-empty"><i class="bi bi-check-circle"></i><span>No pending notifications</span></div>';
+    } else {
+        foreach ($notificationPreview as $notification) {
+            echo '<a class="notification-preview-item" href="' . esc(app_url('notifications.php')) . '"><span class="notification-preview-icon tone-info"><i class="bi bi-receipt"></i></span><span><strong>Ticket ' . esc($notification['ticket_number']) . '</strong><small>' . esc($notification['plate_number']) . ' · ' . esc(mb_strimwidth((string)$notification['violation_type'], 0, 65, '…')) . '</small><time>' . esc(date('M j, g:i A', strtotime((string)$notification['created_at']))) . '</time></span></a>';
+        }
+    }
+    echo '<a class="notification-preview-footer" href="' . esc(app_url('notifications.php')) . '">View all notifications <i class="bi bi-arrow-right"></i></a></div></div><div class="dropdown"><button class="btn topbar-profile d-flex align-items-center gap-2" data-bs-toggle="dropdown" aria-label="Open account menu"><span class="avatar">' . esc($init) . '</span><span class="d-none d-md-flex flex-column align-items-start lh-sm"><span class="small fw-semibold">' . esc($name) . '</span><span class="role-pill">' . esc($role) . '</span></span></button>';
     echo '<ul class="dropdown-menu dropdown-menu-end"><li><a class="dropdown-item" href="' . esc(app_url('profile.php')) . '"><i class="bi bi-person me-2"></i>Profile</a></li><li><hr class="dropdown-divider"></li><li><button class="dropdown-item text-danger" type="button" data-bs-toggle="modal" data-bs-target="#signOutModal"><i class="bi bi-box-arrow-right me-2"></i>Sign Out</button></li></ul></div></div></header><main class="content">';
 }
 

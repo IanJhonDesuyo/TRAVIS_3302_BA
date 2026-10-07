@@ -7,7 +7,6 @@ import {
   ImageBackground,
   KeyboardAvoidingView,
   Platform,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -15,6 +14,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import api, { APP_ROOT_URL } from '../../api/axiosConfig';
 import LoginSuccessModal from '../../components/LoginSuccessModal';
 
@@ -105,8 +105,8 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
   background: { flex: 1 }, safeArea: { flex: 1 },
-  backgroundWash: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(232,241,246,.68)' },
-  backgroundShade: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(12,31,52,.08)' },
+  backgroundWash: { position: 'absolute', inset: 0, backgroundColor: 'rgba(232,241,246,.68)' },
+  backgroundShade: { position: 'absolute', inset: 0, backgroundColor: 'rgba(12,31,52,.08)' },
   scrollContent: { flexGrow: 1, paddingHorizontal: 18, paddingTop: 18, paddingBottom: 28 },
   backLink: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 18, paddingHorizontal: 12, height: 38, borderRadius: 11, backgroundColor: 'rgba(255,255,255,.88)', borderWidth: 1, borderColor: 'rgba(23,48,75,.14)' },
   backText: { color: '#17304B', fontSize: 11, fontWeight: '800' },

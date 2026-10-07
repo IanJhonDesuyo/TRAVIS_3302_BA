@@ -20,17 +20,48 @@ def _load_camera_config():
 
 _camera_config = _load_camera_config()
 
+
+def _load_phone_camera_config():
+    path = Path(__file__).resolve().parent / "phone_camera_config.json"
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+_phone_camera_config = _load_phone_camera_config()
+
+
+def _load_edge_config():
+    path = Path(__file__).resolve().parent / "edge_config.json"
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+_edge_config = _load_edge_config()
+
 # ==========================================
 # YOLO
 # ==========================================
 MODEL_PATH = "models/yolov8n.pt"
 CONFIDENCE_THRESHOLD = 0.50
+# Vehicles benefit from a slightly lower threshold than people because small
+# and distant road users otherwise appear several frames late. The tracker
+# provides the temporal stability needed to keep this conservative.
+VEHICLE_CONFIDENCE_THRESHOLD = 0.40
 
 # ==========================================
 # Video Source
 # video
 # webcam
 # tapo
+# phone
 # ==========================================
 VIDEO_SOURCE = "video"
 
@@ -53,29 +84,50 @@ TAPO_RTSP = (
     else ""
 )
 
-# Live-camera latency controls. Intermediate RTSP frames are discarded so
-# detection stays close to real time even when inference is slower than FPS.
-TAPO_FRAMES_TO_GRAB = 2
+# Generic cellphone camera stream. The web app accepts RTSP/RTSPS or an
+# HTTP/HTTPS MJPEG feed on the local network and stores it outside version control.
+PHONE_STREAM_URL = str(_phone_camera_config.get("stream_url", "")).strip()
+
+# Live-camera latency control. Tapo capture drops buffered frames between
+# inference passes, while HTTP/MJPEG phone sources expose their newest frame.
 LIVE_INFERENCE_SIZE = 320
+# 640 keeps CPU-only processing close to real time while retaining materially
+# more detail than the live-camera preset. At 960, the reference workstation
+# processes only about half of a 30 FPS video's frames per second.
+# Balanced CPU preset: 448 is still large enough for small road users while
+# requiring materially less work than 480/640 on every processed frame.
+UPLOADED_INFERENCE_SIZE = 448
 
 # ==========================================
 # Output
 # ==========================================
 OUTPUT_FOLDER = "results"
 OUTPUT_VIDEO = "processed_video.mp4"
+SAVE_PROCESSED_VIDEO = False
+SHOW_DEBUG_WINDOW = False
 
 # ==========================================
 # Monitoring API
 # ==========================================
 CAMERA_ID = 1
-STATUS_API_URL = "http://localhost/TRAVIS/Web_app/api/update_status.php"
-MONITORING_LOG_API_URL = "http://localhost/TRAVIS/Web_app/api/save_monitoring_log.php"
-CV_SETTINGS_API_URL = "http://localhost/TRAVIS/Web_app/api/get_cv_settings.php"
+_web_base_url = str(_edge_config.get("web_base_url", "http://localhost/TRAVIS")).rstrip("/")
+STATUS_API_URL = f"{_web_base_url}/Web_app/api/update_status.php"
+MONITORING_LOG_API_URL = f"{_web_base_url}/Web_app/api/save_monitoring_log.php"
+CV_SETTINGS_API_URL = f"{_web_base_url}/Web_app/api/get_cv_settings.php"
 
 # ==========================================
 # Detection Classes
 # ==========================================
 PERSON_CLASS = 0
+MOTORCYCLE_CLASS = 3
+# Small motorcycles often score lower than their rider/person box. Keep the
+# final motorcycle threshold below the general object threshold, then rely on
+# stable ByteTrack IDs and the conservative collision confirmation rules.
+MOTORCYCLE_CONFIDENCE_THRESHOLD = 0.25
+
+# Project-owned tracker settings tuned for traffic footage. Keeping this file
+# outside site-packages makes deployments reproducible after package updates.
+TRACKER_CONFIG = "trackers/travis_bytetrack.yaml"
 
 VEHICLE_CLASSES = [
     2,  # car

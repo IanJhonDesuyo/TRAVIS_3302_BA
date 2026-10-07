@@ -39,6 +39,7 @@ $integerRules = [
     'congestion_light_max' => [0, 100],
     'congestion_heavy_min' => [1, 200],
     'alert_cooldown_seconds' => [0, 86400],
+    'officer_absence_seconds' => [60, 3600],
 ];
 $values = [];
 foreach ($integerRules as $key => [$minimum, $maximum]) {
@@ -65,13 +66,29 @@ if ($confidence === false || $confidence < 0.10 || $confidence > 1.00) {
 }
 $values['confidence_threshold'] = number_format((float)$confidence, 2, '.', '');
 
-foreach (['enable_officer_detection', 'enable_collision_detection', 'notify_congestion', 'notify_collision'] as $key) {
+foreach (['enable_officer_detection', 'enable_collision_detection', 'notify_congestion', 'notify_collision', 'notify_officer_absence'] as $key) {
     if (!array_key_exists($key, $input) || !is_bool($input[$key])) {
         http_response_code(422);
         echo json_encode(['success' => false, 'error' => "$key must be true or false"]);
         exit;
     }
     $values[$key] = $input[$key] ? 1 : 0;
+}
+
+if (!array_key_exists('enforcer_schedule_enabled', $input) || !is_bool($input['enforcer_schedule_enabled'])) {
+    http_response_code(422);
+    echo json_encode(['success' => false, 'error' => 'enforcer_schedule_enabled must be true or false']);
+    exit;
+}
+$values['enforcer_schedule_enabled'] = $input['enforcer_schedule_enabled'] ? 1 : 0;
+foreach (['enforcer_duty_start', 'enforcer_duty_end', 'enforcer_break_start', 'enforcer_break_end'] as $key) {
+    $time = (string)($input[$key] ?? '');
+    if (!preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/', $time)) {
+        http_response_code(422);
+        echo json_encode(['success' => false, 'error' => "$key must use HH:MM format"]);
+        exit;
+    }
+    $values[$key] = $time;
 }
 
 require_once __DIR__ . '/../Web_app/db_connect.php';

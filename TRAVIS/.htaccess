@@ -1,10 +1,24 @@
 <IfModule mod_rewrite.c>
 RewriteEngine On
-RewriteBase /TRAVIS/
 
-RewriteRule ^$ Web_app/public/landing.php [R=302,L]
+# Keep this relative so the same project works when mounted at /TRAVIS/ on
+# the main domain and at / on the public subdomain.
+RewriteRule ^$ Web_app/public/landing.php [L]
+
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(landing|index)\.php$ Web_app/public/$1.php [L,QSA]
 
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^([A-Za-z0-9_-]+\.php)$ Web_app/$1 [L,QSA]
 </IfModule>
+
+# Application configuration and runtime secrets must never be downloaded.
+<IfModule mod_authz_core.c>
+  <FilesMatch "^(local\.php|service_api\.key)$">
+    Require all denied
+  </FilesMatch>
+</IfModule>
+
+Options -Indexes

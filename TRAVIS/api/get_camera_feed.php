@@ -36,7 +36,42 @@ if (!$camera) {
     $camera['congestion_level'] = 'none';
     $camera['officer_presence'] = 'unknown';
     $camera['potential_collision'] = 'none';
-    $camera['recorded_at'] = date('Y-m-d H:i:s');
+    $camera['recorded_at'] = null;
+}
+
+$latestStatusPath = __DIR__ . '/../Web_app/api/latest_status.json';
+$analysisStatusPath = __DIR__ . '/../Web_app/api/analysis_status.json';
+$latestStatus = is_file($latestStatusPath) ? json_decode((string)file_get_contents($latestStatusPath), true) : [];
+$analysisStatus = is_file($analysisStatusPath) ? json_decode((string)file_get_contents($analysisStatusPath), true) : [];
+$latestStatus = is_array($latestStatus) ? $latestStatus : [];
+$analysisStatus = is_array($analysisStatus) ? $analysisStatus : [];
+$frameEpoch = (int)($latestStatus['updated_at_epoch'] ?? 0);
+$frameAge = $frameEpoch > 0 ? time() - $frameEpoch : PHP_INT_MAX;
+$analysisState = strtolower((string)($analysisStatus['analysis_status'] ?? 'idle'));
+$latestAiState = strtolower((string)($latestStatus['ai_status'] ?? 'offline'));
+$isLive = $frameAge >= 0 && $frameAge <= 6
+    && !in_array($analysisState, ['idle', 'stopped', 'completed', 'error'], true)
+    && !in_array($latestAiState, ['offline', 'stopped', 'completed', 'error'], true);
+
+$sourceType = (string)($analysisStatus['source_type'] ?? $latestStatus['source_type'] ?? '');
+$sourceNames = [
+    'tapo_camera' => 'Tapo Camera',
+    'phone_camera' => 'Cellphone Camera',
+    'uploaded_video' => 'Uploaded Video',
+];
+$camera['is_live'] = $isLive;
+$camera['status'] = $isLive ? 'online' : 'offline';
+$camera['analysis_status'] = $isLive ? 'Running' : ucfirst($analysisState ?: 'idle');
+$camera['source_type'] = $sourceType;
+if ($isLive && isset($sourceNames[$sourceType])) {
+    $camera['camera_name'] = $sourceNames[$sourceType];
+}
+
+// Use fresh edge-worker values only while the stream is actually alive.
+if ($isLive) {
+    foreach (['vehicle_count', 'inbound_count', 'outbound_count', 'congestion_level', 'officer_presence', 'potential_collision', 'recorded_at'] as $field) {
+        if (array_key_exists($field, $latestStatus)) $camera[$field] = $latestStatus[$field];
+    }
 }
 
 // I-convert ang congestion level para sa display

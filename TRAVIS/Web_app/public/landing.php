@@ -7,12 +7,19 @@ function public_escape(mixed $value): string {
     return htmlspecialchars((string)($value ?? ''), ENT_QUOTES, 'UTF-8');
 }
 
+function public_project_base_url(): string {
+    $documentRoot = str_replace('\\', '/', rtrim((string)($_SERVER['DOCUMENT_ROOT'] ?? ''), '/\\'));
+    $projectRoot = str_replace('\\', '/', dirname(__DIR__, 2));
+    $relative = trim(str_replace($documentRoot, '', $projectRoot), '/');
+    return $relative === '' ? '/' : '/' . $relative . '/';
+}
+
 function public_image_url(?string $path): string {
     if (!$path) return '';
     $normalized = ltrim(str_replace('\\', '/', $path), '/');
     $absolute = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $normalized);
     if (!is_file($absolute)) return '';
-    return '../../' . $normalized;
+    return public_project_base_url() . $normalized;
 }
 
 function public_excerpt(string $content, int $length = 170): string {
@@ -57,7 +64,8 @@ $sql = 'SELECT a.*, u.full_name AS author_name
         FROM public_announcements a
         LEFT JOIN users u ON u.user_id = a.created_by
         WHERE ' . implode(' AND ', $where) . '
-        ORDER BY a.publish_date DESC, a.announcement_id DESC
+        ORDER BY CASE a.announcement_type WHEN \'emergency notice\' THEN 1 WHEN \'road closure\' THEN 2 WHEN \'traffic advisory\' THEN 3 ELSE 4 END,
+                 a.publish_date DESC, a.announcement_id DESC
         LIMIT 50';
 $stmt = $conn->prepare($sql);
 $announcements = [];
@@ -69,6 +77,12 @@ if ($stmt) {
 
 $featured = $announcements[0] ?? null;
 $remaining = $featured ? array_slice($announcements, 1) : [];
+$publicContacts = [];
+$contactsTable = $conn->query("SHOW TABLES LIKE 'public_contacts'");
+if ($contactsTable && $contactsTable->num_rows > 0) {
+    $contactsResult = $conn->query('SELECT * FROM public_contacts WHERE is_active=1 ORDER BY display_order ASC, office_name ASC');
+    while ($contactsResult && ($contact = $contactsResult->fetch_assoc())) $publicContacts[] = $contact;
+}
 
 $trafficSettings = [
     'tomtom_api_key' => '',
@@ -85,6 +99,7 @@ if ($settingsTable && $settingsTable->num_rows > 0) {
     }
 }
 $tomtomEnabled = strlen($trafficSettings['tomtom_api_key']) >= 20;
+$trafficStatusUrl = public_project_base_url() . 'Web_app/api/public_traffic_status.php';
 ?>
 <!doctype html>
 <html lang="en">
@@ -97,7 +112,6 @@ $tomtomEnabled = strlen($trafficSettings['tomtom_api_key']) >= 20;
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
-  <?php if ($tomtomEnabled): ?><link rel="stylesheet" href="https://api.tomtom.com/maps-sdk-for-web/cdn/6.x/6.25.0/maps/maps.css"><?php endif; ?>
   <style>
     /* ============================================================
        TOKENS — Naga civic-portal identity: deep navy, working teal,
@@ -202,6 +216,13 @@ $tomtomEnabled = strlen($trafficSettings['tomtom_api_key']) >= 20;
     .traffic-heading h2{font-size:clamp(2.15rem,4vw,3.35rem);letter-spacing:-.045em;line-height:1;margin:10px 0 14px;max-width:760px}
     .traffic-heading p{color:var(--muted);max-width:630px;margin:0;font-size:.98rem}
     .live-chip{display:flex;align-items:center;gap:9px;background:rgba(255,255,255,.84);color:var(--teal);padding:10px 15px;border:1px solid rgba(18,116,106,.12);border-radius:999px;box-shadow:0 9px 25px rgba(16,42,67,.08);font-size:.74rem;font-weight:800;flex:none;backdrop-filter:blur(10px)}
+    .congestion-card{position:relative;overflow:hidden;display:grid;grid-template-columns:1.25fr repeat(3,minmax(130px,.55fr));gap:24px;align-items:center;padding:34px;border:1px solid var(--line);border-radius:22px;background:var(--paper);box-shadow:12px 12px 0 rgba(16,42,67,.1)}
+    .congestion-card:before{content:"";position:absolute;inset:0 auto 0 0;width:8px;background:var(--status-color,#e6952e)}
+    .congestion-card[data-level="light"]{--status-color:#19966b;--status-bg:#e4f5ed}.congestion-card[data-level="moderate"]{--status-color:#d89516;--status-bg:#fff3cf}.congestion-card[data-level="heavy"]{--status-color:#d64545;--status-bg:#fde8e5}.congestion-card.traffic-unavailable{--status-color:#75837e;--status-bg:#edf0ee}
+    .congestion-place small,.congestion-metric small{display:block;color:var(--muted);font-size:.68rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+    .congestion-place h3{margin:6px 0 5px;font-size:1.45rem;color:var(--navy)}.congestion-place p{margin:0;color:var(--muted);font-size:.78rem}
+    .congestion-status{display:inline-flex;align-items:center;gap:8px;margin-top:14px;padding:8px 12px;border-radius:999px;background:var(--status-bg,#fff3cf);color:var(--status-color,#d89516);font-size:.76rem;font-weight:900;text-transform:uppercase}.congestion-status span{width:9px;height:9px;border-radius:50%;background:currentColor}
+    .congestion-metric{padding-left:22px;border-left:1px solid var(--line)}.congestion-metric strong{display:block;margin-top:5px;color:var(--navy);font-size:1.45rem}
 
     .traffic-shell{display:grid;grid-template-columns:370px 1fr;min-height:570px;border:1px solid rgba(16,42,67,.1);border-radius:24px;overflow:hidden;box-shadow:0 30px 75px rgba(16,42,67,.16)}
     .route-panel{position:relative;padding:36px 32px;background:linear-gradient(160deg,var(--navy),var(--navy-ink));color:#fff;border-right:0}
@@ -213,6 +234,10 @@ $tomtomEnabled = strlen($trafficSettings['tomtom_api_key']) >= 20;
     .route-field input{width:100%;min-height:50px;border:1px solid rgba(255,255,255,.16);border-radius:9px;background:rgba(255,255,255,.96);color:var(--navy-ink);padding:12px 14px;font:inherit;transition:border-color .2s ease,box-shadow .2s ease,transform .2s ease}
     .route-field input:focus{outline:none;border-color:#76d1c1;box-shadow:0 0 0 4px rgba(118,209,193,.14);transform:translateY(-1px)}
     .route-field input[aria-expanded="true"]{border-color:var(--teal)}
+    .location-input{position:relative}
+    .location-input input{padding-right:52px}
+    .location-button{position:absolute;right:7px;top:50%;transform:translateY(-50%);width:38px;height:38px;border:0;border-radius:8px;background:var(--teal-light);color:var(--teal);cursor:pointer;font-size:1rem}
+    .location-button:hover{background:#cce8e3}
     .route-action{width:100%;min-height:50px;margin-top:8px;background:var(--orange);color:var(--navy-ink);border-radius:9px}
     .route-action:hover{background:#f2a13b;box-shadow:5px 5px 0 rgba(255,255,255,.16);transform:translate(-2px,-2px)}
     .route-error{color:#ffb5ae;font-size:.78rem;margin-top:11px;min-height:1em}
@@ -275,6 +300,8 @@ $tomtomEnabled = strlen($trafficSettings['tomtom_api_key']) >= 20;
 
     .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:22px;padding-bottom:72px}
     .card{background:var(--paper);border:1px solid var(--line);border-radius:var(--radius-md);overflow:hidden;display:flex;flex-direction:column;transition:transform .18s ease,box-shadow .18s ease}
+    .card.priority{border:2px solid #dc5a50;box-shadow:8px 8px 0 rgba(214,69,69,.2)}
+    .card.priority .badge{background:#fde8e5;color:#b92f2f}
     .card:hover{transform:translateY(-4px);box-shadow:7px 7px 0 var(--orange)}
     .card-media{height:180px;background:linear-gradient(135deg,var(--teal-light),var(--orange-light));display:grid;place-items:center;overflow:hidden}
     .card-media img{width:100%;height:100%;object-fit:cover}
@@ -344,6 +371,7 @@ $tomtomEnabled = strlen($trafficSettings['tomtom_api_key']) >= 20;
        RESPONSIVE
        ============================================================ */
     @media(max-width:850px){
+      .congestion-card{grid-template-columns:1fr 1fr}.congestion-place{grid-column:1/-1}.congestion-metric{padding:14px 0 0;border-left:0;border-top:1px solid var(--line)}
       .nav-links{position:absolute;top:100%;left:0;right:0;background:var(--paper);border-bottom:1px solid var(--line);flex-direction:column;align-items:flex-start;gap:2px;padding:10px 0;display:none;box-shadow:0 14px 24px rgba(16,42,67,.1)}
       .nav-links.open{display:flex}
       .nav-links a{width:100%;padding:12px max(20px,calc((100% - min(var(--container),calc(100% - 40px)))/2 + 20px))}
@@ -363,6 +391,7 @@ $tomtomEnabled = strlen($trafficSettings['tomtom_api_key']) >= 20;
       .emergency-grid{grid-template-columns:1fr}
     }
     @media(max-width:560px){
+      .congestion-card{grid-template-columns:1fr;padding:25px}.congestion-place{grid-column:auto}
       .top-strip .container span:last-child{display:none}
       .hero{padding:44px 0 60px}
       .filters{grid-template-columns:1fr}
@@ -386,7 +415,7 @@ $tomtomEnabled = strlen($trafficSettings['tomtom_api_key']) >= 20;
 
   <section class="hero"><div class="container hero-inner"><div><span class="eyebrow">A safer, informed community</span><h1>Traffic updates.<br><span>Made public.</span></h1><p>Your direct source for official traffic advisories, road notices, community activities, and emergency information from the Traffic Management Office.</p><div class="hero-actions"><a class="button button-primary" href="#traffic"><i class="bi bi-map"></i> View Live Traffic</a><a class="button button-light" href="#announcements"><i class="bi bi-megaphone"></i> Current Advisories</a></div></div><aside class="hero-panel"><span class="hero-panel-label">Public information desk</span><strong><?= count($announcements) ?></strong><p>Active <?= count($announcements) === 1 ? 'announcement' : 'announcements' ?> available to the public right now.</p><hr><div class="hero-panel-status"><span class="pulse"></span>Official TMO information service</div></aside></div></section>
 
-  <section class="traffic-section" id="traffic"><div class="container"><div class="traffic-heading"><div><span class="eyebrow">Plan before you travel</span><h2>Traffic conditions & route outlook</h2><p>See current congestion, reported incidents, and estimated travel conditions for a route and departure time within the coming days.</p></div><span class="live-chip"><span class="pulse"></span>Live traffic layer</span></div><div class="traffic-shell"><aside class="route-panel"><h3>Check a route</h3><p>Enter two places, then choose when you plan to leave.</p><form id="routeForm"><div class="route-field"><label for="routeOrigin">Starting point</label><input id="routeOrigin" required placeholder="e.g. Nasugbu Municipal Hall" autocomplete="off"></div><div class="route-field"><label for="routeDestination">Destination</label><input id="routeDestination" required placeholder="e.g. Barangay Wawa, Nasugbu" autocomplete="off"></div><div class="route-field"><label for="routeDeparture">Departure date and time</label><input id="routeDeparture" type="datetime-local" required></div><button class="button button-primary route-action" type="submit" <?= !$tomtomEnabled ? 'disabled' : '' ?>><i class="bi bi-signpost-2"></i>Check traffic outlook</button><div class="route-error" id="routeError" role="alert"></div></form><div class="route-result" id="routeResult"><div class="route-result-grid"><div><small>Estimated time</small><strong id="routeTime">—</strong></div><div><small>Traffic delay</small><strong id="routeDelay">—</strong></div><div><small>Distance</small><strong id="routeDistance">—</strong></div><div><small>Outlook</small><strong id="routeLevel">—</strong></div></div><p class="route-note">Future estimates use historical traffic patterns. Actual conditions may change.</p></div><p class="tomtom-attribution">Traffic and routing data powered by TomTom.</p></aside><div class="map-wrap"><?php if ($tomtomEnabled): ?><div class="traffic-map" id="trafficMap"></div><div class="map-legend"><span class="legend-item"><span class="legend-dot" style="background:#39a96b"></span>Moving</span><span class="legend-item"><span class="legend-dot" style="background:#f2a33a"></span>Slow</span><span class="legend-item"><span class="legend-dot" style="background:#d64545"></span>Congested</span></div><?php else: ?><div class="map-setup"><div><i class="bi bi-map"></i><h3>Traffic map temporarily unavailable</h3><p>The interactive traffic service is currently unavailable. Please check again later or review the latest advisories below.</p></div></div><?php endif; ?></div></div></div></section>
+  <section class="traffic-section" id="traffic"><div class="container"><div class="traffic-heading"><div><span class="eyebrow">Live road condition</span><h2>J.P. Laurel Street right now</h2><p>A quick congestion update without opening a map. For closures and traffic instructions, see the priority advisories below.</p></div><span class="live-chip"><span class="pulse"></span>Updates automatically</span></div><article class="congestion-card traffic-unavailable" id="congestionCard" aria-live="polite"><div class="congestion-place"><small>Monitored road</small><h3>J.P. Laurel Street, Nasugbu</h3><p id="trafficMessage">Retrieving the latest road condition…</p><div class="congestion-status"><span></span><b id="congestionLevel">Checking</b></div></div><div class="congestion-metric"><small>Estimated road speed</small><strong id="currentSpeed">—</strong></div><div class="congestion-metric"><small>Traffic slowdown</small><strong id="trafficSlowdown">—</strong></div><div class="congestion-metric"><small>Last updated</small><strong id="trafficUpdated">—</strong></div></article></div></section>
 
   <main id="announcements" class="container">
     <form class="filters" method="get"><input class="control" type="search" name="search" value="<?= public_escape($search) ?>" placeholder="Search announcements…" aria-label="Search announcements"><select class="control" name="type" aria-label="Announcement type"><option value="">All announcement types</option><?php foreach ($allowedTypes as $option): ?><option value="<?= public_escape($option) ?>" <?= $type === $option ? 'selected' : '' ?>><?= public_escape(ucwords($option)) ?></option><?php endforeach; ?></select><button class="button button-primary" type="submit"><i class="bi bi-search"></i>Search</button><?php if ($search !== '' || $type !== ''): ?><a class="button button-light" href="landing.php">Clear</a><?php endif; ?></form>
@@ -396,13 +425,13 @@ $tomtomEnabled = strlen($trafficSettings['tomtom_api_key']) >= 20;
     <?php if (!$featured): ?>
       <section class="empty"><i class="bi bi-megaphone"></i><h2>No announcements found</h2><p><?= $search !== '' || $type !== '' ? 'Try changing your search or filter.' : 'Please check again soon for official TMO updates.' ?></p></section>
     <?php else: ?>
-      <div class="announcement-carousel"><div class="announcement-track" id="announcementTrack" tabindex="0" aria-label="Latest announcements"><?php foreach ($announcements as $post): $image = public_image_url($post['image_path'] ?? null); ?><article class="card"><div class="card-media"><?php if ($image): ?><img src="<?= public_escape($image) ?>" alt="<?= public_escape($post['title']) ?>" loading="lazy"><?php else: ?><i class="bi <?= public_escape(public_type_icon($post['announcement_type'])) ?> placeholder-icon"></i><?php endif; ?></div><div class="card-body"><span class="badge"><i class="bi <?= public_escape(public_type_icon($post['announcement_type'])) ?>"></i><?= public_escape(ucwords($post['announcement_type'])) ?></span><h3><?= public_escape($post['title']) ?></h3><div class="meta"><span><i class="bi bi-calendar3"></i> <?= public_escape(date('M j, Y', strtotime($post['publish_date']))) ?></span></div><p class="excerpt"><?= public_escape(public_excerpt($post['content'])) ?></p><a class="read-more" href="#" onclick="event.preventDefault();document.getElementById('announcement-<?= (int)$post['announcement_id'] ?>').showModal()">Read announcement <i class="bi bi-arrow-right"></i></a></div></article><?php endforeach; ?></div></div>
+      <div class="announcement-carousel"><div class="announcement-track" id="announcementTrack" tabindex="0" aria-label="Latest announcements"><?php foreach ($announcements as $post): $image = public_image_url($post['image_path'] ?? null); ?><article class="card <?= in_array($post['announcement_type'], ['emergency notice', 'road closure', 'traffic advisory'], true) ? 'priority' : '' ?>"><div class="card-media"><?php if ($image): ?><img src="<?= public_escape($image) ?>" alt="<?= public_escape($post['title']) ?>" loading="lazy"><?php else: ?><i class="bi <?= public_escape(public_type_icon($post['announcement_type'])) ?> placeholder-icon"></i><?php endif; ?></div><div class="card-body"><span class="badge"><i class="bi <?= public_escape(public_type_icon($post['announcement_type'])) ?>"></i><?= public_escape(ucwords($post['announcement_type'])) ?></span><h3><?= public_escape($post['title']) ?></h3><div class="meta"><span><i class="bi bi-calendar3"></i> <?= public_escape(date('M j, Y', strtotime($post['publish_date']))) ?></span></div><p class="excerpt"><?= public_escape(public_excerpt($post['content'])) ?></p><a class="read-more" href="#" onclick="event.preventDefault();document.getElementById('announcement-<?= (int)$post['announcement_id'] ?>').showModal()">Read announcement <i class="bi bi-arrow-right"></i></a></div></article><?php endforeach; ?></div></div>
 
       <?php foreach ($announcements as $post): $dialogImage = public_image_url($post['image_path'] ?? null); ?><dialog id="announcement-<?= (int)$post['announcement_id'] ?>"><?php if ($dialogImage): ?><img class="dialog-image" src="<?= public_escape($dialogImage) ?>" alt="<?= public_escape($post['title']) ?>"><?php endif; ?><button class="dialog-close" type="button" aria-label="Close" onclick="this.closest('dialog').close()"><i class="bi bi-x-lg"></i></button><div class="dialog-body"><span class="badge"><i class="bi <?= public_escape(public_type_icon($post['announcement_type'])) ?>"></i><?= public_escape(ucwords($post['announcement_type'])) ?></span><h2><?= public_escape($post['title']) ?></h2><div class="meta"><span><i class="bi bi-calendar3"></i> <?= public_escape(date('F j, Y · g:i A', strtotime($post['publish_date']))) ?></span><span><i class="bi bi-patch-check"></i> Official TMO post</span></div><div class="dialog-content"><?= public_escape($post['content']) ?></div></div></dialog><?php endforeach; ?>
     <?php endif; ?>
   </main>
 
-  <section class="emergency-section" id="emergency"><div class="container"><span class="eyebrow">Help when it matters</span><div class="section-heading"><div><h2>Emergency contacts</h2><p>Use emergency services only for urgent incidents requiring immediate assistance.</p></div></div><div class="emergency-grid"><article class="emergency-card primary"><span class="emergency-icon"><i class="bi bi-telephone-fill"></i></span><div><h3>Unified National Emergency Hotline</h3><p>For police, fire, medical, rescue, disaster response, and serious road emergencies anywhere in the Philippines.</p><a class="emergency-number" href="tel:911">Call 911</a></div></article><article class="emergency-card"><span class="emergency-icon"><i class="bi bi-building"></i></span><div><h3>Nasugbu Traffic Management Office</h3><p>For non-emergency traffic concerns, visit the Municipal Government of Nasugbu and coordinate with the Traffic Management Office during official service hours.</p><a class="emergency-number" href="#announcements">View TMO advisories</a></div></article></div><p class="emergency-note"><i class="bi bi-info-circle"></i> Do not use emergency hotlines for route inquiries, general questions, or test calls.</p></div></section>
+  <section class="emergency-section" id="emergency"><div class="container"><span class="eyebrow">Help when it matters</span><div class="section-heading"><div><h2>Emergency contacts</h2><p>Use emergency services only for urgent incidents requiring immediate assistance.</p></div></div><div class="emergency-grid"><?php if ($publicContacts): ?><?php foreach ($publicContacts as $contact): $tel = preg_replace('/[^0-9+]/', '', (string)$contact['phone_number']); ?><article class="emergency-card <?= $contact['category'] === 'emergency' ? 'primary' : '' ?>"><span class="emergency-icon"><i class="bi <?= $contact['category'] === 'emergency' ? 'bi-telephone-fill' : 'bi-building' ?>"></i></span><div><h3><?= public_escape($contact['office_name']) ?></h3><p><?= public_escape($contact['description']) ?><?php if ($contact['office_hours'] !== ''): ?><br><small><i class="bi bi-clock"></i> <?= public_escape($contact['office_hours']) ?></small><?php endif; ?></p><a class="emergency-number" href="tel:<?= public_escape($tel) ?>"><?= public_escape($contact['phone_number']) ?></a></div></article><?php endforeach; ?><?php else: ?><article class="emergency-card primary"><span class="emergency-icon"><i class="bi bi-telephone-fill"></i></span><div><h3>Unified National Emergency Hotline</h3><p>For police, fire, medical, rescue, disaster response, and serious road emergencies anywhere in the Philippines.</p><a class="emergency-number" href="tel:911">Call 911</a></div></article><article class="emergency-card"><span class="emergency-icon"><i class="bi bi-building"></i></span><div><h3>Nasugbu Traffic Management Office</h3><p>For non-emergency traffic concerns, coordinate with the Traffic Management Office during official service hours.</p><a class="emergency-number" href="#announcements">View TMO advisories</a></div></article><?php endif; ?></div><p class="emergency-note"><i class="bi bi-info-circle"></i> Do not use emergency hotlines for route inquiries, general questions, or test calls.</p></div></section>
 
   <footer id="contact"><div class="container footer-inner"><div><strong>TRAVIS · Traffic Management Office</strong><p>Providing reliable public traffic information for a safer community.</p></div><span class="footer-status"><i class="bi bi-shield-check"></i> Official information portal</span></div></footer>
   <script>
@@ -464,115 +493,39 @@ $tomtomEnabled = strlen($trafficSettings['tomtom_api_key']) >= 20;
     window.addEventListener('resize', updateControls);
     updateControls();
   })();
-  document.getElementById('routeOrigin').placeholder = 'e.g. Nasugbu Municipal Hall';
-  document.getElementById('routeDestination').placeholder = 'e.g. Nasugbu Public Market';
-  <?php if (!$tomtomEnabled): ?>
-  document.querySelectorAll('#routeForm input, #routeForm button').forEach(control => control.disabled = true);
-  document.getElementById('routeError').textContent = 'TomTom API key required. Ask an administrator to configure it in Admin → Settings.';
-  <?php endif; ?>
   </script>
-  <?php if ($tomtomEnabled): ?>
-  <script src="https://api.tomtom.com/maps-sdk-for-web/cdn/6.x/6.25.0/maps/maps-web.min.js"></script>
-  <script src="https://api.tomtom.com/maps-sdk-for-web/cdn/6.x/6.25.0/services/services-web.min.js"></script>
   <script>
   (() => {
-    const key = <?= json_encode($trafficSettings['tomtom_api_key']) ?>;
-    const center = [<?= json_encode((float)$trafficSettings['tomtom_center_longitude']) ?>, <?= json_encode((float)$trafficSettings['tomtom_center_latitude']) ?>];
-    const mapWrap = document.querySelector('.map-wrap');
-    const mapGate = document.createElement('div');
-    mapGate.className = 'map-gate';
-    mapGate.innerHTML = '<div class="map-gate-card"><span class="map-gate-icon"><i class="bi bi-map"></i></span><h3>Ready to check the roads?</h3><p>Open the interactive map only when you need it. Live traffic flow and reported incidents will load on demand.</p><button class="button button-primary" id="showMapButton" type="button"><i class="bi bi-eye"></i> Show live traffic map</button></div>';
-    mapWrap.prepend(mapGate);
-    let map = null;
-    let resolveMapReady;
-    const mapReady = new Promise(resolve => { resolveMapReady = resolve; });
-    const showMap = () => {
-      mapWrap.classList.add('map-active');
-      if (map) return mapReady;
-      map = tt.map({key,container:'trafficMap',center,zoom:<?= json_encode((int)$trafficSettings['tomtom_map_zoom']) ?>});
-      map.addControl(new tt.NavigationControl());
-      map.on('load', () => { map.showTrafficFlow(); map.showTrafficIncidents(); resolveMapReady(map); });
-      return mapReady;
-    };
-    document.getElementById('showMapButton').addEventListener('click', showMap);
-
-    const departure = document.getElementById('routeDeparture');
-    const now = new Date(); now.setMinutes(now.getMinutes() - now.getTimezoneOffset() + 30);
-    departure.min = new Date(Date.now() - new Date().getTimezoneOffset()*60000).toISOString().slice(0,16);
-    departure.max = new Date(Date.now() - new Date().getTimezoneOffset()*60000 + 7*86400000).toISOString().slice(0,16);
-    departure.value = now.toISOString().slice(0,16);
-
-    async function findPlace(query, input) {
-      if (input?.dataset.longitude && input?.dataset.latitude) return {lng:Number(input.dataset.longitude),lat:Number(input.dataset.latitude)};
-      const response = await tt.services.fuzzySearch({key,query,center,limit:1,countrySet:'PH'});
-      if (!response.results.length) throw new Error(`No location found for “${query}”.`);
-      return response.results[0].position;
-    }
-    function enablePlaceSuggestions(input) {
-      const list = document.createElement('div');
-      list.className = 'place-suggestions'; list.setAttribute('role','listbox');
-      input.parentElement.appendChild(list); input.setAttribute('autocomplete','off'); input.setAttribute('aria-expanded','false');
-      let timer, results = [], active = -1, requestNumber = 0;
-      const close = () => { list.classList.remove('show'); input.setAttribute('aria-expanded','false'); active = -1; };
-      const choose = result => { input.value = result.address?.freeformAddress || result.poi?.name || ''; input.dataset.longitude = result.position.lng; input.dataset.latitude = result.position.lat; close(); };
-      const render = () => {
-        list.innerHTML = '';
-        if (!results.length) { close(); return; }
-        results.forEach((result,index) => {
-          const button = document.createElement('button'); button.type = 'button'; button.className = `place-suggestion${index===active?' active':''}`; button.setAttribute('role','option');
-          const address = result.address?.freeformAddress || [result.address?.municipality,result.address?.countrySubdivision].filter(Boolean).join(', ');
-          const title = result.poi?.name || result.address?.streetName || result.address?.municipality || address;
-          const strong = document.createElement('strong'); strong.textContent = title;
-          const small = document.createElement('small'); small.textContent = address;
-          button.append(strong,small); button.addEventListener('mousedown',event=>{event.preventDefault();choose(result)}); list.appendChild(button);
-        });
-        list.classList.add('show'); input.setAttribute('aria-expanded','true');
-      };
-      input.addEventListener('input', () => {
-        delete input.dataset.longitude; delete input.dataset.latitude; clearTimeout(timer);
-        const query = input.value.trim(); if (query.length < 2) { close(); return; }
-        timer = setTimeout(async () => {
-          const currentRequest = ++requestNumber;
-          list.innerHTML = '<div class="place-searching">Finding nearby places…</div>'; list.classList.add('show');
-          try { const response = await tt.services.fuzzySearch({key,query,center,radius:50000,limit:6,countrySet:'PH'}); if (currentRequest !== requestNumber) return; results = response.results; active = -1; render(); }
-          catch (_) { if (currentRequest === requestNumber) close(); }
-        },300);
-      });
-      input.addEventListener('keydown', event => {
-        if (!list.classList.contains('show') || !results.length) return;
-        if (event.key === 'ArrowDown') { event.preventDefault(); active=(active+1)%results.length; render(); }
-        else if (event.key === 'ArrowUp') { event.preventDefault(); active=(active-1+results.length)%results.length; render(); }
-        else if (event.key === 'Enter' && active >= 0) { event.preventDefault(); choose(results[active]); }
-        else if (event.key === 'Escape') close();
-      });
-      input.addEventListener('blur',()=>setTimeout(close,120));
-    }
-    const originInput = document.getElementById('routeOrigin');
-    const destinationInput = document.getElementById('routeDestination');
-    enablePlaceSuggestions(originInput); enablePlaceSuggestions(destinationInput);
-    const minutes = seconds => `${Math.floor(seconds/3600) ? Math.floor(seconds/3600)+' hr ' : ''}${Math.round((seconds%3600)/60)} min`;
-    document.getElementById('routeForm').addEventListener('submit', async event => {
-      event.preventDefault();
-      const error = document.getElementById('routeError'); error.textContent = '';
-      const button = event.currentTarget.querySelector('button'); button.disabled = true; button.innerHTML = '<i class="bi bi-arrow-repeat"></i> Calculating…';
+    const card = document.getElementById('congestionCard');
+    const level = document.getElementById('congestionLevel');
+    const currentSpeed = document.getElementById('currentSpeed');
+    const trafficSlowdown = document.getElementById('trafficSlowdown');
+    const updated = document.getElementById('trafficUpdated');
+    const message = document.getElementById('trafficMessage');
+    const loadTraffic = async () => {
       try {
-        const [origin,destination] = await Promise.all([findPlace(originInput.value,originInput),findPlace(destinationInput.value,destinationInput)]);
-        const response = await tt.services.calculateRoute({key,locations:[origin,destination],departAt:new Date(departure.value).toISOString(),traffic:true,travelMode:'car',routeType:'fastest'});
-        await showMap();
-        const route = response.routes[0], summary = route.summary, delay = Math.max(0,summary.trafficDelayInSeconds || summary.travelTimeInSeconds-(summary.noTrafficTravelTimeInSeconds || summary.travelTimeInSeconds));
-        document.getElementById('routeTime').textContent = minutes(summary.travelTimeInSeconds);
-        document.getElementById('routeDelay').textContent = delay > 30 ? `+${minutes(delay)}` : 'Minimal';
-        document.getElementById('routeDistance').textContent = `${(summary.lengthInMeters/1000).toFixed(1)} km`;
-        document.getElementById('routeLevel').textContent = delay > 900 ? 'Heavy' : delay > 300 ? 'Moderate' : 'Light';
-        document.getElementById('routeResult').classList.add('show');
-        const geojson = response.toGeoJson();
-        if (map.getSource('public-route')) { map.getSource('public-route').setData(geojson); } else { map.addSource('public-route',{type:'geojson',data:geojson});map.addLayer({id:'public-route',type:'line',source:'public-route',paint:{'line-color':'#102a43','line-width':6,'line-opacity':.9}}); }
-        const bounds = new tt.LngLatBounds(); geojson.features[0].geometry.coordinates.forEach(point=>bounds.extend(point)); map.fitBounds(bounds,{padding:55});
-      } catch (routeError) { error.textContent = routeError.message || 'Unable to calculate this route. Check the locations and try again.'; }
-      finally { button.disabled = false; button.innerHTML = '<i class="bi bi-signpost-2"></i> Check traffic outlook'; }
-    });
+        const response = await fetch(<?= json_encode($trafficStatusUrl, JSON_UNESCAPED_SLASHES) ?>, {cache:'no-store'});
+        const payload = await response.json();
+        if (!response.ok || !payload.success) throw new Error(payload.message || 'Traffic data unavailable.');
+        const traffic = payload.data;
+        card.classList.remove('traffic-unavailable');
+        card.dataset.level = traffic.level;
+        level.textContent = traffic.label;
+        currentSpeed.textContent = traffic.current_speed + ' km/h';
+        const slowdown = Math.max(0, Math.round((1 - traffic.current_speed / Math.max(traffic.normal_speed, 1)) * 100));
+        trafficSlowdown.textContent = slowdown < 5 ? 'None' : slowdown + '% slower';
+        updated.textContent = new Date(traffic.updated_at).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
+        message.textContent = traffic.road_closed ? 'The road is currently reported as closed.' : slowdown < 5 ? 'Traffic is moving at its usual clear-road speed.' : 'Traffic is moving slower than the usual clear-road speed.';
+      } catch (error) {
+        card.classList.add('traffic-unavailable');
+        delete card.dataset.level;
+        level.textContent = 'Unavailable';
+        message.textContent = 'The latest road condition could not be retrieved. Please check the advisories below.';
+      }
+    };
+    loadTraffic();
+    window.setInterval(loadTraffic, 60000);
   })();
   </script>
-  <?php endif; ?>
 </body>
 </html>

@@ -9,8 +9,8 @@ $summary = [];
 $reportTitle = '';
 
 $reportType = trim((string)($_GET['report_type'] ?? 'violations'));
-$dateFrom = trim((string)($_GET['date_from'] ?? date('Y-m-01')));
-$dateTo = trim((string)($_GET['date_to'] ?? date('Y-m-d')));
+$dateFrom = trim((string)($_GET['date_from'] ?? ''));
+$dateTo = trim((string)($_GET['date_to'] ?? ''));
 $statusFilter = trim((string)($_GET['status'] ?? ''));
 $locationFilter = trim((string)($_GET['location'] ?? ''));
 $action = trim((string)($_GET['action'] ?? ''));
@@ -20,10 +20,137 @@ if (!in_array($reportType, $allowedReportTypes, true)) {
     $reportType = 'violations';
 }
 
+// On first load (and after Reset), cover the complete available dataset so the
+// administrator immediately sees a useful report instead of an empty page.
+$reportDateSources = [
+    'violations' => ['table' => 'violations', 'column' => 'violation_date'],
+    'payments' => ['table' => 'payments', 'column' => 'payment_date'],
+    'monitoring' => ['table' => 'camera_monitoring_logs', 'column' => 'recorded_at'],
+];
+$dateSource = $reportDateSources[$reportType];
+$availableRange = fetch_one(
+    "SELECT DATE(MIN({$dateSource['column']})) AS first_date, " .
+    "DATE(MAX({$dateSource['column']})) AS last_date FROM {$dateSource['table']}"
+);
+$defaultDateFrom = (string)($availableRange['first_date'] ?? date('Y-m-d'));
+$defaultDateTo = (string)($availableRange['last_date'] ?? date('Y-m-d'));
+if ($defaultDateFrom === '') $defaultDateFrom = date('Y-m-d');
+if ($defaultDateTo === '') $defaultDateTo = date('Y-m-d');
+
 function report_safe_date(string $value, string $fallback): string
 {
     $date = DateTime::createFromFormat('Y-m-d', $value);
     return ($date && $date->format('Y-m-d') === $value) ? $value : $fallback;
+}
+
+function report_filename(string $title, string $dateFrom, string $dateTo, string $extension): string
+{
+    $base = strtolower(trim((string)preg_replace('/[^a-z0-9]+/i', '_', $title), '_'));
+    return $base . '_' . $dateFrom . '_to_' . $dateTo . '.' . $extension;
+}
+
+function report_excel_value(mixed $value): string
+{
+    $text = (string)($value ?? '');
+    if ($text !== '' && in_array($text[0], ['=', '+', '-', '@'], true)) {
+        $text = "'" . $text;
+    }
+    return htmlspecialchars($text, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+}
+
+function report_pdf_text(mixed $value): string
+{
+    $text = str_replace(['₱', '–', '—', '•'], ['PHP ', '-', '-', '-'], (string)($value ?? ''));
+    $converted = iconv('UTF-8', 'Windows-1252//TRANSLIT//IGNORE', $text);
+    $text = $converted !== false ? $converted : $text;
+    return preg_replace('/[^\x20-\x7E]/', '', $text) ?? '';
+}
+
+function report_pdf_escape(string $text): string
+{
+    return str_replace(['\\', '(', ')'], ['\\\\', '\\(', '\\)'], $text);
+}
+
+function build_report_pdf(
+    string $title,
+    string $dateFrom,
+    string $dateTo,
+    array $columns,
+    array $rows,
+    array $summary,
+    string $preparedBy
+): string {
+    $columnKeys = array_keys($columns);
+    $columnWidth = max(8, (int)floor((126 - max(0, count($columns) - 1) * 3) / max(1, count($columns))));
+    $formatRow = static function (array $values) use ($columnWidth): string {
+        return implode(' | ', array_map(
+            static fn($value): string => str_pad(mb_strimwidth(report_pdf_text($value), 0, $columnWidth, '~'), $columnWidth),
+            $values
+        ));
+    };
+
+    $tableHeader = $formatRow(array_values($columns));
+    $tableDivider = str_repeat('-', min(150, strlen($tableHeader)));
+    $reportLines = [];
+    foreach ($summary as $label => $value) {
+        $reportLines[] = report_pdf_text($label . ': ' . $value);
+    }
+    $reportLines[] = '';
+    $reportLines[] = $tableHeader;
+    $reportLines[] = $tableDivider;
+    foreach ($rows as $row) {
+        $values = [];
+        foreach ($columnKeys as $key) {
+            $value = $row[$key] ?? '';
+            if (in_array($key, ['penalty_amount', 'amount_paid'], true)) {
+                $value = number_format((float)$value, 2, '.', ',');
+            }
+            $values[] = $value;
+        }
+        $reportLines[] = $formatRow($values);
+    }
+    if (!$rows) $reportLines[] = 'No records matched the selected filters.';
+
+    $chunks = array_chunk($reportLines, 48);
+    if (!$chunks) $chunks = [[]];
+    $objects = [1 => '', 2 => '', 3 => '<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>'];
+    $pageIds = [];
+    $nextId = 4;
+    foreach ($chunks as $pageIndex => $lines) {
+        $pageId = $nextId++;
+        $contentId = $nextId++;
+        $pageIds[] = $pageId;
+        $pageHeader = [
+            'TRAVIS - ' . report_pdf_text($title),
+            'Period: ' . $dateFrom . ' to ' . $dateTo . ' | Prepared by: ' . report_pdf_text($preparedBy),
+            'Generated: ' . date('F j, Y g:i A') . ' | Page ' . ($pageIndex + 1) . ' of ' . count($chunks),
+            ''
+        ];
+        $commands = "BT\n/F1 6 Tf\n28 568 Td\n9 TL\n";
+        foreach (array_merge($pageHeader, $lines) as $line) {
+            $commands .= '(' . report_pdf_escape(mb_strimwidth($line, 0, 150, '~')) . ") Tj\nT*\n";
+        }
+        $commands .= "ET";
+        $objects[$pageId] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 842 595] /Resources << /Font << /F1 3 0 R >> >> /Contents {$contentId} 0 R >>";
+        $objects[$contentId] = "<< /Length " . strlen($commands) . ">>\nstream\n{$commands}\nendstream";
+    }
+    $objects[1] = '<< /Type /Catalog /Pages 2 0 R >>';
+    $objects[2] = '<< /Type /Pages /Kids [' . implode(' ', array_map(static fn($id) => $id . ' 0 R', $pageIds)) . '] /Count ' . count($pageIds) . ' >>';
+    ksort($objects);
+
+    $pdf = "%PDF-1.4\n";
+    $offsets = [0];
+    foreach ($objects as $id => $body) {
+        $offsets[$id] = strlen($pdf);
+        $pdf .= "{$id} 0 obj\n{$body}\nendobj\n";
+    }
+    $xrefOffset = strlen($pdf);
+    $pdf .= 'xref' . "\n0 " . (count($objects) + 1) . "\n0000000000 65535 f \n";
+    for ($id = 1; $id <= count($objects); $id++) {
+        $pdf .= sprintf("%010d 00000 n \n", $offsets[$id]);
+    }
+    $pdf .= 'trailer' . "\n<< /Size " . (count($objects) + 1) . " /Root 1 0 R >>\nstartxref\n{$xrefOffset}\n%%EOF";
+    return $pdf;
 }
 
 function build_report(
@@ -235,8 +362,8 @@ function build_report(
     return [$rows, $columns, $summary, $title];
 }
 
-$dateFrom = report_safe_date($dateFrom, date('Y-m-01'));
-$dateTo = report_safe_date($dateTo, date('Y-m-d'));
+$dateFrom = report_safe_date($dateFrom, $defaultDateFrom);
+$dateTo = report_safe_date($dateTo, $defaultDateTo);
 
 if ($dateFrom > $dateTo) {
     [$dateFrom, $dateTo] = [$dateTo, $dateFrom];
@@ -244,24 +371,23 @@ if ($dateFrom > $dateTo) {
     $messageType = 'warning';
 }
 
-if (isset($_GET['generate']) || $action === 'csv' || $action === 'print') {
-    try {
-        [$previewRows, $previewColumns, $summary, $reportTitle] = build_report(
-            $conn,
-            $reportType,
-            $dateFrom,
-            $dateTo,
-            $statusFilter,
-            $locationFilter
-        );
-    } catch (Throwable $e) {
-        $message = 'Unable to generate the report: ' . $e->getMessage();
-        $messageType = 'danger';
-    }
+// Always build the selected report. Filters refine this initial full-record preview.
+try {
+    [$previewRows, $previewColumns, $summary, $reportTitle] = build_report(
+        $conn,
+        $reportType,
+        $dateFrom,
+        $dateTo,
+        $statusFilter,
+        $locationFilter
+    );
+} catch (Throwable $e) {
+    $message = 'Unable to generate the report: ' . $e->getMessage();
+    $messageType = 'danger';
 }
 
 if ($action === 'csv' && $reportTitle !== '') {
-    $filename = strtolower(str_replace(' ', '_', $reportTitle)) . '_' . $dateFrom . '_to_' . $dateTo . '.csv';
+    $filename = report_filename($reportTitle, $dateFrom, $dateTo, 'csv');
     header('Content-Type: text/csv; charset=utf-8');
     header('Content-Disposition: attachment; filename="' . $filename . '"');
 
@@ -282,6 +408,46 @@ if ($action === 'csv' && $reportTitle !== '') {
     }
 
     fclose($output);
+    exit;
+}
+
+if ($action === 'excel' && $reportTitle !== '') {
+    $filename = report_filename($reportTitle, $dateFrom, $dateTo, 'xls');
+    header('Content-Type: application/vnd.ms-excel; charset=utf-8');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('Cache-Control: no-store, no-cache, must-revalidate');
+    echo "\xEF\xBB\xBF";
+    ?>
+<!doctype html>
+<html><head><meta charset="utf-8"><style>
+body{font-family:Arial,sans-serif;color:#102f49}h1{font-size:20px;margin-bottom:4px}.meta{margin-bottom:16px;color:#526b64}.summary td{font-weight:bold;background:#eaf7f5}table{border-collapse:collapse}th,td{border:1px solid #9fb1bd;padding:6px 8px;vertical-align:top}th{background:#0b3a4a;color:#fff;font-weight:bold}.text{mso-number-format:"\@"}.number{mso-number-format:"0.00"}
+</style></head><body>
+<h1><?= report_excel_value($reportTitle) ?></h1>
+<div class="meta">Period: <?= report_excel_value($dateFrom) ?> to <?= report_excel_value($dateTo) ?><br>Generated: <?= report_excel_value(date('F j, Y g:i A')) ?><br>Prepared by: <?= report_excel_value($_SESSION['full_name'] ?? 'TRAVIS Administrator') ?></div>
+<table class="summary"><tr><?php foreach ($summary as $label => $value): ?><td><?= report_excel_value($label) ?><br><?= report_excel_value($value) ?></td><?php endforeach; ?></tr></table><br>
+<table><thead><tr><?php foreach ($previewColumns as $label): ?><th><?= report_excel_value($label) ?></th><?php endforeach; ?></tr></thead><tbody>
+<?php foreach ($previewRows as $row): ?><tr><?php foreach (array_keys($previewColumns) as $key): $value = $row[$key] ?? ''; $numeric = in_array($key, ['penalty_amount', 'amount_paid'], true); ?><td class="<?= $numeric ? 'number' : 'text' ?>"><?= report_excel_value($numeric ? number_format((float)$value, 2, '.', '') : $value) ?></td><?php endforeach; ?></tr><?php endforeach; ?>
+</tbody></table></body></html>
+    <?php
+    exit;
+}
+
+if ($action === 'pdf' && $reportTitle !== '') {
+    $filename = report_filename($reportTitle, $dateFrom, $dateTo, 'pdf');
+    $pdf = build_report_pdf(
+        $reportTitle,
+        $dateFrom,
+        $dateTo,
+        $previewColumns,
+        $previewRows,
+        $summary,
+        (string)($_SESSION['full_name'] ?? 'TRAVIS Administrator')
+    );
+    header('Content-Type: application/pdf');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('Content-Length: ' . strlen($pdf));
+    header('Cache-Control: no-store, no-cache, must-revalidate');
+    echo $pdf;
     exit;
 }
 
@@ -531,6 +697,14 @@ header.topbar,
 .section-head h6{color:#fff !important;font-weight:700;margin:0}
 .section-card small,.section-card .text-muted{color:var(--text-soft) !important}
 .section-head a{color:var(--cyan-glow) !important}
+
+/* Keep the report export labels crisp and readable on their colored buttons. */
+#reportPreview > .section-head .no-print .btn{
+    color:#fff !important;
+    font-family:Arial, Helvetica, sans-serif !important;
+    font-size:.8rem !important;
+    font-weight:700 !important;
+}
 
 .tag{
     display:inline-block;padding:4px 12px;border-radius:999px;
@@ -785,7 +959,7 @@ div[style*="border-radius: 999px"]:not(.tag){
 
 <div class="section-card mb-4 report-generator">
   <div class="section-head">
-    <div><h6 class="mb-0">Report Generator</h6><small class="text-muted">Choose a report type and date range, then generate a preview.</small></div>
+    <div><h6 class="mb-0">Report Generator</h6><small class="text-muted">The complete available record is shown automatically. Use the filters to narrow the report.</small></div>
   </div>
 
   <form method="get" class="row g-3">
@@ -816,7 +990,7 @@ div[style*="border-radius: 999px"]:not(.tag){
     </div>
 
     <div class="col-12 d-flex flex-wrap gap-2">
-      <button class="btn btn-primary" name="generate" value="1"><i class="bi bi-bar-chart-line me-1"></i>Generate Preview</button>
+      <button class="btn btn-primary" name="generate" value="1"><i class="bi bi-funnel me-1"></i>Apply Filters</button>
       <a class="btn btn-light" href="<?= esc(app_url('reports.php')) ?>"><i class="bi bi-arrow-counterclockwise me-1"></i>Reset</a>
     </div>
   </form>
@@ -848,7 +1022,8 @@ div[style*="border-radius: 999px"]:not(.tag){
 
       <div class="d-flex flex-wrap gap-2 no-print">
         <a class="btn btn-success btn-sm" href="<?= esc(app_url('reports.php?' . http_build_query(array_merge($queryBase, ['action' => 'csv'])))) ?>"><i class="bi bi-filetype-csv me-1"></i>Download CSV</a>
-        <button class="btn btn-primary btn-sm" type="button" onclick="window.print()"><i class="bi bi-file-earmark-pdf me-1"></i>Print / Save as PDF</button>
+        <a class="btn btn-primary btn-sm" href="<?= esc(app_url('reports.php?' . http_build_query(array_merge($queryBase, ['action' => 'excel'])))) ?>"><i class="bi bi-file-earmark-excel me-1"></i>Download Excel</a>
+        <a class="btn btn-danger btn-sm" href="<?= esc(app_url('reports.php?' . http_build_query(array_merge($queryBase, ['action' => 'pdf'])))) ?>"><i class="bi bi-file-earmark-pdf me-1"></i>Download PDF</a>
       </div>
     </div>
 

@@ -42,7 +42,7 @@
     },
     {
       "clusters": 3,
-      "inertia": 205.0798333254321,
+      "inertia": 205.07983332543213,
       "silhouette_score": 0.2938371612989766
     },
     {
@@ -57,12 +57,12 @@
     },
     {
       "clusters": 6,
-      "inertia": 103.01112043693543,
+      "inertia": 103.01112043693541,
       "silhouette_score": 0.22738827387763755
     }
   ],
   "selected_clusters": 3,
-  "selected_inertia": 205.0798333254321,
+  "selected_inertia": 205.07983332543213,
   "silhouette_score": 0.2938371612989766,
   "risk_mapping": {
     "0": "Low Risk",

@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Href, useRouter } from 'expo-router';
 import React from 'react';
-import { Image, ImageBackground, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Image, ImageBackground, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { APP_ROOT_URL } from '../api/axiosConfig';
 
 const Stat = ({ value, label, icon }: { value: string; label: string; icon: any }) => (
@@ -47,7 +48,7 @@ export default function Index() {
 }
 
 const s = StyleSheet.create({
-  background:{flex:1},safe:{flex:1},wash:{...StyleSheet.absoluteFillObject,backgroundColor:'rgba(238,244,247,.78)'},content:{flexGrow:1,justifyContent:'center',paddingHorizontal:22,paddingTop:22,paddingBottom:30},
+  background:{flex:1},safe:{flex:1},wash:{position:'absolute',inset:0,backgroundColor:'rgba(238,244,247,.78)'},content:{flexGrow:1,justifyContent:'center',paddingHorizontal:22,paddingTop:22,paddingBottom:30},
   live:{position:'absolute',top:20,right:22,flexDirection:'row',alignItems:'center',gap:6,height:29,paddingHorizontal:11,borderRadius:15,backgroundColor:'rgba(19,45,68,.62)',borderWidth:1,borderColor:'rgba(255,255,255,.26)'},liveDot:{width:6,height:6,borderRadius:3,backgroundColor:'#2ED66F'},liveText:{color:'#fff',fontSize:9,fontWeight:'900',letterSpacing:.7},
   brandRow:{flexDirection:'row',alignItems:'center',marginTop:50,marginBottom:28},seal:{width:50,height:50,borderRadius:25,borderWidth:3,borderColor:'#fff',marginRight:11},brand:{color:'#102F49',fontSize:15,fontWeight:'900'},brandSub:{color:'#526B64',fontSize:10,marginTop:3},
   badge:{alignSelf:'flex-start',flexDirection:'row',alignItems:'center',gap:7,paddingHorizontal:11,paddingVertical:7,borderRadius:18,backgroundColor:'rgba(232,238,244,.86)',borderWidth:1,borderColor:'rgba(23,35,79,.16)'},badgeText:{color:'#17234F',fontSize:9,fontWeight:'900',letterSpacing:.8},

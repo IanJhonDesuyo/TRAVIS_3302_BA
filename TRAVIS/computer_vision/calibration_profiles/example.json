@@ -1,22 +1,82 @@
 {
-  "profile_name": "Example 1280x720 Road Profile",
-  "road_roi": [[0.05, 0.25], [0.95, 0.25], [1.0, 1.0], [0.0, 1.0]],
-  "inbound_line": [[0.2578125, 0.4236111], [0.4375, 0.3958333]],
-  "outbound_line": [[0.328125, 1.0], [0.59375, 0.875]],
-  "officer_zone": [[0.55, 0.48], [0.67, 0.48], [0.67, 0.67], [0.55, 0.67]],
-  "officer": {
-    "enabled": true,
-    "presence_frames": 3,
-    "absence_frames": 15
-  },
-  "collision": {
-    "enabled": false,
-    "ttc_warning_seconds": 1.8,
-    "maximum_pair_distance": 2.2,
-    "contact_iou": 0.08,
-    "possible_frames": 5,
-    "confirmed_frames": 8,
-    "stationary_speed": 0.012,
-    "cooldown_seconds": 30
-  }
+    "profile_name": "Example 1280x720 Road Profile",
+    "road_roi": [
+        [
+            0.05,
+            0.25
+        ],
+        [
+            0.95,
+            0.25
+        ],
+        [
+            1,
+            1
+        ],
+        [
+            0,
+            1
+        ]
+    ],
+    "inbound_line": [
+        [
+            0.2578125,
+            0.4236111
+        ],
+        [
+            0.4375,
+            0.3958333
+        ]
+    ],
+    "outbound_line": [
+        [
+            0.328125,
+            1
+        ],
+        [
+            0.59375,
+            0.875
+        ]
+    ],
+    "officer_zone": [
+        [
+            0.55,
+            0.48
+        ],
+        [
+            0.67,
+            0.48
+        ],
+        [
+            0.67,
+            0.67
+        ],
+        [
+            0.55,
+            0.67
+        ]
+    ],
+    "officer": {
+        "enabled": true,
+        "presence_frames": 3,
+        "absence_frames": 15
+    },
+    "collision": {
+        "enabled": true,
+        "ttc_warning_seconds": 2.5,
+        "maximum_pair_distance": 2.6,
+        "contact_iou": 0.08,
+        "confirmation_iou": 0.04,
+        "possible_frames": 3,
+        "confirmed_frames": 4,
+        "stationary_speed": 0.012,
+        "post_contact_speed": 0.025,
+        "risk_memory_seconds": 4,
+        "minimum_track_confidence": 0.45,
+        "minimum_motorcycle_confidence": 0.25,
+        "occlusion_confirmation_frames": 3,
+        "occlusion_window_seconds": 2,
+        "occlusion_max_distance": 1.5,
+        "cooldown_seconds": 30
+    }
 }

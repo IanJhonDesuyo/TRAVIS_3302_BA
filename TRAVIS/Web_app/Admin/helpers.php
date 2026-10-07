@@ -3,17 +3,54 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/db_connect.php';
 require_once __DIR__ . '/../auth/session.php';
+require_once __DIR__ . '/../auth/audit.php';
+require_once __DIR__ . '/../traffic_rules.php';
 travis_session_start();
 
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('Pragma: no-cache');
 header('Expires: 0');
 
-if (!travis_is_authenticated()) {
-    $_SESSION = [];
+if (!travis_is_authenticated() || travis_session_has_expired()) {
+    travis_logout_user();
     header('Location: ../auth/index.php');
     exit;
 }
+
+// Revalidate the account on every Admin page request. A copied URL or stale
+// session must not bypass account deactivation, deletion, or role changes.
+$authenticatedUserId = (int)($_SESSION['user']['id'] ?? 0);
+$accountStatement = $conn->prepare(
+    'SELECT user_id, full_name, email, role, status FROM users WHERE user_id = ? LIMIT 1'
+);
+$authenticatedAccount = null;
+if ($accountStatement) {
+    $accountStatement->bind_param('i', $authenticatedUserId);
+    $accountStatement->execute();
+    $accountResult = $accountStatement->get_result();
+    $authenticatedAccount = $accountResult ? $accountResult->fetch_assoc() : null;
+    $accountStatement->close();
+}
+
+if (!$authenticatedAccount || strcasecmp((string)$authenticatedAccount['status'], 'active') !== 0) {
+    travis_logout_user();
+    header('Location: ../auth/index.php');
+    exit;
+}
+
+$authenticatedRole = strtolower(trim((string)$authenticatedAccount['role']));
+if (!in_array($authenticatedRole, ['administrator', 'admin'], true)) {
+    header('Location: ../Treasurer/dashboard.php');
+    exit;
+}
+
+$_SESSION['user'] = [
+    'id' => (int)$authenticatedAccount['user_id'],
+    'name' => (string)$authenticatedAccount['full_name'],
+    'email' => (string)$authenticatedAccount['email'],
+    'role' => (string)$authenticatedAccount['role'],
+];
+travis_touch_session();
 
 /**
  * Start the local ML API for authenticated dashboard sessions when needed.
@@ -126,13 +163,6 @@ function payment_method_label(string $method): string {
 function payment_method_options(): array {
     return [
         'cash' => 'Cash',
-        'card' => 'Card',
-        'online' => 'Online / Bank Transfer',
-        'bank_transfer' => 'Online / Bank Transfer',
-        'cheque' => 'Cheque',
-        'mobile_wallet' => 'Mobile Wallet (GCash)',
-        'gcash' => 'Mobile Wallet (GCash)',
-        'other' => 'Other',
     ];
 }
 
@@ -204,6 +234,11 @@ function current_admin(): array {
     ];
 }
 
+function audit_log(string $action, string $module, string $description, string $outcome = 'success', ?string $entityType = null, int|string|null $entityId = null): void {
+    global $conn;
+    travis_audit_log($conn, $action, $module, $description, $outcome, $entityType, $entityId);
+}
+
 function csrf_token(): string {
     if (empty($_SESSION['csrf_token'])) {
         $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
@@ -212,44 +247,19 @@ function csrf_token(): string {
 }
 
 function traffic_violation_types(): array {
-    return [
-        "No Driver's License",
-        "Failure to Carry Driver's License",
-        "Invalid / Delinquent Driver's License",
-        'Unregistered Motor Vehicle',
-        'Nuisance Muffler',
-        'Disregarding Traffic Sign / Officer',
-        'Reckless Driving',
-        'Colorum',
-        'Illegal Parking',
-        'Illegal Terminal',
-        'Obstruction',
-        'OR / CR Not Carried',
-        'No Canvas Cover',
-        'Operating Out of Line',
-        'Overloading',
-        'Overcharging',
-        'Loading / Unloading in Prohibited Zone',
-        'Refusal to Convey Passenger',
-        'Driving with Sleeveless Shirt / Shorts',
-        'Not Wearing Shoes',
-        'No Side Mirror',
-        'Arrogant Driver',
-        'Driving Under the Influence of Liquor',
-        'Coding Violation',
-        'Other Traffic Violation',
-    ];
+    return travis_violation_types();
 }
 
 function traffic_penalty_fees(): array {
-    return [100, 200, 300, 500, 1000, 1500, 2000, 2500, 3000, 5000];
+    return travis_penalty_fees();
 }
 
 function traffic_violation_category(string $type): string {
-    if (in_array($type, ["No Driver's License", "Failure to Carry Driver's License", "Invalid / Delinquent Driver's License"], true)) return 'driver-license';
-    if (in_array($type, ['Unregistered Motor Vehicle', 'OR / CR Not Carried'], true)) return 'vehicle-registration';
-    if ($type === 'Coding Violation') return 'coding';
-    return strtolower(trim((string)preg_replace('/[^a-z0-9]+/i', '-', $type), '-'));
+    return travis_violation_category($type);
+}
+
+function traffic_offense_analysis(mysqli $conn, string $driverName, string $violationType, string $licenseNumber = '', ?string $dateOfBirth = null): array {
+    return travis_mysqli_offense_analysis($conn, $driverName, $violationType, $licenseNumber, $dateOfBirth);
 }
 
 function initials(string $name): string {
@@ -263,11 +273,24 @@ function month_labels(): array {
     return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 }
 
-function monthly_violation_counts(): array {
-    $year = date('Y');
+function monthly_violation_counts(?int $year = null): array {
+    $year ??= (int)date('Y');
     $rows = fetch_all("SELECT MONTH(violation_date) AS m, COUNT(*) AS total FROM violations WHERE YEAR(violation_date) = ? GROUP BY MONTH(violation_date)", [$year]);
     $data = array_fill(1, 12, 0);
     foreach ($rows as $r) $data[(int)$r['m']] = (int)$r['total'];
+    return array_values($data);
+}
+
+function monthly_collection_totals(?int $year = null): array {
+    $year ??= (int)date('Y');
+    $rows = fetch_all("
+        SELECT MONTH(payment_date) AS m, COALESCE(SUM(amount_paid), 0) AS total
+        FROM payments
+        WHERE payment_status = 'completed' AND YEAR(payment_date) = ?
+        GROUP BY MONTH(payment_date)
+    ", [$year]);
+    $data = array_fill(1, 12, 0.0);
+    foreach ($rows as $r) $data[(int)$r['m']] = (float)$r['total'];
     return array_values($data);
 }
 

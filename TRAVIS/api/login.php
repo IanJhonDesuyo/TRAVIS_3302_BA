@@ -14,28 +14,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 require_once __DIR__ . '/../Web_app/auth/session.php';
+require_once __DIR__ . '/../Web_app/db_connect.php';
 travis_session_start();
-
-// ============================================================
-// DATABASE CONNECTION - DIRECT CONNECTION
-// ============================================================
-$host = 'localhost';
-$dbname = 'travis';        // Palitan kung iba ang pangalan ng database
-$username = 'root';
-$password = '';
-
-try {
-    $pdo = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $username, $password);
-    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-    $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
-} catch (PDOException $e) {
-    http_response_code(500);
-    echo json_encode([
-        'error' => 'Database connection failed',
-        'debug' => $e->getMessage()
-    ]);
-    exit;
-}
 
 // ============================================================
 // GET INPUT
@@ -59,11 +39,9 @@ try {
     $stmt->execute([$email]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
 } catch (Exception $e) {
+    error_log('TRAVIS login query failed: ' . $e->getMessage());
     http_response_code(500);
-    echo json_encode([
-        'error' => 'Database query failed',
-        'debug' => $e->getMessage()
-    ]);
+    echo json_encode(['error' => 'Database query failed']);
     exit;
 }
 

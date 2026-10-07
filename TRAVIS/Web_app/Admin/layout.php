@@ -6,7 +6,7 @@ function sidebar(string $active = ''): void {
     $items = [
         'Overview' => [
             ['dashboard.php','Dashboard','bi-speedometer2','dashboard'],
-            ['monitoring.php','Live Monitoring','bi-camera-video','monitoring'],
+            ['monitoring.php','Monitoring','bi-camera-video','monitoring'],
         ],
         'Intelligence' => [
             ['decision_support.php','Decision Support','bi-cpu','decision-support'],
@@ -19,12 +19,13 @@ function sidebar(string $active = ''): void {
         'Administration' => [
             ['reports.php','Reports','bi-file-earmark-bar-graph','reports'],
             ['users.php','User Management','bi-people','users'],
+            ['audit_logs.php','Audit Log','bi-shield-check','audit-logs'],
             ['public-website.php','Public Website','bi-globe2','public'],
             ['settings.php','Settings','bi-gear','settings'],
         ],
     ];
     echo '<aside class="sidebar" id="sidebar">';
-    echo '<div class="sidebar-brand"><img class="municipal-seal" src="' . esc(asset_url('assets/images/nasugbu-seal.jpg')) . '" alt="Municipality of Nasugbu seal"><div class="municipal-brand-copy"><div class="brand-logo-wordmark">NASUGBU · TMO</div><small>Traffic Management Office</small></div></div>';
+    echo '<div class="sidebar-brand travis-sidebar-brand"><img class="municipal-seal travis-brand-logo" src="' . esc(asset_url('assets/images/travis-logo.jpg')) . '" alt="TRAVIS logo"><div class="municipal-brand-copy"><div class="brand-logo-wordmark">TRAVIS</div></div></div>';
     foreach ($items as $section => $links) {
         echo '<div class="nav-section">' . esc($section) . '</div><ul class="nav flex-column">';
         foreach ($links as [$href,$label,$icon,$key]) {
@@ -61,10 +62,20 @@ function page_start(string $title, string $active = '', string $search = 'Search
     echo '<div class="municipal-topbar-scene"><div class="municipal-topbar-copy"><strong>Municipality of Nasugbu</strong><small>Traffic Management Office · Public Service Portal</small></div></div>';
     echo '<div class="ms-auto d-flex align-items-center topbar-actions"><small class="topbar-clock d-none d-md-inline-flex" id="liveClock"></small>';
     $alertCount = scalar("SELECT COUNT(*) FROM monitoring_alerts WHERE status = 'active'", 0);
-    echo '<a href="' . esc(app_url('alerts.php')) . '" class="btn position-relative bell topbar-notification" aria-label="Open alerts"><i class="bi bi-bell"></i>';
-    if ((int)$alertCount > 0) echo '<span class="badge bg-danger">' . num($alertCount) . '</span>';
-    echo '</a><div class="dropdown"><button class="btn topbar-profile d-flex align-items-center gap-2" data-bs-toggle="dropdown" aria-label="Open account menu"><span class="avatar">' . esc($init) . '</span><span class="d-none d-md-inline small fw-semibold">' . esc($name) . '</span></button>';
-    echo '<ul class="dropdown-menu dropdown-menu-end"><li><a class="dropdown-item" href="#"><i class="bi bi-person me-2"></i>Profile</a></li><li><a class="dropdown-item" href="' . esc(app_url('settings.php')) . '"><i class="bi bi-gear me-2"></i>Settings</a></li><li><hr class="dropdown-divider"></li><li><button class="dropdown-item text-danger" type="button" data-bs-toggle="modal" data-bs-target="#signOutModal"><i class="bi bi-box-arrow-right me-2"></i>Sign Out</button></li></ul></div></div></header><main class="content">';
+    $alertPreview = fetch_all("SELECT alert_id, alert_type, severity, message, generated_at FROM monitoring_alerts WHERE status='active' ORDER BY generated_at DESC, alert_id DESC LIMIT 4");
+    echo '<div class="dropdown notification-dropdown"><button type="button" class="btn position-relative bell topbar-notification" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" aria-label="Show recent alerts"><i class="bi bi-bell"></i>';
+    if ((int)$alertCount > 0) echo '<span class="badge bg-danger">' . ((int)$alertCount > 99 ? '99+' : num($alertCount)) . '</span>';
+    echo '</button><div class="dropdown-menu dropdown-menu-end notification-preview"><div class="notification-preview-head"><strong>Recent Alerts</strong><span>' . num($alertCount) . ' active</span></div>';
+    if (!$alertPreview) {
+        echo '<div class="notification-preview-empty"><i class="bi bi-check-circle"></i><span>No active alerts</span></div>';
+    } else {
+        foreach ($alertPreview as $alert) {
+            $tone = $alert['severity'] === 'critical' ? 'danger' : ($alert['severity'] === 'warning' ? 'warning' : 'info');
+            echo '<button type="button" class="notification-preview-item notification-alert-trigger" data-bs-toggle="modal" data-bs-target="#notificationAlertModal" data-alert-id="' . (int)$alert['alert_id'] . '" data-alert-type="' . esc(ucwords(str_replace('_', ' ', $alert['alert_type']))) . '" data-alert-message="' . esc($alert['message']) . '" data-alert-severity="' . esc($alert['severity']) . '" data-alert-time="' . esc(date('M j, Y · g:i A', strtotime((string)$alert['generated_at']))) . '"><span class="notification-preview-icon tone-' . esc($tone) . '"><i class="bi bi-exclamation-triangle"></i></span><span><strong>' . esc(ucwords(str_replace('_', ' ', $alert['alert_type']))) . '</strong><small>' . esc(mb_strimwidth((string)$alert['message'], 0, 88, '…')) . '</small><time>' . esc(date('M j, g:i A', strtotime((string)$alert['generated_at']))) . '</time></span></button>';
+        }
+    }
+    echo '<a class="notification-preview-footer" href="' . esc(app_url('alerts.php')) . '">View all alerts <i class="bi bi-arrow-right"></i></a></div></div><div class="dropdown"><button class="btn topbar-profile d-flex align-items-center gap-2" data-bs-toggle="dropdown" aria-label="Open account menu"><span class="avatar">' . esc($init) . '</span><span class="d-none d-md-inline small fw-semibold">' . esc($name) . '</span></button>';
+    echo '<ul class="dropdown-menu dropdown-menu-end"><li><a class="dropdown-item" href="' . esc(app_url('settings.php')) . '"><i class="bi bi-gear me-2"></i>Settings</a></li><li><hr class="dropdown-divider"></li><li><button class="dropdown-item text-danger" type="button" data-bs-toggle="modal" data-bs-target="#signOutModal"><i class="bi bi-box-arrow-right me-2"></i>Sign Out</button></li></ul></div></div></header><main class="content">';
 }
 
 function page_end(bool $chart = false): void {
@@ -75,6 +86,9 @@ function page_end(bool $chart = false): void {
     echo '</main></div>';
     echo '<div class="modal fade auth-prompt signout-modal" id="signOutModal" tabindex="-1" aria-labelledby="signOutModalLabel" aria-describedby="signOutModalDescription" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="auth-prompt-accent"></div><div class="modal-body text-center"><div class="auth-prompt-brand"><span class="auth-prompt-brand-mark">T</span><span>TRAVIS SECURITY</span></div><div class="auth-prompt-icon signout-icon"><i class="bi bi-box-arrow-right"></i></div><span class="auth-prompt-eyebrow">Session control</span><h4 id="signOutModalLabel">Sign out of TRAVIS?</h4><p id="signOutModalDescription">Your current session will end securely. You will need to enter your credentials again to access the dashboard.</p><div class="auth-prompt-actions"><button type="button" class="btn auth-prompt-cancel" data-bs-dismiss="modal"><i class="bi bi-arrow-left"></i><span>Stay signed in</span></button><form method="post" action="' . esc(app_url('logout.php')) . '"><input type="hidden" name="csrf_token" value="' . esc(csrf_token()) . '"><button class="btn btn-signout" type="submit"><span>Sign out securely</span><i class="bi bi-box-arrow-right"></i></button></form></div><small class="auth-prompt-note"><i class="bi bi-shield-lock"></i> Your account and session data remain protected.</small></div></div></div></div>';
     echo <<<'HTML'
+<div class="modal fade notification-alert-modal" id="notificationAlertModal" tabindex="-1" aria-labelledby="notificationAlertTitle" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><div><small class="notification-modal-eyebrow">Alert details</small><h5 class="modal-title" id="notificationAlertTitle">Traffic Alert</h5></div><button class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div><div class="modal-body"><span class="tag mb-3" id="notificationAlertSeverity">Warning</span><p id="notificationAlertMessage" class="mb-2"></p><small id="notificationAlertTime" class="text-muted"></small><div class="alert alert-danger mt-4 mb-0 d-none" id="notificationResolveError"></div></div><div class="modal-footer"><a class="btn btn-light" href="alerts.php"><i class="bi bi-list-ul"></i>View Alerts</a><button class="btn btn-success" type="button" id="resolveNotificationAlert"><i class="bi bi-check2-circle"></i>Mark as Resolved</button></div></div></div>
+</div>
 <div class="modal fade actionable-alert-modal" id="actionableAlertModal" tabindex="-1" aria-labelledby="actionableAlertType" aria-describedby="actionableAlertMessage" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="actionable-alert-accent"></div>
     <button type="button" class="actionable-alert-close" data-bs-dismiss="modal" aria-label="Dismiss alert"><i class="bi bi-x-lg"></i></button>
@@ -83,7 +97,7 @@ function page_end(bool $chart = false): void {
       <span class="actionable-alert-eyebrow">TRAVIS operational alert</span><h3 id="actionableAlertType">Critical traffic alert</h3>
       <p id="actionableAlertMessage"></p><small id="actionableAlertTime" class="d-block mb-4"></small>
       <div class="actionable-alert-actions">
-        <a class="btn actionable-view-btn" href="/TRAVIS/Web_app/Admin/monitoring.php"><i class="bi bi-camera-video"></i><span>View live</span></a>
+        <a class="btn actionable-view-btn" href="monitoring.php"><i class="bi bi-camera-video"></i><span>View live</span></a>
         <button type="button" class="btn actionable-ack-btn" id="acknowledgeActionableAlert"><i class="bi bi-check2-circle"></i><span>Acknowledge</span></button>
       </div>
       <small class="actionable-alert-note d-block mt-4" id="actionableAlertNote"><i class="bi bi-clock-history me-1"></i>Officer-absence reminders follow the configured alert cooldown.</small>
@@ -96,7 +110,79 @@ function page_end(bool $chart = false): void {
 .actionable-alert-accent{height:6px;background:linear-gradient(90deg,#dc2626,#f97316)}.officer-alert-modal .actionable-alert-accent{background:linear-gradient(90deg,#d97706,#f59e0b)}
 .actionable-alert-icon{width:76px;height:76px;margin:0 auto 18px;border-radius:22px;display:grid;place-items:center;background:#fee2e2;color:#dc2626;font-size:34px}.officer-alert-modal .actionable-alert-icon{background:#fef3c7;color:#b45309}
 .actionable-alert-eyebrow{display:block;color:#64748b;font-size:.72rem;font-weight:800;letter-spacing:.13em;text-transform:uppercase;margin-bottom:8px}.actionable-alert-modal h3{font-weight:800;color:#10202c;margin-bottom:12px}.actionable-alert-modal p{color:#475569;line-height:1.65}.actionable-alert-modal #actionableAlertTime,.actionable-alert-note{color:#64748b}
+.critical-alert-modal .modal-dialog{width:min(440px,calc(100vw - 40px))}
+.critical-alert-modal .modal-content{border:1px solid rgba(220,38,38,.18);border-radius:16px;background:#fff!important;box-shadow:0 18px 50px rgba(15,35,52,.22)}
+.critical-alert-modal .actionable-alert-accent{display:none}
+.critical-alert-modal .modal-body{display:grid!important;grid-template-columns:44px 1fr;column-gap:12px;align-items:start;padding:16px!important}
+.critical-alert-modal .actionable-alert-icon{grid-column:1;grid-row:1 / span 6;width:42px;height:42px;margin:0;border-radius:12px;background:#fee2e2;color:#dc2626;font-size:19px}
+.critical-alert-modal .actionable-alert-eyebrow,.critical-alert-modal h3,.critical-alert-modal p,.critical-alert-modal #actionableAlertTime,.critical-alert-modal .actionable-alert-actions,.critical-alert-modal .actionable-alert-note{grid-column:2}
+.critical-alert-modal .actionable-alert-eyebrow{color:#8f1d2c;margin:0 38px 2px 0}
+.critical-alert-modal h3{color:#8f1d2c;font-size:.92rem;margin:0 38px 3px 0!important}
+.critical-alert-modal p{color:#5e7183;font-size:.78rem;line-height:1.45;margin:0 38px 2px 0}
+.critical-alert-modal #actionableAlertTime{font-size:.68rem;margin:0 0 9px!important}
+.critical-alert-modal .actionable-alert-actions{display:flex;gap:8px}.critical-alert-modal .actionable-alert-actions .btn{min-height:32px;padding:5px 10px}
+.critical-alert-modal .actionable-alert-note{display:none!important}
+/* All operational alerts use the exact Live Monitoring heavy-traffic card. */
+.actionable-alert-modal .modal-dialog,.critical-alert-modal .modal-dialog,.officer-alert-modal .modal-dialog{width:min(360px,calc(100vw - 2rem));right:1.35rem;bottom:1.35rem}
+.actionable-alert-modal .modal-content,.critical-alert-modal .modal-content,.officer-alert-modal .modal-content{width:100%;height:180px;box-sizing:border-box;border:1px solid rgba(220,38,38,.18);border-radius:18px;background:linear-gradient(145deg,rgba(255,255,255,.98),rgba(255,250,250,.96))!important;box-shadow:0 18px 48px rgba(79,16,24,.2)}
+.actionable-alert-modal .actionable-alert-accent{display:none}
+.actionable-alert-modal .modal-body,.critical-alert-modal .modal-body,.officer-alert-modal .modal-body{display:grid!important;grid-template-columns:44px minmax(0,1fr);grid-template-rows:auto auto 1fr auto;column-gap:.85rem;padding:.9rem!important;align-items:start}
+.actionable-alert-modal .actionable-alert-icon,.critical-alert-modal .actionable-alert-icon,.officer-alert-modal .actionable-alert-icon{grid-column:1;grid-row:1 / span 4;width:44px;height:44px;margin:0;border-radius:13px;background:#feecef;color:#b42336;font-size:1.15rem}
+.actionable-alert-modal .actionable-alert-eyebrow{display:none}
+.actionable-alert-modal h3,.critical-alert-modal h3,.officer-alert-modal h3{grid-column:2;color:#8f1d2c;font-size:.88rem;line-height:1.3;margin:1px 32px 3px 0!important}
+.actionable-alert-modal p,.critical-alert-modal p,.officer-alert-modal p{grid-column:2;color:#5e7183;font-size:.78rem;line-height:1.45;margin:0 32px 2px 0}
+.actionable-alert-modal #actionableAlertTime{grid-column:2;color:#7a8ea1;font-size:.68rem;margin:0!important}
+.actionable-alert-modal .actionable-alert-actions{grid-column:2;display:flex;align-self:end;gap:7px}
+.actionable-alert-modal .actionable-alert-actions .btn{min-height:30px;padding:4px 9px;border-radius:8px;font-size:.7rem}
+.actionable-alert-modal .actionable-alert-note{display:none!important}
+.actionable-alert-modal .actionable-alert-close{top:10px;right:10px;width:28px;height:28px;border-radius:8px}
+@media(max-width:575.98px){.actionable-alert-modal .modal-dialog,.critical-alert-modal .modal-dialog,.officer-alert-modal .modal-dialog{right:1rem;bottom:1rem;width:calc(100vw - 2rem)}}
+body.municipal-portal .modal.actionable-alert-modal .modal-dialog{width:min(360px,calc(100vw - 2rem))!important;max-width:360px!important;right:1.35rem!important;bottom:1.35rem!important;margin:0!important}
+body.municipal-portal .modal.actionable-alert-modal .modal-content{width:360px!important;max-width:calc(100vw - 2rem)!important;height:180px!important;min-height:180px!important;max-height:180px!important;border:1px solid rgba(220,38,38,.18)!important;border-radius:18px!important}
+@media(max-width:575.98px){body.municipal-portal .modal.actionable-alert-modal .modal-dialog{right:1rem!important;bottom:1rem!important;width:calc(100vw - 2rem)!important}body.municipal-portal .modal.actionable-alert-modal .modal-content{width:100%!important}}
 </style>
+HTML;
+    echo <<<'HTML'
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const modal = document.getElementById('notificationAlertModal');
+  const resolveButton = document.getElementById('resolveNotificationAlert');
+  if (!modal || !resolveButton) return;
+  let alertId = 0;
+  document.querySelectorAll('.notification-alert-trigger').forEach(function (trigger) {
+    trigger.addEventListener('click', function () {
+      alertId = Number(trigger.dataset.alertId || 0);
+      document.getElementById('notificationAlertTitle').textContent = trigger.dataset.alertType || 'Traffic Alert';
+      document.getElementById('notificationAlertMessage').textContent = trigger.dataset.alertMessage || '';
+      document.getElementById('notificationAlertTime').textContent = trigger.dataset.alertTime || '';
+      const severity = document.getElementById('notificationAlertSeverity');
+      severity.textContent = trigger.dataset.alertSeverity || 'warning';
+      severity.className = 'tag mb-3 tag-' + (trigger.dataset.alertSeverity === 'critical' ? 'danger' : trigger.dataset.alertSeverity === 'warning' ? 'warning' : 'info');
+      document.getElementById('notificationResolveError').classList.add('d-none');
+      resolveButton.disabled = false;
+      resolveButton.innerHTML = '<i class="bi bi-check2-circle"></i>Mark as Resolved';
+    });
+  });
+  resolveButton.addEventListener('click', async function () {
+    if (!alertId) return;
+    resolveButton.disabled = true;
+    resolveButton.innerHTML = '<span class="spinner-border spinner-border-sm"></span>Resolving...';
+    try {
+      const response = await fetch('../../api/resolve_alert.php', {method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({alert_id:alertId})});
+      const payload = await response.json();
+      if (!response.ok || !payload.success) throw new Error(payload.message || 'Unable to resolve alert.');
+      resolveButton.innerHTML = '<i class="bi bi-check2"></i>Resolved';
+      window.setTimeout(function () { window.location.reload(); }, 450);
+    } catch (error) {
+      const errorBox = document.getElementById('notificationResolveError');
+      errorBox.textContent = error.message;
+      errorBox.classList.remove('d-none');
+      resolveButton.disabled = false;
+      resolveButton.innerHTML = '<i class="bi bi-arrow-clockwise"></i>Try Again';
+    }
+  });
+});
+</script>
 HTML;
     if ($showLoginSuccess) {
         echo '<div class="modal fade auth-prompt login-success-modal" id="loginSuccessModal" tabindex="-1" aria-labelledby="loginSuccessModalLabel" aria-describedby="loginSuccessModalDescription" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="auth-prompt-accent"></div><div class="modal-body text-center"><div class="auth-prompt-brand"><span class="auth-prompt-brand-mark">T</span><span>TRAVIS COMMAND CENTER</span></div><div class="auth-prompt-icon login-success-icon"><i class="bi bi-check-lg"></i></div><span class="auth-prompt-eyebrow">Identity verified</span><h4 id="loginSuccessModalLabel">Welcome back, ' . esc($loginName) . '!</h4><p id="loginSuccessModalDescription">You have signed in successfully. Your secure dashboard and live traffic intelligence are ready.</p><button type="button" class="btn btn-login-success" data-bs-dismiss="modal"><span>Open dashboard</span><i class="bi bi-arrow-right"></i></button><small class="auth-prompt-note"><i class="bi bi-shield-check"></i> Secure administrator session active.</small></div></div></div></div>';

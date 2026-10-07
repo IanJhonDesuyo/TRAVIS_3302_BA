@@ -7,10 +7,17 @@ if (!in_array($client, ['web', 'mobile'], true)) {
     exit;
 }
 
-$statusFile = __DIR__ . '/analysis_status.json';
-$status = is_file($statusFile) ? json_decode((string)file_get_contents($statusFile), true) : [];
-if (strtolower((string)($status['stream_owner'] ?? '')) !== $client) {
-    http_response_code(403);
+if (PHP_OS_FAMILY !== 'Windows') {
+    $snapshot = dirname(__DIR__, 2) . '/storage/cache/latest_cv_snapshot.jpg';
+    if (!is_file($snapshot) || filemtime($snapshot) < time() - 15) {
+        http_response_code(503);
+        exit;
+    }
+    header('Content-Type: image/jpeg');
+    header('Content-Length: ' . filesize($snapshot));
+    header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+    header('Pragma: no-cache');
+    readfile($snapshot);
     exit;
 }
 

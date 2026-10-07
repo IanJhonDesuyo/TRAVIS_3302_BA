@@ -13,4 +13,9 @@ echo json_encode(['success' => true, 'data' => [
     'violation_types' => travis_violation_types(),
     'penalty_fees' => travis_penalty_fees(),
     'vehicle_types' => travis_vehicle_types(),
+    'penalty_schedules' => [
+        'minor' => [200, 500, 1000],
+        'coding_colorum' => [500, 1000, 2500],
+        'nuisance_muffler' => [500, 750, 2500],
+    ],
 ]]);

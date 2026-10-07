@@ -96,6 +96,15 @@ def load_calibration(
     if not path.is_absolute() and not path.exists():
         path = Path(__file__).resolve().parent / path
     path = path.resolve()
+    if not path.is_file():
+        print(f"Calibration profile not found: {path}. Using legacy line configuration.")
+        return CalibrationProfile(
+            width,
+            height,
+            legacy_inbound_line,
+            legacy_outbound_line,
+        )
+
     with path.open("r", encoding="utf-8") as profile_file:
         data = json.load(profile_file)
 
