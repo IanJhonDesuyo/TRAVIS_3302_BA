@@ -634,6 +634,10 @@ a:hover{color:#fff}
 #addViolationModal .modal-content{
     max-height:100%;
     overflow:hidden;
+    border:1px solid rgba(16,47,73,.16);
+    border-radius:18px;
+    background:#f5f8f7;
+    box-shadow:0 24px 70px rgba(16,47,73,.24);
 }
 #addViolationModal .modal-content > form{
     display:flex;
@@ -648,22 +652,36 @@ a:hover{color:#fff}
     scrollbar-gutter:stable;
     scrollbar-width:thin;
     scrollbar-color:rgba(8,125,120,.75) rgba(16,47,73,.08);
+    padding:18px 20px 24px !important;
+    background:#f5f8f7;
 }
 #addViolationModal .modal-body::-webkit-scrollbar{width:10px;}
 #addViolationModal .modal-body::-webkit-scrollbar-track{background:rgba(16,47,73,.08);border-radius:10px;}
 #addViolationModal .modal-body::-webkit-scrollbar-thumb{background:rgba(8,125,120,.72);border:2px solid transparent;border-radius:10px;background-clip:padding-box;}
 #addViolationModal .modal-header,
 #addViolationModal .modal-footer{flex:0 0 auto;}
+#addViolationModal .modal-header{
+    padding:17px 20px;
+    border-bottom:1px solid rgba(16,47,73,.1);
+    background:#fff;
+}
+#addViolationModal .modal-footer{
+    padding:13px 20px;
+    border-top:1px solid rgba(16,47,73,.1);
+    background:#fff;
+}
+#addViolationModal .modal-title{font-weight:800;letter-spacing:-.01em;}
 .ticket-form-section{
     display:flex;
     align-items:center;
     gap:10px;
-    margin-top:4px;
-    padding:10px 12px;
+    margin-top:10px;
+    padding:12px 14px;
     border:1px solid rgba(8,125,120,.18);
     border-radius:12px;
     background:linear-gradient(90deg,rgba(8,125,120,.09),rgba(56,189,248,.035));
 }
+.ticket-form-section.first-section{margin-top:0;}
 .ticket-form-section .section-number{
     display:grid;
     place-items:center;
@@ -679,6 +697,45 @@ a:hover{color:#fff}
 .ticket-form-section strong{display:block;font-size:.86rem;line-height:1.2;}
 .ticket-form-section small{display:block;margin-top:2px;font-size:.68rem;}
 #addViolationModal .form-label{margin-bottom:.4rem;font-weight:600;}
+#addViolationModal .form-control,
+#addViolationModal .form-select{min-height:44px;}
+#addViolationModal textarea.form-control{min-height:auto;}
+.driver-details-grid{
+    display:grid;
+    grid-template-columns:repeat(12,minmax(0,1fr));
+    gap:14px;
+    padding:16px;
+    border:1px solid rgba(16,47,73,.1);
+    border-radius:14px;
+    background:#fff;
+    box-shadow:0 8px 24px rgba(16,47,73,.055);
+}
+.driver-field{min-width:0;}
+.driver-field-name{grid-column:span 4;}
+.driver-field-suffix{grid-column:span 3;}
+.driver-field-birth{grid-column:span 3;}
+.driver-field-address{grid-column:span 6;}
+.field-optional{
+    margin-left:5px;
+    color:#71817c;
+    font-size:.66rem;
+    font-weight:600;
+}
+.driver-name-preview{
+    grid-column:1/-1;
+    display:flex;
+    align-items:center;
+    gap:8px;
+    min-height:38px;
+    padding:8px 11px;
+    border-radius:10px;
+    color:#60736d;
+    background:rgba(8,125,120,.065);
+    font-size:.73rem;
+    line-height:1.4;
+}
+.driver-name-preview i{color:#087d78;}
+.driver-name-preview strong{color:#17352f;overflow-wrap:anywhere;}
 #addViolationModal .form-check{padding:8px 10px 8px 2rem;border-radius:9px;background:rgba(8,125,120,.04);}
 #addViolationModal .license-status-row{
     display:grid;
@@ -700,7 +757,19 @@ a:hover{color:#fff}
 #addViolationModal .violation-item-row{padding:10px 4px;border:1px solid rgba(16,47,73,.1);border-radius:11px;background:rgba(255,255,255,.35);}
 @media(max-width:575.98px){
     #addViolationModal .modal-dialog{height:calc(100dvh - 1rem);margin:.5rem;}
+    #addViolationModal .modal-body{padding:14px !important;}
     #addViolationModal .license-status-row{grid-template-columns:1fr;}
+    .driver-details-grid{grid-template-columns:1fr;padding:14px;}
+    .driver-field-name,
+    .driver-field-suffix,
+    .driver-field-birth,
+    .driver-field-address{grid-column:1;}
+}
+@media(min-width:576px) and (max-width:991.98px){
+    .driver-field-name,
+    .driver-field-suffix,
+    .driver-field-birth{grid-column:span 6;}
+    .driver-field-address{grid-column:1/-1;}
 }
 
 /* ==== Catch-all: any remaining white cards ==== */
@@ -1087,7 +1156,7 @@ div[style*="border-radius: 999px"]:not(.tag){
 <div class="modal fade" id="addViolationModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
     <div class="modal-content">
-      <form method="post">
+      <form method="post" autocomplete="off">
         <div class="modal-header">
           <div><h5 class="modal-title">Manual Violation Input</h5><small class="text-muted">For manually encoded paper ticket records</small></div>
           <a class="btn-close" href="#" data-bs-dismiss="modal" aria-label="Close"></a>
@@ -1095,14 +1164,40 @@ div[style*="border-radius: 999px"]:not(.tag){
         <div class="modal-body">
           <input type="hidden" name="action" value="add_violation">
           <div class="row g-3">
-            <div class="col-12"><div class="ticket-form-section"><span class="section-number">1</span><div><strong>Driver Information</strong><small class="text-muted">Personal details of the apprehended driver</small></div></div></div>
+            <div class="col-12"><div class="ticket-form-section first-section"><span class="section-number">1</span><div><strong>Driver Information</strong><small class="text-muted">Personal details of the apprehended driver</small></div></div></div>
             <input type="hidden" id="driverNameInput" name="driver_name">
-            <div class="col-md-3"><label class="form-label" for="driverLastNameInput">Surname</label><input type="text" id="driverLastNameInput" name="driver_last_name" class="form-control" maxlength="100" autocomplete="family-name" required></div>
-            <div class="col-md-3"><label class="form-label" for="driverFirstNameInput">First Name</label><input type="text" id="driverFirstNameInput" name="driver_first_name" class="form-control" maxlength="100" autocomplete="given-name" required></div>
-            <div class="col-md-3"><label class="form-label" for="driverMiddleNameInput">Middle Name</label><input type="text" id="driverMiddleNameInput" name="driver_middle_name" class="form-control" maxlength="100" autocomplete="additional-name"><small class="text-muted">Optional; enter the full middle name when available.</small></div>
-            <div class="col-md-3"><label class="form-label" for="driverSuffixInput">Suffix</label><input type="text" id="driverSuffixInput" name="driver_suffix" class="form-control" maxlength="20" placeholder="Jr., Sr., III"></div>
-            <div class="col-md-6"><label class="form-label">Date of Birth</label><input type="date" name="date_of_birth" class="form-control"><small class="text-muted">Matching uses license first, then the structured name and birth date.</small></div>
-            <div class="col-12"><label class="form-label">Driver Address</label><input type="text" name="driver_address" class="form-control" maxlength="255" placeholder="House no., street, barangay, municipality"></div>
+            <div class="col-12">
+              <div class="driver-details-grid">
+                <div class="driver-field driver-field-name">
+                  <label class="form-label" for="driverLastNameInput">Surname</label>
+                  <input type="text" id="driverLastNameInput" name="driver_last_name" class="form-control" maxlength="100" autocomplete="off" required>
+                </div>
+                <div class="driver-field driver-field-name">
+                  <label class="form-label" for="driverFirstNameInput">First Name</label>
+                  <input type="text" id="driverFirstNameInput" name="driver_first_name" class="form-control" maxlength="100" autocomplete="off" required>
+                </div>
+                <div class="driver-field driver-field-name">
+                  <label class="form-label" for="driverMiddleNameInput">Middle Name <span class="field-optional">Optional</span></label>
+                  <input type="text" id="driverMiddleNameInput" name="driver_middle_name" class="form-control" maxlength="100" autocomplete="off">
+                </div>
+                <div class="driver-field driver-field-suffix">
+                  <label class="form-label" for="driverSuffixInput">Suffix <span class="field-optional">Optional</span></label>
+                  <input type="text" id="driverSuffixInput" name="driver_suffix" class="form-control" maxlength="20" placeholder="Jr., Sr., III" autocomplete="off">
+                </div>
+                <div class="driver-field driver-field-birth">
+                  <label class="form-label" for="driverBirthDateInput">Date of Birth</label>
+                  <input type="date" id="driverBirthDateInput" name="date_of_birth" class="form-control" autocomplete="off">
+                </div>
+                <div class="driver-field driver-field-address">
+                  <label class="form-label" for="driverAddressInput">Driver Address</label>
+                  <input type="text" id="driverAddressInput" name="driver_address" class="form-control" maxlength="255" placeholder="House no., street, barangay, municipality" autocomplete="off">
+                </div>
+                <div class="driver-name-preview" aria-live="polite">
+                  <i class="bi bi-person-vcard" aria-hidden="true"></i>
+                  <span>Saved name format: <strong id="driverNamePreview">Enter the surname and first name</strong></span>
+                </div>
+              </div>
+            </div>
             <div class="col-12"><div class="ticket-form-section"><span class="section-number">2</span><div><strong>License Information</strong><small class="text-muted">License number, validity, and confiscation status</small></div></div></div>
             <div class="col-md-6">
               <label class="form-label" for="licenseNumberInput">License Number</label>
@@ -1232,6 +1327,7 @@ const driverLastNameInput = document.getElementById('driverLastNameInput');
 const driverFirstNameInput = document.getElementById('driverFirstNameInput');
 const driverMiddleNameInput = document.getElementById('driverMiddleNameInput');
 const driverSuffixInput = document.getElementById('driverSuffixInput');
+const driverNamePreview = document.getElementById('driverNamePreview');
 const structuredDriverNameInputs = [driverLastNameInput, driverFirstNameInput, driverMiddleNameInput, driverSuffixInput];
 const noLicenseCheck = document.getElementById('noLicenseCheck');
 const licenseNumberInput = document.getElementById('licenseNumberInput');
@@ -1267,6 +1363,9 @@ function syncDriverName() {
     .filter(Boolean)
     .join(' ');
   driverNameInput.value = lastName && givenNames ? `${lastName}, ${givenNames}` : '';
+  if (driverNamePreview) {
+    driverNamePreview.textContent = driverNameInput.value || 'Enter the surname and first name';
+  }
 }
 
 function syncLicenseFields() {
