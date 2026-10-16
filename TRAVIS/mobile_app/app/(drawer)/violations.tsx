@@ -45,6 +45,10 @@ interface Violation {
   id: number;
   ticketNumber: string;
   driverName: string;
+  driverLastName: string;
+  driverFirstName: string;
+  driverMiddleName: string;
+  driverSuffix: string;
   driverAddress: string;
   licenseNumber: string;
   licenseExpiryDate: string;
@@ -99,6 +103,37 @@ const FormSection = ({ number, title, subtitle, icon }: { number: string; title:
 // ========== HELPERS ==========
 const formatCurrency = (amount: number): string => `\u20b1${amount.toLocaleString()}`;
 const safeText = (value: unknown): string => value == null ? '' : String(value);
+const normalizeNamePart = (value: string): string => value.trim().replace(/\s+/g, ' ');
+const buildStructuredDriverName = (lastName: string, firstName: string, middleName = '', suffix = ''): string => {
+  const normalizedLastName = normalizeNamePart(lastName);
+  const givenNames = [firstName, middleName, suffix].map(normalizeNamePart).filter(Boolean).join(' ');
+  return normalizedLastName && givenNames ? `${normalizedLastName}, ${givenNames}` : '';
+};
+
+const splitScannedDriverName = (value: string) => {
+  const normalizedName = normalizeNamePart(value);
+  if (!normalizedName) return { lastName: '', firstName: '', middleName: '', suffix: '' };
+
+  const suffixPattern = /\b(JR\.?|SR\.?|II|III|IV|V)$/i;
+  const suffixMatch = normalizedName.match(suffixPattern);
+  const suffix = suffixMatch?.[1] || '';
+  const withoutSuffix = suffixMatch ? normalizeNamePart(normalizedName.slice(0, suffixMatch.index)) : normalizedName;
+
+  if (withoutSuffix.includes(',')) {
+    const [lastName, remainder = ''] = withoutSuffix.split(',', 2).map(normalizeNamePart);
+    const givenParts = remainder.split(' ').filter(Boolean);
+    return { lastName, firstName: givenParts.shift() || '', middleName: givenParts.join(' '), suffix };
+  }
+
+  const parts = withoutSuffix.split(' ').filter(Boolean);
+  if (parts.length === 1) return { lastName: '', firstName: parts[0], middleName: '', suffix };
+  const firstName = parts.shift() || '';
+  let lastName = parts.pop() || '';
+  const compoundSurnamePrefixes = ['DE', 'DEL', 'DELA', 'DE LA', 'SAN', 'SANTA', 'VAN', 'VON'];
+  const possiblePrefix = parts.length ? parts[parts.length - 1].toUpperCase() : '';
+  if (compoundSurnamePrefixes.includes(possiblePrefix)) lastName = `${parts.pop()} ${lastName}`;
+  return { lastName, firstName, middleName: parts.join(' '), suffix };
+};
 
 const statusColor = (status: string): string => {
   const s = status.toLowerCase();
@@ -134,6 +169,10 @@ export default function ViolationsScreen() {
   const [formData, setFormData] = useState({
     ticket_number: '',
     driver_name: '',
+    driver_last_name: '',
+    driver_first_name: '',
+    driver_middle_name: '',
+    driver_suffix: '',
     driver_address: '',
     date_of_birth: '',
     license_number: '',
@@ -178,6 +217,12 @@ export default function ViolationsScreen() {
   const [offenseAnalyses, setOffenseAnalyses] = useState<Record<string, OffenseAnalysis>>({});
   const [analyzingOffense, setAnalyzingOffense] = useState(false);
   const [offenseFloor, setOffenseFloor] = useState(1);
+  const currentDriverName = buildStructuredDriverName(
+    formData.driver_last_name,
+    formData.driver_first_name,
+    formData.driver_middle_name,
+    formData.driver_suffix,
+  );
 
   useEffect(() => {
     if (open !== 'ocr') return;
@@ -212,7 +257,7 @@ export default function ViolationsScreen() {
       try {
         const results = await Promise.all(selectedTypes.map(async type => {
           const response = await api.get('analyze_offense.php', { params: {
-            driver_name: formData.driver_name.trim(),
+            driver_name: currentDriverName,
             license_number: hasNoLicense ? '' : formData.license_number.trim(),
             date_of_birth: formData.date_of_birth.trim(),
             violation_type: type,
@@ -236,7 +281,7 @@ export default function ViolationsScreen() {
       }
     }, 350);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [formData.driver_name, formData.license_number, formData.date_of_birth, hasNoLicense, offenseFloor, selectedTypeKey, violationTypes]);
+  }, [currentDriverName, formData.license_number, formData.date_of_birth, hasNoLicense, offenseFloor, selectedTypeKey, violationTypes]);
 
   const toggleViolation = (type: string, confidence?: number) => {
     const selected = selectedViolations.some(item => item.violation_type === type);
@@ -319,6 +364,7 @@ export default function ViolationsScreen() {
       const noLicenseDetected = detectedTypes.some((item: any) => item.violation_type === "No Driver's License");
       const recognizedPlate = String(fields.plate_number || '').trim().toUpperCase();
       const noPlateDetected = Boolean(trustedField('plate_number') && ['NO PLATE', 'NOPLATE', 'NONE', 'N/A', 'NA'].includes(recognizedPlate));
+      const scannedDriverName = trustedField('driver_name') ? splitScannedDriverName(String(fields.driver_name)) : null;
       setOffenseAnalyses({});
       setSelectedViolations(detectedTypes);
       setHasNoLicense(noLicenseDetected);
@@ -328,7 +374,13 @@ export default function ViolationsScreen() {
       setFormData(current => ({
         ...current,
         ticket_number: trustedField('ticket_number') ? fields.ticket_number : current.ticket_number,
-        driver_name: trustedField('driver_name') ? fields.driver_name : current.driver_name,
+        driver_name: scannedDriverName
+          ? buildStructuredDriverName(scannedDriverName.lastName, scannedDriverName.firstName, scannedDriverName.middleName, scannedDriverName.suffix)
+          : current.driver_name,
+        driver_last_name: scannedDriverName?.lastName || current.driver_last_name,
+        driver_first_name: scannedDriverName?.firstName || current.driver_first_name,
+        driver_middle_name: scannedDriverName?.middleName || current.driver_middle_name,
+        driver_suffix: scannedDriverName?.suffix || current.driver_suffix,
         driver_address: trustedField('driver_address') ? fields.driver_address : current.driver_address,
         date_of_birth: trustedField('date_of_birth') ? fields.date_of_birth : current.date_of_birth,
         license_number: noLicenseDetected ? '' : (trustedField('license_number') ? fields.license_number : current.license_number),
@@ -378,6 +430,10 @@ export default function ViolationsScreen() {
           id: Number(item.violation_id || 0),
           ticketNumber: safeText(item.ticket_number),
           driverName: safeText(item.driver_name) || 'Unknown driver',
+          driverLastName: safeText(item.driver_last_name),
+          driverFirstName: safeText(item.driver_first_name),
+          driverMiddleName: safeText(item.driver_middle_name),
+          driverSuffix: safeText(item.driver_suffix),
           driverAddress: safeText(item.driver_address),
           licenseNumber: safeText(item.license_number),
           licenseExpiryDate: safeText(item.license_expiry_date),
@@ -477,9 +533,14 @@ export default function ViolationsScreen() {
 
   // ===== ADD VIOLATION =====
   const handleAddViolation = async () => {
-    const { driver_name, license_number, plate_number, vehicle_type, location } = formData;
-    if (!driver_name.trim() || (!hasNoLicense && !license_number.trim()) || (!hasNoPlate && !plate_number.trim()) || !location.trim()) {
-      Alert.alert('Error', 'Please fill in all fields.');
+    const { driver_last_name, driver_first_name, license_number, plate_number, vehicle_type, location } = formData;
+    const driverName = buildStructuredDriverName(driver_last_name, driver_first_name, formData.driver_middle_name, formData.driver_suffix);
+    if (!driver_last_name.trim() || !driver_first_name.trim()) {
+      Alert.alert('Driver name required', 'Enter both the driver surname and first name.');
+      return;
+    }
+    if ((!hasNoLicense && !license_number.trim()) || (!hasNoPlate && !plate_number.trim()) || !location.trim()) {
+      Alert.alert('Error', 'Please fill in all required fields.');
       return;
     }
     if (!selectedViolations.length || selectedViolations.some(item => !violationTypes.includes(item.violation_type))) {
@@ -502,7 +563,11 @@ export default function ViolationsScreen() {
     try {
       const response = await api.post('add_violations.php', {
         ...formData,
-        driver_name,
+        driver_name: driverName,
+        driver_last_name: normalizeNamePart(driver_last_name),
+        driver_first_name: normalizeNamePart(driver_first_name),
+        driver_middle_name: normalizeNamePart(formData.driver_middle_name),
+        driver_suffix: normalizeNamePart(formData.driver_suffix),
         license_number: hasNoLicense ? 'NO LICENSE' : license_number,
         license_expiry_date: hasNoLicense ? '' : formData.license_expiry_date,
         has_no_license: hasNoLicense,
@@ -527,7 +592,7 @@ export default function ViolationsScreen() {
           ? `${response.data.ticket_number} was recorded as suggested offense #${offense.suggested_offense}. ${offense.previous_offenses} previous matching offense(s) found.`
           : `${response.data.ticket_number} was recorded as a first offense.`);
         setModalVisible(false);
-        setFormData({ ticket_number: '', driver_name: '', driver_address: '', date_of_birth: '', license_number: '', license_expiry_date: '', license_remarks: '', plate_number: '', vehicle_owner: '', vehicle_registration_number: '', vehicle_color: '', insurance_policy_number: '', coding_sticker_number: '', vehicle_toda: '', vehicle_type: 'Car', violation_type: '', location: '', violation_date: new Date().toISOString().slice(0, 10), violation_time: new Date().toTimeString().slice(0, 5), penalty_amount: '', offense_number: '1', ticket_remarks: '', apprehending_officer_name: '', apprehending_officer_position: '', apprehension_datetime: '' });
+        setFormData({ ticket_number: '', driver_name: '', driver_last_name: '', driver_first_name: '', driver_middle_name: '', driver_suffix: '', driver_address: '', date_of_birth: '', license_number: '', license_expiry_date: '', license_remarks: '', plate_number: '', vehicle_owner: '', vehicle_registration_number: '', vehicle_color: '', insurance_policy_number: '', coding_sticker_number: '', vehicle_toda: '', vehicle_type: 'Car', violation_type: '', location: '', violation_date: new Date().toISOString().slice(0, 10), violation_time: new Date().toTimeString().slice(0, 5), penalty_amount: '', offense_number: '1', ticket_remarks: '', apprehending_officer_name: '', apprehending_officer_position: '', apprehension_datetime: '' });
         setSelectedViolations([]);
         setHasNoLicense(false);
         setLicenseConfiscated(false);
@@ -569,6 +634,10 @@ export default function ViolationsScreen() {
     setFormData({
       ticket_number: '',
       driver_name: violator.driverName,
+      driver_last_name: latest.driverLastName || '',
+      driver_first_name: latest.driverFirstName || '',
+      driver_middle_name: latest.driverMiddleName || '',
+      driver_suffix: latest.driverSuffix || '',
       driver_address: latest.driverAddress || '',
       date_of_birth: latest.dateOfBirth || '',
       license_number: noLicense ? '' : violator.licenseNumber,
@@ -820,14 +889,22 @@ export default function ViolationsScreen() {
               </View>
               {!!ocrNotice && <View style={styles.ocrNotice}><Ionicons name="warning-outline" size={16} color={COLORS.warning} /><Text style={styles.ocrNoticeText}>{ocrNotice}</Text></View>}
               <FormSection number="2" title="Driver information" subtitle="Identity and contact details" icon="person-outline" />
-              <Text style={styles.modalLabel}>Driver Name</Text>
+              <Text style={styles.modalLabel}>Surname</Text>
               <TextInput
                 style={styles.modalInput}
-                placeholder="Driver name"
+                placeholder="Surname"
                 placeholderTextColor={COLORS.textTertiary}
-                value={formData.driver_name}
-                onChangeText={text => setFormData({ ...formData, driver_name: text })}
+                value={formData.driver_last_name}
+                onChangeText={text => setFormData({ ...formData, driver_last_name: text })}
+                autoCapitalize="words"
               />
+              <Text style={styles.modalLabel}>First Name</Text>
+              <TextInput style={styles.modalInput} placeholder="First name" placeholderTextColor={COLORS.textTertiary} value={formData.driver_first_name} onChangeText={text => setFormData({ ...formData, driver_first_name: text })} autoCapitalize="words" />
+              <Text style={styles.modalLabel}>Middle Name</Text>
+              <TextInput style={styles.modalInput} placeholder="Optional full middle name" placeholderTextColor={COLORS.textTertiary} value={formData.driver_middle_name} onChangeText={text => setFormData({ ...formData, driver_middle_name: text })} autoCapitalize="words" />
+              <Text style={styles.modalLabel}>Suffix</Text>
+              <TextInput style={styles.modalInput} placeholder="Optional: Jr., Sr., III" placeholderTextColor={COLORS.textTertiary} value={formData.driver_suffix} onChangeText={text => setFormData({ ...formData, driver_suffix: text })} autoCapitalize="characters" />
+              {!!currentDriverName && <Text style={styles.structuredNamePreview}>Saved as: {currentDriverName}</Text>}
               <Text style={styles.modalLabel}>Driver Address</Text>
               <TextInput style={styles.modalInput} placeholder="Complete address" placeholderTextColor={COLORS.textTertiary} value={formData.driver_address} onChangeText={text => setFormData({ ...formData, driver_address: text })} />
               <Text style={styles.modalLabel}>Date of Birth</Text>
@@ -1213,6 +1290,7 @@ const styles = StyleSheet.create({
     minHeight: 46, backgroundColor: '#FFF', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10,
     borderWidth: 1, borderColor: COLORS.border, fontSize: 14, color: COLORS.textPrimary, marginBottom: 2,
   },
+  structuredNamePreview: { color: COLORS.primary, fontSize: 11, fontWeight: '700', marginTop: 7, marginBottom: 2 },
   checkRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8, marginBottom: 4 },
   checkRowText: { flex: 1, color: COLORS.textSecondary, fontSize: 12 },
   officerList: { marginTop: 2, borderWidth: 1, borderColor: COLORS.border, borderRadius: 10, overflow: 'hidden', backgroundColor: '#FFF' },

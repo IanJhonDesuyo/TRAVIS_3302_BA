@@ -138,6 +138,10 @@
     `violation_id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `ticket_number` VARCHAR(80) NOT NULL,
     `driver_name` VARCHAR(150) NOT NULL,
+    `driver_last_name` VARCHAR(100) NULL,
+    `driver_first_name` VARCHAR(100) NULL,
+    `driver_middle_name` VARCHAR(100) NULL,
+    `driver_suffix` VARCHAR(20) NULL,
     `driver_address` VARCHAR(255) NULL,
     `date_of_birth` DATE NULL,
     `license_number` VARCHAR(80) NOT NULL,
@@ -171,6 +175,7 @@
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`violation_id`),
     UNIQUE KEY `uq_violations_ticket_number` (`ticket_number`),
+    KEY `idx_violations_driver_structured` (`driver_last_name`, `driver_first_name`, `date_of_birth`),
     KEY `idx_violations_encoded_by` (`encoded_by`),
     CONSTRAINT `fk_violations_encoded_by` FOREIGN KEY (`encoded_by`) REFERENCES `users`(`user_id`) ON DELETE SET NULL ON UPDATE CASCADE
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

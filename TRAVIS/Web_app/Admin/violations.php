@@ -9,6 +9,17 @@ function violation_post(string $key, string $default = ''): string
     return trim((string)($_POST[$key] ?? $default));
 }
 
+function violation_name_component(string $value): string
+{
+    return preg_replace('/\s+/', ' ', trim($value)) ?? '';
+}
+
+function violation_structured_driver_name(string $lastName, string $firstName, string $middleName = '', string $suffix = ''): string
+{
+    $givenNames = trim(implode(' ', array_filter([$firstName, $middleName, $suffix], static fn(string $part): bool => $part !== '')));
+    return $lastName !== '' && $givenNames !== '' ? $lastName . ', ' . $givenNames : '';
+}
+
 function generateTicketNumber(mysqli $conn): string
 {
     $prefix = 'TRV-' . date('Ymd') . '-';
@@ -48,7 +59,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($action === 'add_violation') {
         $ticket = generateTicketNumber($conn);
-        $driver = preg_replace('/\s+/', ' ', violation_post('driver_name')) ?? '';
+        $driverLastName = violation_name_component(violation_post('driver_last_name'));
+        $driverFirstName = violation_name_component(violation_post('driver_first_name'));
+        $driverMiddleName = violation_name_component(violation_post('driver_middle_name'));
+        $driverSuffix = violation_name_component(violation_post('driver_suffix'));
+        $driver = violation_structured_driver_name($driverLastName, $driverFirstName, $driverMiddleName, $driverSuffix);
         $driverAddress = violation_post('driver_address');
         $dateOfBirth = violation_post('date_of_birth');
         $hasNoLicense = isset($_POST['has_no_license']);
@@ -112,7 +127,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $amount = array_sum($items);
 
         if (
-            $driver === '' || $license === '' || $plate === '' ||
+            $driver === '' || $driverLastName === '' || $driverFirstName === '' ||
+            mb_strlen($driver) > 150 || mb_strlen($driverLastName) > 100 || mb_strlen($driverFirstName) > 100 ||
+            mb_strlen($driverMiddleName) > 100 || mb_strlen($driverSuffix) > 20 ||
+            $license === '' || $plate === '' ||
             $vehicle === '' || $type === '' || $location === '' ||
             $date === '' || $time === '' || $amount <= 0 || $officerName === '' || !$validOfficer
         ) {
@@ -130,7 +148,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $stmt = $conn->prepare("
                 INSERT INTO violations (
-                    ticket_number, driver_name, driver_address, date_of_birth,
+                    ticket_number, driver_name, driver_last_name, driver_first_name, driver_middle_name, driver_suffix,
+                    driver_address, date_of_birth,
                     license_number, license_expiry_date, has_no_license, license_confiscated, license_remarks,
                     plate_number, has_no_plate, vehicle_owner, vehicle_registration_number,
                     vehicle_type, vehicle_color, insurance_policy_number, coding_sticker_number, vehicle_toda,
@@ -139,7 +158,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     penalty_amount,
                     encoded_by, input_method, status
                 )
-                VALUES (?, ?, NULLIF(?, ''), NULLIF(?, ''), ?, NULLIF(?, ''), ?, ?, NULLIF(?, ''),
+                VALUES (?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, NULLIF(?, ''), ?, ?, NULLIF(?, ''),
                         ?, ?, NULLIF(?, ''), NULLIF(?, ''), ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
                         ?, ?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, 'manual', 'pending')
             ");
@@ -147,8 +166,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $encodedBy = (int)($_SESSION['user']['id'] ?? 0);
 
             $stmt->bind_param(
-                'ssssssiississsssssssssissssdi',
-                $ticket, $driver, $driverAddress, $dateOfBirth, $license, $licenseExpiry,
+                'ssssssssssiississsssssssssissssdi',
+                $ticket, $driver, $driverLastName, $driverFirstName, $driverMiddleName, $driverSuffix,
+                $driverAddress, $dateOfBirth, $license, $licenseExpiry,
                 $hasNoLicense, $licenseConfiscated, $licenseRemarks, $plate, $hasNoPlate,
                 $vehicleOwner, $vehicleRegistration, $vehicle, $vehicleColor, $insurancePolicy,
                 $codingSticker, $vehicleToda, $type, $location, $date, $time, $offenseNumber,
@@ -1039,6 +1059,10 @@ div[style*="border-radius: 999px"]:not(.tag){
             type="button"
             class="btn btn-primary add-existing-violator"
             data-driver="<?= esc($violator['driver_name']) ?>"
+            data-driver-last-name="<?= esc($latest['driver_last_name'] ?? '') ?>"
+            data-driver-first-name="<?= esc($latest['driver_first_name'] ?? '') ?>"
+            data-driver-middle-name="<?= esc($latest['driver_middle_name'] ?? '') ?>"
+            data-driver-suffix="<?= esc($latest['driver_suffix'] ?? '') ?>"
             data-address="<?= esc($latest['driver_address'] ?? '') ?>"
             data-birth-date="<?= esc($latest['date_of_birth'] ?? '') ?>"
             data-license="<?= esc($violator['license_number']) ?>"
@@ -1072,8 +1096,12 @@ div[style*="border-radius: 999px"]:not(.tag){
           <input type="hidden" name="action" value="add_violation">
           <div class="row g-3">
             <div class="col-12"><div class="ticket-form-section"><span class="section-number">1</span><div><strong>Driver Information</strong><small class="text-muted">Personal details of the apprehended driver</small></div></div></div>
-            <div class="col-md-6"><label class="form-label">Driver Name</label><input type="text" id="driverNameInput" name="driver_name" class="form-control" required><small class="text-muted">Matching uses license first, then name + birth date.</small></div>
-            <div class="col-md-6"><label class="form-label">Date of Birth</label><input type="date" name="date_of_birth" class="form-control"></div>
+            <input type="hidden" id="driverNameInput" name="driver_name">
+            <div class="col-md-3"><label class="form-label" for="driverLastNameInput">Surname</label><input type="text" id="driverLastNameInput" name="driver_last_name" class="form-control" maxlength="100" autocomplete="family-name" required></div>
+            <div class="col-md-3"><label class="form-label" for="driverFirstNameInput">First Name</label><input type="text" id="driverFirstNameInput" name="driver_first_name" class="form-control" maxlength="100" autocomplete="given-name" required></div>
+            <div class="col-md-3"><label class="form-label" for="driverMiddleNameInput">Middle Name</label><input type="text" id="driverMiddleNameInput" name="driver_middle_name" class="form-control" maxlength="100" autocomplete="additional-name"><small class="text-muted">Optional; enter the full middle name when available.</small></div>
+            <div class="col-md-3"><label class="form-label" for="driverSuffixInput">Suffix</label><input type="text" id="driverSuffixInput" name="driver_suffix" class="form-control" maxlength="20" placeholder="Jr., Sr., III"></div>
+            <div class="col-md-6"><label class="form-label">Date of Birth</label><input type="date" name="date_of_birth" class="form-control"><small class="text-muted">Matching uses license first, then the structured name and birth date.</small></div>
             <div class="col-12"><label class="form-label">Driver Address</label><input type="text" name="driver_address" class="form-control" maxlength="255" placeholder="House no., street, barangay, municipality"></div>
             <div class="col-12"><div class="ticket-form-section"><span class="section-number">2</span><div><strong>License Information</strong><small class="text-muted">License number, validity, and confiscation status</small></div></div></div>
             <div class="col-md-6">
@@ -1200,6 +1228,11 @@ document.querySelectorAll('#addViolationModal, .violation-history-modal').forEac
 
 const violationItems = document.getElementById('violationItems');
 const driverNameInput = document.getElementById('driverNameInput');
+const driverLastNameInput = document.getElementById('driverLastNameInput');
+const driverFirstNameInput = document.getElementById('driverFirstNameInput');
+const driverMiddleNameInput = document.getElementById('driverMiddleNameInput');
+const driverSuffixInput = document.getElementById('driverSuffixInput');
+const structuredDriverNameInputs = [driverLastNameInput, driverFirstNameInput, driverMiddleNameInput, driverSuffixInput];
 const noLicenseCheck = document.getElementById('noLicenseCheck');
 const licenseNumberInput = document.getElementById('licenseNumberInput');
 const licenseExpiryInput = document.getElementById('licenseExpiryInput');
@@ -1225,6 +1258,16 @@ const tmoOfficerField = document.getElementById('tmoOfficerField');
 const tmoOfficerSelect = document.getElementById('tmoOfficerSelect');
 let driverAnalysisTimer = null;
 let automaticOffenseFloor = 1;
+
+function syncDriverName() {
+  if (!driverNameInput) return;
+  const lastName = driverLastNameInput?.value.trim().replace(/\s+/g, ' ') || '';
+  const givenNames = [driverFirstNameInput, driverMiddleNameInput, driverSuffixInput]
+    .map(input => input?.value.trim().replace(/\s+/g, ' ') || '')
+    .filter(Boolean)
+    .join(' ');
+  driverNameInput.value = lastName && givenNames ? `${lastName}, ${givenNames}` : '';
+}
 
 function syncLicenseFields() {
   const hasNoLicense = Boolean(noLicenseCheck?.checked);
@@ -1306,7 +1349,11 @@ document.querySelectorAll('.add-existing-violator').forEach(function (button) {
     const hasNoLicense = button.dataset.noLicense === '1';
     const hasNoPlate = button.dataset.noPlate === '1';
 
-    driverNameInput.value = button.dataset.driver || '';
+    driverLastNameInput.value = button.dataset.driverLastName || '';
+    driverFirstNameInput.value = button.dataset.driverFirstName || '';
+    driverMiddleNameInput.value = button.dataset.driverMiddleName || '';
+    driverSuffixInput.value = button.dataset.driverSuffix || '';
+    syncDriverName();
     automaticOffenseFloor = Math.max(1, Math.min(4, Number(button.dataset.offenseLevel || 1)));
     ticketForm.elements.driver_address.value = button.dataset.address || '';
     ticketForm.elements.date_of_birth.value = button.dataset.birthDate || '';
@@ -1525,12 +1572,18 @@ function scheduleOffenseAnalysis() {
     violationItems?.querySelectorAll('.violation-item-row').forEach(function (row) { suggestPenalty(row); });
   }, 400);
 }
-driverNameInput?.addEventListener('input', scheduleOffenseAnalysis);
+structuredDriverNameInputs.forEach(function (input) {
+  input?.addEventListener('input', function () {
+    syncDriverName();
+    scheduleOffenseAnalysis();
+  });
+});
 licenseNumberInput?.addEventListener('input', scheduleOffenseAnalysis);
 ticketForm?.elements.date_of_birth?.addEventListener('change', scheduleOffenseAnalysis);
 noLicenseCheck?.addEventListener('change', scheduleOffenseAnalysis);
 refreshViolationItemButtons();
 updateAutomaticOffenseNumber();
+syncDriverName();
 syncLicenseFields();
 syncTricycleFields();
 syncRegistrationField();

@@ -18,6 +18,17 @@ if (($_SESSION['logged_in'] ?? false) !== true || empty($_SESSION['user_id'])) {
 require_once __DIR__ . '/violation_rules.php';
 require_once __DIR__ . '/../Web_app/db_connect.php';
 
+function api_name_component(mixed $value): string
+{
+    return preg_replace('/\s+/', ' ', trim((string)$value)) ?? '';
+}
+
+function api_structured_driver_name(string $lastName, string $firstName, string $middleName = '', string $suffix = ''): string
+{
+    $givenNames = trim(implode(' ', array_filter([$firstName, $middleName, $suffix], static fn(string $part): bool => $part !== '')));
+    return $lastName !== '' && $givenNames !== '' ? $lastName . ', ' . $givenNames : '';
+}
+
 $input = json_decode((string)file_get_contents('php://input'), true);
 if (!is_array($input) || json_last_error() !== JSON_ERROR_NONE) {
     http_response_code(400);
@@ -35,7 +46,14 @@ if (array_key_exists('has_no_plate', $input) && !is_bool($input['has_no_plate'])
     exit;
 }
 
-$driver = preg_replace('/\s+/', ' ', trim((string)($input['driver_name'] ?? ''))) ?? '';
+$driverLastName = api_name_component($input['driver_last_name'] ?? '');
+$driverFirstName = api_name_component($input['driver_first_name'] ?? '');
+$driverMiddleName = api_name_component($input['driver_middle_name'] ?? '');
+$driverSuffix = api_name_component($input['driver_suffix'] ?? '');
+$hasStructuredName = $driverLastName !== '' || $driverFirstName !== '' || $driverMiddleName !== '' || $driverSuffix !== '';
+$driver = $hasStructuredName
+    ? api_structured_driver_name($driverLastName, $driverFirstName, $driverMiddleName, $driverSuffix)
+    : api_name_component($input['driver_name'] ?? '');
 $hasNoLicense = $input['has_no_license'];
 $license = $hasNoLicense ? 'NO LICENSE' : strtoupper(trim((string)($input['license_number'] ?? '')));
 $submittedPlate = strtoupper(trim((string)($input['plate_number'] ?? '')));
@@ -122,6 +140,15 @@ $types = array_column($items, 'violation_type');
 $typeSummary = implode(', ', $types);
 $penalty = array_sum(array_column($items, 'penalty_amount'));
 
+if (
+    ($hasStructuredName && ($driverLastName === '' || $driverFirstName === '')) ||
+    mb_strlen($driverLastName) > 100 || mb_strlen($driverFirstName) > 100 ||
+    mb_strlen($driverMiddleName) > 100 || mb_strlen($driverSuffix) > 20
+) {
+    http_response_code(422);
+    echo json_encode(['success' => false, 'error' => 'Surname and first name are required for structured driver records']);
+    exit;
+}
 if ($driver === '' || mb_strlen($driver) > 150 || $plate === '' || mb_strlen($plate) > 50 || $location === '' || mb_strlen($location) > 255) {
     http_response_code(422);
     echo json_encode(['success' => false, 'error' => 'Driver, plate number, and location are required and must fit their allowed lengths']);
@@ -163,16 +190,18 @@ try {
     } while ($ticketExists);
 
     $statement = $pdo->prepare("INSERT INTO violations (
-        ticket_number, driver_name, driver_address, date_of_birth,
+        ticket_number, driver_name, driver_last_name, driver_first_name, driver_middle_name, driver_suffix,
+        driver_address, date_of_birth,
         license_number, license_expiry_date, has_no_license, license_confiscated, license_remarks,
         plate_number, has_no_plate, vehicle_owner, vehicle_registration_number, vehicle_type,
         vehicle_color, insurance_policy_number, coding_sticker_number, vehicle_toda,
         violation_type, violation_location, violation_date, violation_time, offense_number,
         ticket_remarks, apprehending_officer_name, apprehending_officer_position, apprehension_datetime, penalty_amount,
         encoded_by, input_method, status
-    ) VALUES (?, ?, NULLIF(?, ''), NULLIF(?, ''), ?, NULLIF(?, ''), ?, ?, NULLIF(?, ''), ?, ?, NULLIF(?, ''), NULLIF(?, ''), ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, 'pending')");
+    ) VALUES (?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, NULLIF(?, ''), ?, ?, NULLIF(?, ''), ?, ?, NULLIF(?, ''), NULLIF(?, ''), ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, 'pending')");
     $statement->execute([
-        $ticket, $driver, $driverAddress, $dateOfBirth, $license, $licenseExpiry,
+        $ticket, $driver, $driverLastName, $driverFirstName, $driverMiddleName, $driverSuffix,
+        $driverAddress, $dateOfBirth, $license, $licenseExpiry,
         $hasNoLicense ? 1 : 0, $licenseConfiscated ? 1 : 0, $licenseRemarks,
         $plate, $hasNoPlate ? 1 : 0, $vehicleOwner, $vehicleRegistration, $vehicle,
         $vehicleColor, $insurancePolicy, $codingSticker, $vehicleToda,
