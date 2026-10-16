@@ -83,6 +83,7 @@ interface Violator {
 type StatusFilter = '' | 'pending' | 'overdue' | 'paid' | 'cancelled';
 type OffenseAnalysis = { previous_offenses: number; suggested_offense: number; maximum_offense: number; at_maximum: boolean; matched_by: string | null; last_violation_date: string | null; last_ticket_number: string | null; suggested_penalty: number; penalty_schedule: number[] };
 type SelectedViolation = { violation_type: string; penalty_amount: string; ocr_confidence?: number; penalty_overridden?: boolean; auto_added?: boolean };
+type TmoOfficer = { officer_id: number; first_name: string; last_name: string; badge_number?: string; rank?: string };
 
 const FormSection = ({ number, title, subtitle, icon }: { number: string; title: string; subtitle: string; icon: keyof typeof Ionicons.glyphMap }) => (
   <View style={styles.formSectionHeader}>
@@ -161,6 +162,9 @@ export default function ViolationsScreen() {
   const [hasNoLicense, setHasNoLicense] = useState(false);
   const [licenseConfiscated, setLicenseConfiscated] = useState(false);
   const [hasNoPlate, setHasNoPlate] = useState(false);
+  const [registrationNotApplicable, setRegistrationNotApplicable] = useState(false);
+  const [officerAgency, setOfficerAgency] = useState<'police' | 'tmo'>('police');
+  const [selectedTmoOfficerId, setSelectedTmoOfficerId] = useState<number | null>(null);
   const [scanning, setScanning] = useState(false);
   const [inputMethod, setInputMethod] = useState<'manual' | 'ocr'>('manual');
   const [ocrNotice, setOcrNotice] = useState('');
@@ -170,6 +174,7 @@ export default function ViolationsScreen() {
   const [violationTypes, setViolationTypes] = useState<string[]>([]);
   const [penaltyFees, setPenaltyFees] = useState<number[]>([]);
   const [vehicleTypes, setVehicleTypes] = useState<string[]>([]);
+  const [tmoOfficers, setTmoOfficers] = useState<TmoOfficer[]>([]);
   const [offenseAnalyses, setOffenseAnalyses] = useState<Record<string, OffenseAnalysis>>({});
   const [analyzingOffense, setAnalyzingOffense] = useState(false);
   const [offenseFloor, setOffenseFloor] = useState(1);
@@ -190,6 +195,7 @@ export default function ViolationsScreen() {
       setViolationTypes(options.violation_types || []);
       setPenaltyFees(options.penalty_fees || []);
       setVehicleTypes(options.vehicle_types || []);
+      setTmoOfficers(options.tmo_officers || []);
     }).catch(() => Alert.alert('Configuration error', 'The official violation options could not be loaded.'));
   }, []);
 
@@ -488,6 +494,10 @@ export default function ViolationsScreen() {
       Alert.alert('Invalid penalty', 'Enter a valid positive penalty for every violation.');
       return;
     }
+    if ((officerAgency === 'police' && !formData.apprehending_officer_name.trim()) || (officerAgency === 'tmo' && !selectedTmoOfficerId)) {
+      Alert.alert('Officer required', officerAgency === 'tmo' ? 'Select an active TMO officer.' : 'Enter the apprehending police officer name.');
+      return;
+    }
     setSubmitting(true);
     try {
       const response = await api.post('add_violations.php', {
@@ -499,12 +509,16 @@ export default function ViolationsScreen() {
         license_confiscated: licenseConfiscated,
         plate_number: hasNoPlate ? 'NO PLATE' : plate_number,
         has_no_plate: hasNoPlate,
+        registration_not_applicable: registrationNotApplicable,
+        vehicle_registration_number: registrationNotApplicable ? 'NOT APPLICABLE' : formData.vehicle_registration_number,
         vehicle_type,
         coding_sticker_number: vehicle_type === 'Tricycle' ? formData.coding_sticker_number : '',
         vehicle_toda: vehicle_type === 'Tricycle' ? formData.vehicle_toda : '',
         violations: selectedViolations.map(item => ({ ...item, penalty_amount: Number(item.penalty_amount) })),
         location,
         offense_number: Number(formData.offense_number),
+        apprehending_officer_agency: officerAgency,
+        tmo_officer_id: officerAgency === 'tmo' ? selectedTmoOfficerId : null,
         input_method: inputMethod,
       });
       if (response.data.success) {
@@ -518,6 +532,9 @@ export default function ViolationsScreen() {
         setHasNoLicense(false);
         setLicenseConfiscated(false);
         setHasNoPlate(false);
+        setRegistrationNotApplicable(false);
+        setOfficerAgency('police');
+        setSelectedTmoOfficerId(null);
         setInputMethod('manual');
         setOcrNotice('');
         setOffenseAnalyses({});
@@ -545,6 +562,7 @@ export default function ViolationsScreen() {
     const noLicense = violator.licenseNumber.trim().toUpperCase() === 'NO LICENSE';
     const normalizedPlate = latest.plateNumber.trim().toUpperCase();
     const noPlate = ['NO PLATE', 'NOPLATE', 'NONE', 'N/A', 'NA'].includes(normalizedPlate);
+    const registrationIsNotApplicable = latest.vehicleRegistrationNumber.trim().toUpperCase() === 'NOT APPLICABLE';
 
     const nextOffense = Math.min(4, violator.records.length + 1);
     setOffenseFloor(nextOffense);
@@ -558,7 +576,7 @@ export default function ViolationsScreen() {
       license_remarks: latest.licenseRemarks || '',
       plate_number: noPlate ? '' : latest.plateNumber,
       vehicle_owner: latest.vehicleOwner || '',
-      vehicle_registration_number: latest.vehicleRegistrationNumber || '',
+      vehicle_registration_number: registrationIsNotApplicable ? '' : (latest.vehicleRegistrationNumber || ''),
       vehicle_color: latest.vehicleColor || '',
       insurance_policy_number: latest.insurancePolicyNumber || '',
       coding_sticker_number: latest.vehicleType === 'Tricycle' ? (latest.codingStickerNumber || '') : '',
@@ -577,8 +595,10 @@ export default function ViolationsScreen() {
     });
     setHasNoLicense(noLicense);
     setLicenseConfiscated(latest.licenseConfiscated);
-    setLicenseConfiscated(false);
     setHasNoPlate(noPlate);
+    setRegistrationNotApplicable(registrationIsNotApplicable);
+    setOfficerAgency('police');
+    setSelectedTmoOfficerId(null);
     setSelectedViolations([]);
     setOffenseAnalyses({});
     setViolationDropdownOpen(false);
@@ -866,7 +886,11 @@ export default function ViolationsScreen() {
               </TouchableOpacity>
               <Text style={styles.modalLabel}>Vehicle Details</Text>
               <TextInput style={styles.modalInput} placeholder="Owner of vehicle" placeholderTextColor={COLORS.textTertiary} value={formData.vehicle_owner} onChangeText={text => setFormData({ ...formData, vehicle_owner: text })} />
-              <TextInput style={styles.modalInput} placeholder="Vehicle registration number" placeholderTextColor={COLORS.textTertiary} value={formData.vehicle_registration_number} onChangeText={text => setFormData({ ...formData, vehicle_registration_number: text })} autoCapitalize="characters" />
+              <TextInput style={[styles.modalInput, registrationNotApplicable && { opacity: 0.55 }]} placeholder={registrationNotApplicable ? 'NOT APPLICABLE' : 'Vehicle registration number'} placeholderTextColor={COLORS.textTertiary} value={registrationNotApplicable ? 'NOT APPLICABLE' : formData.vehicle_registration_number} onChangeText={text => setFormData({ ...formData, vehicle_registration_number: text })} autoCapitalize="characters" editable={!registrationNotApplicable} />
+              <TouchableOpacity style={styles.checkRow} onPress={() => setRegistrationNotApplicable(value => !value)} accessibilityRole="checkbox" accessibilityState={{ checked: registrationNotApplicable }}>
+                <Ionicons name={registrationNotApplicable ? 'checkbox' : 'square-outline'} size={22} color={COLORS.primary} />
+                <Text style={styles.checkRowText}>Registration number is not applicable</Text>
+              </TouchableOpacity>
               <TextInput style={styles.modalInput} placeholder="Vehicle color" placeholderTextColor={COLORS.textTertiary} value={formData.vehicle_color} onChangeText={text => setFormData({ ...formData, vehicle_color: text })} />
               <TextInput style={styles.modalInput} placeholder="Insurance policy number" placeholderTextColor={COLORS.textTertiary} value={formData.insurance_policy_number} onChangeText={text => setFormData({ ...formData, insurance_policy_number: text })} />
               <Text style={styles.modalLabel}>Vehicle Type</Text>
@@ -960,8 +984,25 @@ export default function ViolationsScreen() {
               <TextInput style={[styles.modalInput, { minHeight: 72, textAlignVertical: 'top' }]} multiline placeholder="Remarks / Treasurer disposition" placeholderTextColor={COLORS.textTertiary} value={formData.ticket_remarks} onChangeText={text => setFormData({ ...formData, ticket_remarks: text })} />
               <FormSection number="7" title="Officer information" subtitle="Apprehending officer and time recorded" icon="shield-checkmark-outline" />
               <Text style={styles.modalLabel}>Apprehending / Arresting Officer</Text>
-              <TextInput style={styles.modalInput} placeholder="Officer name" placeholderTextColor={COLORS.textTertiary} value={formData.apprehending_officer_name} onChangeText={text => setFormData({ ...formData, apprehending_officer_name: text })} />
-              <TextInput style={styles.modalInput} placeholder="Position" placeholderTextColor={COLORS.textTertiary} value={formData.apprehending_officer_position} onChangeText={text => setFormData({ ...formData, apprehending_officer_position: text })} />
+              <View style={styles.optionWrap}>
+                {(['police', 'tmo'] as const).map(agency => <TouchableOpacity key={agency} style={[styles.optionChip, officerAgency === agency && styles.optionChipActive]} onPress={() => { setOfficerAgency(agency); if (agency === 'police') setSelectedTmoOfficerId(null); }}><Text style={[styles.optionChipText, officerAgency === agency && styles.optionChipTextActive]}>{agency === 'police' ? 'Police' : 'TMO'}</Text></TouchableOpacity>)}
+              </View>
+              {officerAgency === 'police' ? <>
+                <TextInput style={styles.modalInput} placeholder="Officer name" placeholderTextColor={COLORS.textTertiary} value={formData.apprehending_officer_name} onChangeText={text => setFormData({ ...formData, apprehending_officer_name: text })} />
+                <TextInput style={styles.modalInput} placeholder="Position" placeholderTextColor={COLORS.textTertiary} value={formData.apprehending_officer_position} onChangeText={text => setFormData({ ...formData, apprehending_officer_position: text })} />
+              </> : <>
+                <Text style={styles.modalLabel}>Active TMO Officer</Text>
+                <View style={styles.officerList}>
+                  {tmoOfficers.length ? tmoOfficers.map(officer => {
+                    const selected = selectedTmoOfficerId === Number(officer.officer_id);
+                    const details = [officer.badge_number, officer.rank].filter(Boolean).join(' · ');
+                    return <TouchableOpacity key={officer.officer_id} style={[styles.officerOption, selected && styles.officerOptionSelected]} onPress={() => setSelectedTmoOfficerId(Number(officer.officer_id))}>
+                      <Ionicons name={selected ? 'radio-button-on' : 'radio-button-off'} size={20} color={selected ? COLORS.primary : COLORS.textTertiary} />
+                      <View style={{ flex: 1 }}><Text style={styles.officerName}>{officer.last_name}, {officer.first_name}</Text>{!!details && <Text style={styles.officerMeta}>{details}</Text>}</View>
+                    </TouchableOpacity>;
+                  }) : <Text style={styles.officerEmpty}>No active TMO officers are available.</Text>}
+                </View>
+              </>}
               <TextInput style={styles.modalInput} placeholder="Apprehension date/time: YYYY-MM-DD HH:MM" placeholderTextColor={COLORS.textTertiary} value={formData.apprehension_datetime} onChangeText={text => setFormData({ ...formData, apprehension_datetime: text })} />
               {!!selectedViolations.length && <Text style={styles.modalSub}>Total penalty: ₱{selectedViolations.reduce((sum, item) => sum + Number(item.penalty_amount || 0), 0).toLocaleString()}</Text>}
             </ScrollView>
@@ -1172,6 +1213,14 @@ const styles = StyleSheet.create({
     minHeight: 46, backgroundColor: '#FFF', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10,
     borderWidth: 1, borderColor: COLORS.border, fontSize: 14, color: COLORS.textPrimary, marginBottom: 2,
   },
+  checkRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8, marginBottom: 4 },
+  checkRowText: { flex: 1, color: COLORS.textSecondary, fontSize: 12 },
+  officerList: { marginTop: 2, borderWidth: 1, borderColor: COLORS.border, borderRadius: 10, overflow: 'hidden', backgroundColor: '#FFF' },
+  officerOption: { minHeight: 50, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 9, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border },
+  officerOptionSelected: { backgroundColor: '#EAF6F5' },
+  officerName: { color: COLORS.textPrimary, fontSize: 12, fontWeight: '800' },
+  officerMeta: { color: COLORS.textSecondary, fontSize: 10, marginTop: 2 },
+  officerEmpty: { color: COLORS.danger, fontSize: 11, padding: 12 },
   violationDropdownButton: { minHeight: 46, paddingHorizontal: 12, borderRadius: 10, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.bg, flexDirection: 'row', alignItems: 'center', gap: 9 },
   violationDropdownButtonOpen: { borderColor: COLORS.primary, borderBottomLeftRadius: 0, borderBottomRightRadius: 0 },
   violationDropdownText: { flex: 1, color: COLORS.textPrimary, fontSize: 13, fontWeight: '700' },

@@ -9,10 +9,19 @@ if (($_SESSION['logged_in'] ?? false) !== true) {
     exit;
 }
 require_once __DIR__ . '/violation_rules.php';
+$officers = [];
+try {
+    require_once __DIR__ . '/../Web_app/db_connect.php';
+    $statement = $pdo->query("SELECT officer_id, first_name, last_name, badge_number, rank FROM officers WHERE status = 'active' ORDER BY last_name, first_name");
+    $officers = $statement ? $statement->fetchAll(PDO::FETCH_ASSOC) : [];
+} catch (Throwable $exception) {
+    error_log('Unable to load mobile TMO officer options: ' . $exception->getMessage());
+}
 echo json_encode(['success' => true, 'data' => [
     'violation_types' => travis_violation_types(),
     'penalty_fees' => travis_penalty_fees(),
     'vehicle_types' => travis_vehicle_types(),
+    'tmo_officers' => $officers,
     'penalty_schedules' => [
         'minor' => [200, 500, 1000],
         'coding_colorum' => [500, 1000, 2500],

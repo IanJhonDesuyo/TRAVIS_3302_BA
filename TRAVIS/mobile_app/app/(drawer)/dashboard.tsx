@@ -7,11 +7,9 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   StatusBar,
-  Animated,
   Platform,
   RefreshControl,
   useWindowDimensions,
-  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LineChart, BarChart } from 'react-native-chart-kit';
@@ -20,8 +18,6 @@ import Svg, { Circle } from 'react-native-svg';
 import { useFocusEffect } from 'expo-router/react-navigation';
 import { useRouter } from 'expo-router';
 import api, { mlApi } from '../../api/axiosConfig';
-import { MOBILE_SNAPSHOT_URL } from '../../api/axiosConfig';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // ========== COLOR TOKENS ==========
 const COLORS = {
@@ -51,7 +47,6 @@ const statusColor = (status: string): string => {
   return COLORS.textTertiary;
 };
 const mono = Platform.select({ ios: 'Courier', android: 'monospace', default: 'monospace' });
-const JOINED_FEED_KEY = 'travis_mobile_feed_joined';
 
 // ========== COUNT-UP ANIMATION ==========
 function useCountUp(target: number, active: boolean, duration = 900) {
@@ -102,24 +97,18 @@ export default function DashboardScreen() {
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'monitoring' | 'analytics'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'analytics'>('overview');
   const [aiExpanded, setAiExpanded] = useState(false);
   const [dateRange, setDateRange] = useState<'Today' | 'Week' | 'Month' | 'Year'>('Month');
   const [now, setNow] = useState(new Date());
 
   // ===== REAL DATA STATES =====
   const [stats, setStats] = useState({
-    vehiclesToday: 0,
     violationsToday: 0,
     activeAlerts: 0,
     collectedToday: 0,
     pendingViolations: 0,
-    onlineCameras: 0,
-    totalCameras: 0,
-    cameraLive: false,
-    analysisStatus: 'Idle',
   });
-  const [recentAlerts, setRecentAlerts] = useState<any[]>([]);
   const [monthlySummary, setMonthlySummary] = useState<any>(null);
 
   // Chart data
@@ -139,9 +128,6 @@ export default function DashboardScreen() {
     low: [],
   });
 
-  // Zones
-  const [zones, setZones] = useState<any[]>([]);
-
   // ===== DYNAMIC AI RISK ASSESSMENT =====
   const [aiPrediction, setAiPrediction] = useState({
     riskLevel: 'Low',
@@ -149,14 +135,6 @@ export default function DashboardScreen() {
     month: '',
     recommendations: ['Loading risk assessment...'],
   });
-
-  // ===== LIVE CAMERA FEED =====
-  const [cameraFeed, setCameraFeed] = useState<any>(null);
-  const [cameraLoading, setCameraLoading] = useState(false);
-  const [cameraSnapshot, setCameraSnapshot] = useState<string | null>(null);
-  const [joinedFeed, setJoinedFeed] = useState(false);
-
-  const [pulse] = useState(() => new Animated.Value(1));
 
   // ========== FETCH ALL DATA ==========
   const fetchDashboardData = async () => {
@@ -166,15 +144,10 @@ export default function DashboardScreen() {
       if (statsRes.data.success) {
         const d = statsRes.data.data;
         setStats({
-          vehiclesToday: d.vehicles_today || 0,
           violationsToday: d.violations_today || 0,
           activeAlerts: d.active_alerts || 0,
           collectedToday: d.collected_today || 0,
           pendingViolations: d.pending_violations || 0,
-          onlineCameras: d.online_cameras || 0,
-          totalCameras: d.total_cameras || 0,
-          cameraLive: d.camera_live === true,
-          analysisStatus: d.analysis_status || 'Idle',
         });
       }
 
@@ -183,13 +156,7 @@ export default function DashboardScreen() {
         setMonthlySummary(summaryRes.data.data);
       }
 
-      // 2. Alerts
-      const alertsRes = await api.get('get_alerts.php', { params: { limit: 5 } });
-      if (alertsRes.data.success) {
-        setRecentAlerts(alertsRes.data.data);
-      }
-
-      // 3. Monthly trends
+      // 2. Monthly trends
       const trendRes = await api.get('get_monthly_trends.php');
       if (trendRes.data.success) {
         setMonthlyTrend({
@@ -198,7 +165,7 @@ export default function DashboardScreen() {
         });
       }
 
-      // 4. Top violations
+      // 3. Top violations
       const topRes = await api.get('get_top_violations.php');
       if (topRes.data.success) {
         setTopViolations({
@@ -207,7 +174,7 @@ export default function DashboardScreen() {
         });
       }
 
-      // 5. ML location/hotspot prediction
+      // 4. ML location/hotspot prediction
       try {
         const hotspotRes = await mlApi.get('predict_hotspot.php');
         if (hotspotRes.data.success && Array.isArray(hotspotRes.data.data?.locations)) {
@@ -227,13 +194,7 @@ export default function DashboardScreen() {
         setHotspots({ high: [], medium: [], low: [] });
       }
 
-      // 6. Zones
-      const zonesRes = await api.get('get_zones.php');
-      if (zonesRes.data.success) {
-        setZones(zonesRes.data.data || []);
-      }
-
-      // 7. ML monthly prediction (forecast the next calendar month)
+      // 5. ML monthly prediction (forecast the next calendar month)
       const forecastDate = new Date();
       forecastDate.setMonth(forecastDate.getMonth() + 1, 1);
       try {
@@ -261,44 +222,11 @@ export default function DashboardScreen() {
         }));
       }
 
-      // 8. Joined live-monitoring session
-      await fetchJoinedFeed();
-
     } catch (error) {
       console.error('Dashboard fetch error:', error);
     } finally {
       setLoading(false);
       setRefreshing(false);
-    }
-  };
-
-  const fetchJoinedFeed = async () => {
-    try {
-      setCameraLoading(true);
-      const isJoined = await AsyncStorage.getItem(JOINED_FEED_KEY) === '1';
-      setJoinedFeed(isJoined);
-      if (!isJoined) {
-        setCameraFeed(null);
-        setCameraSnapshot(null);
-        return;
-      }
-      const res = await mlApi.get('get_status.php');
-      const feed = res.data || {};
-      const isActive = ['running', 'starting'].includes(String(feed.analysis_status || feed.ai_status || '').toLowerCase());
-      if (!isActive) {
-        await AsyncStorage.removeItem(JOINED_FEED_KEY);
-        setJoinedFeed(false);
-        setCameraFeed(null);
-        setCameraSnapshot(null);
-        return;
-      }
-      setCameraFeed(feed);
-      setCameraSnapshot(`${MOBILE_SNAPSHOT_URL}&t=${Date.now()}`);
-    } catch (error) {
-      console.error('Joined feed error:', error);
-      setCameraSnapshot(null);
-    } finally {
-      setCameraLoading(false);
     }
   };
 
@@ -308,15 +236,16 @@ export default function DashboardScreen() {
     }, [])
   );
 
-  useEffect(() => {
-    if (activeTab !== 'monitoring' || !joinedFeed) return;
-    const timer = setInterval(fetchJoinedFeed, 3000);
-    return () => clearInterval(timer);
-  }, [activeTab, joinedFeed]);
-
   const refresh = () => {
     setRefreshing(true);
     fetchDashboardData();
+  };
+
+  const openOcrScanner = () => {
+    router.push({
+      pathname: '/(drawer)/violations',
+      params: { open: 'ocr' },
+    });
   };
 
   // ===== EFFECTS =====
@@ -325,19 +254,7 @@ export default function DashboardScreen() {
     return () => clearInterval(clock);
   }, []);
 
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, { toValue: 0.3, duration: 900, useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 1, duration: 900, useNativeDriver: true }),
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [pulse]);
-
   // ===== COUNT-UP =====
-  const vehiclesCount = useCountUp(stats.vehiclesToday, !loading);
   const violationsCount = useCountUp(stats.violationsToday, !loading);
   const alertsCount = useCountUp(stats.activeAlerts, !loading);
   const revenueCount = useCountUp(stats.collectedToday, !loading);
@@ -347,9 +264,6 @@ export default function DashboardScreen() {
   const dateStr = now.toLocaleDateString('en-PH', { month: 'long', day: '2-digit', year: 'numeric' });
   const hour = now.getHours();
   const greeting = hour < 12 ? 'Good Morning' : hour < 18 ? 'Good Afternoon' : 'Good Evening';
-  const cameraIsLive = joinedFeed && ['running', 'starting'].includes(String(cameraFeed?.analysis_status || cameraFeed?.ai_status || '').toLowerCase());
-  const operationalLabel = cameraIsLive ? 'Live Monitoring Active' : 'Monitoring Currently Offline';
-
   const hasHotspots = hotspots.high.length + hotspots.medium.length + hotspots.low.length > 0;
 
   // ========== RENDER HELPERS ==========
@@ -358,16 +272,6 @@ export default function DashboardScreen() {
       {icon}
       <Text style={styles.heroStatValue}>{value}</Text>
       <Text style={styles.heroStatLabel}>{label}</Text>
-    </View>
-  );
-
-  const renderLiveChip = (label: string, value: string, status: string) => (
-    <View style={styles.statusChip}>
-      <View style={[styles.statusChipDot, { backgroundColor: statusColor(status) }]} />
-      <View>
-        <Text style={styles.statusChipLabel}>{label}</Text>
-        <Text style={styles.statusChipValue}>{value}</Text>
-      </View>
     </View>
   );
 
@@ -394,24 +298,6 @@ export default function DashboardScreen() {
       <View style={[styles.hotspotDot, { backgroundColor: color }]} />
       <Text style={styles.hotspotRowName}>{loc.location}</Text>
       <Text style={styles.hotspotRowCount}>{loc.total}</Text>
-    </View>
-  );
-
-  const renderZoneCard = (zone: any, idx: number) => (
-    <View key={idx} style={[styles.zoneCard, { width: isTablet ? '31.5%' : '48%' }]}>
-      <View style={styles.zoneCardTop}>
-        <View style={[styles.zoneStatusDot, { backgroundColor: statusColor(zone.status) }]} />
-        <Text style={styles.zoneStatus}>{zone.status.toUpperCase()}</Text>
-      </View>
-      <Text style={styles.zoneName} numberOfLines={1}>{zone.name}</Text>
-      <Text style={styles.zoneVehicles}>{zone.vehicles || 0} Vehicles</Text>
-      {zone.congestion && zone.congestion !== 'None' ? (
-        <View style={[styles.zoneCongestionPill, { backgroundColor: statusColor(zone.congestion) + '1A' }]}>
-          <Text style={[styles.zoneCongestionText, { color: statusColor(zone.congestion) }]}>{zone.congestion} Congestion</Text>
-        </View>
-      ) : (
-        <Text style={styles.zoneOfflineNote}>No live data</Text>
-      )}
     </View>
   );
 
@@ -444,7 +330,7 @@ export default function DashboardScreen() {
                 </View>
                 <View>
                   <Text style={styles.brandName}>TRAVIS</Text>
-                  <Text style={styles.brandSubtitle}>AI-Powered Smart Traffic Monitoring</Text>
+                  <Text style={styles.brandSubtitle}>OCR-Enabled Mobile Field Operations</Text>
                 </View>
               </View>
               <View style={styles.clockBox}>
@@ -455,33 +341,24 @@ export default function DashboardScreen() {
 
             <Text style={styles.heroGreeting}>{greeting}</Text>
             <View style={styles.heroOperationalRow}>
-              <Animated.View style={[styles.liveDot, { opacity: cameraIsLive ? pulse : 1, backgroundColor: cameraIsLive ? COLORS.success : COLORS.neutral }]} />
-              <Text style={styles.heroOperationalText}>{operationalLabel}</Text>
+              <View style={[styles.liveDot, { backgroundColor: COLORS.success }]} />
+              <Text style={styles.heroOperationalText}>Mobile Field Operations Ready</Text>
             </View>
 
             <View style={styles.heroDivider} />
 
             <Text style={styles.heroSummaryLabel}>TODAY’S SUMMARY</Text>
             <View style={styles.heroStatsRow}>
-              {renderHeroStat(<Ionicons name="car" size={16} color="#7DB4FF" />, vehiclesCount.toLocaleString(), 'Vehicles')}
+              {renderHeroStat(<Ionicons name="scan" size={16} color="#7DB4FF" />, stats.pendingViolations.toLocaleString(), 'Pending')}
               {renderHeroStat(<Ionicons name="warning" size={16} color="#FBBF24" />, violationsCount.toString(), 'Violations')}
               {renderHeroStat(<Ionicons name="notifications" size={16} color="#F87171" />, alertsCount.toString(), 'Alerts')}
               {renderHeroStat(<Ionicons name="cash" size={16} color="#34D399" />, formatCurrency(revenueCount), 'Revenue')}
             </View>
           </View>
 
-          {/* Live system stats */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.statusStrip} contentContainerStyle={{ paddingRight: 4 }}>
-            {renderLiveChip('AI ENGINE', cameraIsLive ? 'RUNNING' : stats.analysisStatus.toUpperCase(), cameraIsLive ? 'online' : 'offline')}
-            {renderLiveChip('CAMERAS', `${stats.onlineCameras}/${stats.totalCameras}`, stats.onlineCameras > 0 ? 'online' : 'offline')}
-            {renderLiveChip('DETECTION', cameraIsLive ? 'ACTIVE' : 'OFFLINE', cameraIsLive ? 'online' : 'offline')}
-            {renderLiveChip('API STATUS', 'CONNECTED', 'online')}
-          </ScrollView>
-
           <View style={styles.dashboardTabs} accessibilityRole="tablist">
             {([
               { key: 'overview', label: 'Overview', icon: 'grid-outline' },
-              { key: 'monitoring', label: 'Monitoring', icon: 'videocam-outline' },
               { key: 'analytics', label: 'Analytics', icon: 'bar-chart-outline' },
             ] as const).map(tab => {
               const selected = activeTab === tab.key;
@@ -511,7 +388,7 @@ export default function DashboardScreen() {
                 {renderKpiCard('VIOLATIONS TODAY', violationsCount.toLocaleString(), `${stats.pendingViolations} pending`, 'alert-circle-outline', COLORS.warning)}
                 {renderKpiCard('COLLECTION TODAY', formatCurrency(revenueCount), 'Completed payments', 'wallet-outline', COLORS.success)}
                 {renderKpiCard('ACTIVE ALERTS', alertsCount.toLocaleString(), alertsCount > 0 ? 'Needs attention' : 'No active alerts', 'notifications-outline', alertsCount > 0 ? COLORS.danger : COLORS.success)}
-                {renderKpiCard('LIVE CAMERAS', `${stats.onlineCameras}/${stats.totalCameras}`, cameraIsLive ? 'Monitoring active' : 'Currently offline', 'videocam-outline', cameraIsLive ? COLORS.success : COLORS.neutral)}
+                {renderKpiCard('PENDING CASES', stats.pendingViolations.toLocaleString(), 'For field follow-up', 'clipboard-outline', COLORS.primary)}
               </View>
 
               <Text style={styles.sectionLabel}>PERFORMANCE OVERVIEW</Text>
@@ -601,10 +478,10 @@ export default function DashboardScreen() {
               {/* Quick Actions */}
               <Text style={styles.sectionLabel}>QUICK ACTIONS</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.quickActionsRow} contentContainerStyle={{ paddingRight: 20 }}>
-                {renderQuickAction(<Ionicons name="videocam-outline" size={17} color={COLORS.textPrimary} />, 'Cameras', () => router.push('/(drawer)/monitoring'))}
+                {renderQuickAction(<Ionicons name="scan-outline" size={17} color={COLORS.textPrimary} />, 'OCR Scan', openOcrScanner)}
                 {renderQuickAction(<MaterialCommunityIcons name="robot-outline" size={17} color={COLORS.textPrimary} />, 'AI', () => setActiveTab('analytics'))}
-                {renderQuickAction(<Ionicons name="document-text-outline" size={17} color={COLORS.textPrimary} />, 'Reports', () => router.push('/(drawer)/reports'))}
-                {renderQuickAction(<Ionicons name="map-outline" size={17} color={COLORS.textPrimary} />, 'Zones', () => setActiveTab('monitoring'))}
+                {renderQuickAction(<Ionicons name="cash-outline" size={17} color={COLORS.textPrimary} />, 'Payments', () => router.push('/(drawer)/payments'))}
+                {renderQuickAction(<Ionicons name="bulb-outline" size={17} color={COLORS.textPrimary} />, 'Decision', () => router.push('/(drawer)/decision-support'))}
                 {renderQuickAction(<Ionicons name="alert-circle-outline" size={17} color={COLORS.textPrimary} />, 'Alerts', () => router.push('/(drawer)/alerts'))}
               </ScrollView>
 
@@ -638,7 +515,7 @@ export default function DashboardScreen() {
                 </View>
 
                 <TouchableOpacity style={styles.expandTrigger} onPress={() => setAiExpanded(v => !v)} activeOpacity={0.6}>
-                  <Text style={styles.expandLabel}>{aiExpanded ? 'Close AI Report' : 'Open AI Report'}</Text>
+                  <Text style={styles.expandLabel}>{aiExpanded ? 'Close AI Guidance' : 'Open AI Guidance'}</Text>
                   <Ionicons name={aiExpanded ? 'chevron-up' : 'chevron-forward'} size={13} color={COLORS.primary} />
                 </TouchableOpacity>
 
@@ -690,134 +567,6 @@ export default function DashboardScreen() {
                 )}
               </View>
 
-              {/* Zone preview */}
-              <View style={styles.sectionHeaderRow}>
-                <Text style={styles.sectionLabel}>ZONE STATUS</Text>
-                <TouchableOpacity onPress={() => setActiveTab('monitoring')}>
-                  <Text style={styles.viewAllLink}>Open Zone Dashboard →</Text>
-                </TouchableOpacity>
-              </View>
-              <View style={styles.zoneGrid}>
-                {zones.length > 0 ? (
-                  zones.slice(0, 4).map((zone, idx) => renderZoneCard(zone, idx))
-                ) : (
-                  <Text style={styles.emptyStateText}>No zones available.</Text>
-                )}
-              </View>
-            </>
-          )}
-
-          {activeTab === 'monitoring' && (
-            <>
-              {/* Live Camera Preview - DYNAMIC */}
-              <Text style={styles.sectionLabel}>PRIMARY FEED</Text>
-              {!joinedFeed ? (
-                <TouchableOpacity style={styles.cameraCard} onPress={() => router.push('/(drawer)/monitoring')} activeOpacity={0.75}>
-                  <View style={styles.cameraPreview}>
-                    <Ionicons name="enter-outline" size={34} color={COLORS.primary} />
-                    <Text style={styles.cameraPreviewNote}>No feed joined on this device</Text>
-                  </View>
-                  <Text style={styles.feedTitle}>Join Live Monitoring</Text>
-                  <Text style={styles.feedSubtitle}>Open Monitoring and tap “Join Live Feed” to show the active session here.</Text>
-                </TouchableOpacity>
-              ) : <View style={styles.cameraCard}>
-                <View style={styles.cameraPreview}>
-                  {cameraLoading ? (
-                    <ActivityIndicator size="large" color={COLORS.primary} />
-                  ) : cameraSnapshot ? (
-                    <Image
-                      source={{ uri: cameraSnapshot }}
-                      style={{ width: '100%', height: '100%', borderRadius: 14 }}
-                      resizeMode="cover"
-                    />
-                  ) : (
-                    <>
-                      <Ionicons name="videocam" size={32} color={COLORS.textTertiary} />
-                      <Text style={styles.cameraPreviewNote}>
-                        {cameraIsLive ? 'Connecting to the joined AI feed…' : 'The joined feed is unavailable'}
-                      </Text>
-                    </>
-                  )}
-                  <View style={[styles.liveBadge, !cameraIsLive && { borderColor: COLORS.neutral }]}>
-                    <View style={[styles.liveBadgeDot, !cameraIsLive && { backgroundColor: COLORS.neutral }]} />
-                    <Text style={[styles.liveBadgeText, !cameraIsLive && { color: COLORS.neutral }]}>{cameraIsLive ? 'LIVE' : 'OFFLINE'}</Text>
-                  </View>
-                </View>
-
-                <View style={styles.cameraInfoRow}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.feedTitle}>
-                      Live AI Monitoring Feed
-                    </Text>
-                    <Text style={styles.feedSubtitle}>
-                      {cameraFeed?.calibration_profile || cameraFeed?.stream_owner || 'Shared monitoring session'}
-                    </Text>
-                  </View>
-                  <View style={styles.panelStatusPill}>
-                    <View style={[styles.zoneStatusDot, { backgroundColor: statusColor(cameraIsLive ? 'online' : 'offline') }]} />
-                    <Text style={[styles.panelStatusText, { color: statusColor(cameraIsLive ? 'online' : 'offline') }]}>
-                      {cameraIsLive ? 'JOINED' : 'OFFLINE'}
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.monitoringGrid}>
-                  {(['VEHICLES', 'INBOUND', 'OUTBOUND', 'CONGESTION', 'OFFICER', 'COLLISION RISK'] as const).map((label, i) => {
-                    const vals = cameraFeed ? [
-                      cameraFeed.vehicle_count || 0,
-                      cameraFeed.inbound_count || 0,
-                      cameraFeed.outbound_count || 0,
-                      cameraFeed.congestion_level || 'None',
-                      cameraFeed.officer_presence || 'Unknown',
-                      cameraFeed.potential_collision || 'None',
-                    ] : ['--', '--', '--', '--', '--', '--'];
-                    return (
-                      <View key={label} style={[styles.monitoringItem, { width: isTablet ? '23%' : '48%' }]}>
-                        <Text style={styles.readoutLabel}>{label}</Text>
-                        <Text style={styles.monitoringValue}>{String(vals[i])}</Text>
-                      </View>
-                    );
-                  })}
-                </View>
-                <Text style={styles.feedTimestamp}>
-                  {cameraFeed?.recorded_at ? `LAST SYNC ${new Date(cameraFeed.recorded_at).toLocaleString()}` : 'NO LIVE DATA RECEIVED'}
-                </Text>
-              </View>
-              }
-
-              <View style={styles.sectionHeaderRow}>
-                <Text style={styles.sectionLabel}>ZONE STATUS · {zones.length} MONITORED</Text>
-              </View>
-              <View style={styles.zoneGrid}>
-                {zones.length > 0 ? (
-                  zones.map((zone, idx) => renderZoneCard(zone, idx))
-                ) : (
-                  <Text style={styles.emptyStateText}>No zones available.</Text>
-                )}
-              </View>
-
-              <Text style={styles.sectionLabel}>ALERT FEED</Text>
-              <View style={{ gap: 10 }}>
-                {recentAlerts.length === 0 ? (
-                  <View style={styles.emptyState}>
-                    <Ionicons name="checkmark-circle" size={16} color={COLORS.success} />
-                    <Text style={styles.emptyStateText}>No active alerts.</Text>
-                  </View>
-                ) : (
-                  recentAlerts.slice(0, 4).map((alert: any) => (
-                    <View key={alert.alert_id} style={[styles.alertCard, { backgroundColor: statusColor(alert.severity) + '14', borderColor: statusColor(alert.severity) + '33' }]}>
-                      <View style={styles.alertRow}>
-                        <View style={[styles.alertSeverityBadge, { backgroundColor: statusColor(alert.severity) }]}>
-                          <Text style={styles.alertSeverityText}>{alert.severity.toUpperCase()}</Text>
-                        </View>
-                        <Text style={styles.alertTime}>{alert.generated_at}</Text>
-                      </View>
-                      <Text style={styles.alertType}>{alert.alert_type}</Text>
-                      <Text style={styles.alertMessage}>{alert.message}</Text>
-                    </View>
-                  ))
-                )}
-              </View>
             </>
           )}
 

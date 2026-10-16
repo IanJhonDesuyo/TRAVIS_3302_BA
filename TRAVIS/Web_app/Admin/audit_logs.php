@@ -39,10 +39,10 @@ $where = ['1=1'];
 $params = [];
 $types = '';
 if ($search !== '') {
-    $where[] = '(a.actor_name LIKE ? OR a.action LIKE ? OR a.description LIKE ? OR a.entity_id LIKE ? OR a.ip_address LIKE ?)';
+    $where[] = '(a.actor_name LIKE ? OR a.action LIKE ? OR a.description LIKE ? OR a.entity_id LIKE ?)';
     $term = '%' . $search . '%';
-    array_push($params, $term, $term, $term, $term, $term);
-    $types .= 'sssss';
+    array_push($params, $term, $term, $term, $term);
+    $types .= 'ssss';
 }
 if ($module !== '') { $where[] = 'a.module = ?'; $params[] = $module; $types .= 's'; }
 if (in_array($outcome, ['success', 'failed', 'warning'], true)) { $where[] = 'a.outcome = ?'; $params[] = $outcome; $types .= 's'; }
@@ -74,7 +74,7 @@ page_start('Audit Log', 'audit-logs', 'Search audit records...', 'Review securit
 <div class="section-card mb-4">
   <div class="section-head"><div><h6 class="mb-0">Audit Trail</h6><small class="text-muted">Newest activity appears first. Audit records are read-only.</small></div></div>
   <form method="get" class="row g-2 align-items-end mb-3">
-    <div class="col-lg-4"><label class="form-label">Search</label><input class="form-control" name="search" value="<?= esc($search) ?>" placeholder="User, action, description, target, or IP"></div>
+    <div class="col-lg-4"><label class="form-label">Search</label><input class="form-control" name="search" value="<?= esc($search) ?>" placeholder="User, action, description, or target"></div>
     <div class="col-sm-6 col-lg-2"><label class="form-label">Module</label><select class="form-select" name="module"><option value="">All modules</option><?php foreach ($modules as $item): $value=(string)$item['module']; ?><option value="<?= esc($value) ?>" <?= $module===$value?'selected':'' ?>><?= esc(ucwords(str_replace('_',' ',$value))) ?></option><?php endforeach; ?></select></div>
     <div class="col-sm-6 col-lg-2"><label class="form-label">Outcome</label><select class="form-select" name="outcome"><option value="">All outcomes</option><?php foreach (['success','warning','failed'] as $value): ?><option value="<?= $value ?>" <?= $outcome===$value?'selected':'' ?>><?= ucfirst($value) ?></option><?php endforeach; ?></select></div>
     <div class="col-sm-6 col-lg-2"><label class="form-label">From</label><input type="date" class="form-control" name="date_from" value="<?= esc($dateFrom) ?>"></div>
@@ -87,7 +87,7 @@ page_start('Audit Log', 'audit-logs', 'Search audit records...', 'Review securit
   <?php else: ?>
     <div class="table-responsive table-scroll" style="max-height:620px">
       <table class="table align-middle mb-0">
-        <thead><tr><th>Date & Time</th><th>User</th><th>Module</th><th>Action</th><th>Activity</th><th>Outcome</th><th>IP Address</th></tr></thead>
+        <thead><tr><th>Date & Time</th><th>User</th><th>Module</th><th>Action</th><th>Activity</th><th>Outcome</th></tr></thead>
         <tbody><?php foreach ($logs as $log): ?><tr>
           <td class="text-nowrap"><strong><?= esc(date('M j, Y', strtotime($log['created_at']))) ?></strong><small class="d-block text-muted"><?= esc(date('g:i:s A', strtotime($log['created_at']))) ?></small></td>
           <td><span class="fw-semibold"><?= esc($log['actor_name']) ?></span><small class="d-block text-muted"><?= esc($log['actor_role'] ?: 'Unknown role') ?></small></td>
@@ -95,7 +95,6 @@ page_start('Audit Log', 'audit-logs', 'Search audit records...', 'Review securit
           <td><span class="tag tag-info"><?= esc(ucwords(str_replace('_',' ',$log['action']))) ?></span></td>
           <td style="min-width:260px"><?= esc($log['description']) ?><?php if ($log['entity_type']): ?><small class="d-block text-muted"><?= esc($log['entity_type']) ?><?= $log['entity_id'] ? ' #' . esc($log['entity_id']) : '' ?></small><?php endif; ?></td>
           <td><span class="tag <?= $log['outcome']==='success'?'tag-success':($log['outcome']==='failed'?'tag-danger':'tag-warning') ?>"><?= esc(ucfirst($log['outcome'])) ?></span></td>
-          <td class="text-nowrap"><?= esc($log['ip_address'] ?: 'N/A') ?></td>
         </tr><?php endforeach; ?></tbody>
       </table>
     </div>

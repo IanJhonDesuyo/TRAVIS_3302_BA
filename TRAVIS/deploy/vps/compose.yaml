@@ -1,0 +1,113 @@
+services:
+  db:
+    image: mariadb:11.4
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: ${TRAVIS_DB_NAME}
+      MARIADB_USER: ${TRAVIS_DB_USER}
+      MARIADB_PASSWORD: ${TRAVIS_DB_PASS}
+      MARIADB_ROOT_PASSWORD: ${TRAVIS_DB_ROOT_PASS}
+      TZ: Asia/Manila
+    volumes:
+      - travis_db:/var/lib/mysql
+      - ./database-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - backend
+
+  app:
+    build:
+      context: .
+      dockerfile: deploy/vps/Dockerfile
+    restart: unless-stopped
+    environment:
+      TRAVIS_DB_HOST: db
+      TRAVIS_DB_PORT: "3306"
+      TRAVIS_DB_NAME: ${TRAVIS_DB_NAME}
+      TRAVIS_DB_USER: ${TRAVIS_DB_USER}
+      TRAVIS_DB_PASS: ${TRAVIS_DB_PASS}
+      TRAVIS_SERVICE_API_KEY: ${TRAVIS_SERVICE_API_KEY}
+      TRAVIS_HOSTED_MODE: "1"
+      TRAVIS_ML_API_URL: http://ml:5001
+      TRAVIS_WEBRTC_URL: https://${TRAVIS_SITE_ADDRESS}/webrtc/travis/
+      TZ: Asia/Manila
+    depends_on:
+      db:
+        condition: service_healthy
+      ml:
+        condition: service_healthy
+    volumes:
+      - ./runtime/storage:/var/www/html/storage
+      - ./runtime/web-uploads:/var/www/html/Web_app/uploads
+      - ./runtime/public-uploads:/var/www/html/assets/uploads/announcements
+      - ./runtime/cv-uploads:/var/www/html/computer_vision/uploads
+      - ./runtime/calibration-profiles:/var/www/html/computer_vision/calibration_profiles
+    networks:
+      - backend
+      - frontend
+
+  mediamtx:
+    image: bluenviron/mediamtx:1
+    restart: unless-stopped
+    env_file:
+      - /home/travisadmin/mediamtx.env
+    environment:
+      MTX_RTSPTRANSPORTS: tcp
+      MTX_WEBRTCADDITIONALHOSTS: ${TRAVIS_SITE_ADDRESS}
+    ports:
+      - "8554:8554/tcp"
+      - "8189:8189/udp"
+      - "8189:8189/tcp"
+    volumes:
+      - ./deploy/vps/mediamtx.yml:/mediamtx.yml:ro
+    networks:
+      - frontend
+
+  ml:
+    build:
+      context: .
+      dockerfile: deploy/vps/Dockerfile.ml
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5001/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
+    networks:
+      - backend
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    environment:
+      TRAVIS_SITE_ADDRESS: ${TRAVIS_SITE_ADDRESS}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/vps/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+      - mediamtx
+    networks:
+      - frontend
+
+volumes:
+  travis_db:
+  caddy_data:
+  caddy_config:
+
+networks:
+  backend:
+    internal: true
+  frontend:
+

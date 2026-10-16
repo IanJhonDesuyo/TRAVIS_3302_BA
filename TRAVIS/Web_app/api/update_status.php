@@ -39,7 +39,7 @@ if (!$data) {
     exit;
 }
 
-$camera_id = 1;
+$camera_id = max(1, intval($data["camera_id"] ?? 1));
 
 $vehicle_count = intval($data["vehicle_count"] ?? 0);
 $inbound_count = intval($data["inbound_count"] ?? 0);
@@ -74,6 +74,7 @@ if (!enforcer_detection_is_active($runtimeSettings)) $officer_presence = 'Unknow
 if ((int)$runtimeSettings['enable_collision_detection'] !== 1) $potential_collision = 'None';
 
 $latest_status = [
+    "camera_id" => $camera_id,
     "vehicle_count" => $vehicle_count,
     "inbound_count" => $inbound_count,
     "outbound_count" => $outbound_count,

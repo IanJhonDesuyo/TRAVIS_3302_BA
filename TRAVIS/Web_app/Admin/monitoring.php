@@ -44,13 +44,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['cctv_video'])) {
     }
 }
 
-$camera = fetch_one("SELECT * FROM cameras ORDER BY camera_id ASC LIMIT 1");
-$latest = fetch_one("SELECT * FROM camera_monitoring_logs ORDER BY recorded_at DESC LIMIT 1");
+$selectedCameraId = max(0, (int)($_GET['camera_id'] ?? 0));
+$cameras = fetch_all(<<<'SQL'
+    SELECT c.*,
+           l.last_seen_at
+    FROM cameras c
+    LEFT JOIN (
+        SELECT camera_id, MAX(recorded_at) AS last_seen_at
+        FROM camera_monitoring_logs
+        GROUP BY camera_id
+    ) l ON l.camera_id = c.camera_id
+    ORDER BY c.camera_id
+SQL);
+$camera = null;
+foreach ($cameras as $candidate) {
+    if ($selectedCameraId > 0 && (int)$candidate['camera_id'] === $selectedCameraId) {
+        $camera = $candidate;
+        break;
+    }
+}
+if (!$camera) $camera = $cameras[0] ?? [];
+$selectedCameraId = (int)($camera['camera_id'] ?? 0);
+$selectedLastSeenAt = strtotime((string)($camera['last_seen_at'] ?? '')) ?: 0;
+$cameraDisplayStatus = !empty($camera['is_enabled']) && $selectedLastSeenAt >= time() - 90
+    ? 'online'
+    : 'offline';
+$latest = null;
+if ($selectedCameraId > 0) {
+    $latestStatement = $conn->prepare('SELECT * FROM camera_monitoring_logs WHERE camera_id=? ORDER BY recorded_at DESC LIMIT 1');
+    $latestStatement->bind_param('i', $selectedCameraId);
+    $latestStatement->execute();
+    $latest = $latestStatement->get_result()->fetch_assoc() ?: null;
+}
 $cameraConfigPath = dirname(__DIR__, 2) . '/computer_vision/camera_config.json';
 $cameraConfig = is_file($cameraConfigPath)
     ? json_decode((string)file_get_contents($cameraConfigPath), true)
     : [];
 $cameraConfig = is_array($cameraConfig) ? $cameraConfig : [];
+$cameraProfile = (string)($camera['calibration_profile'] ?? '');
 $analysisStatusPath = dirname(__DIR__) . '/api/analysis_status.json';
 $savedAnalysisStatus = is_file($analysisStatusPath)
     ? json_decode((string)file_get_contents($analysisStatusPath), true)
@@ -61,6 +92,15 @@ $latestFeedStatus = is_file($latestFeedStatusPath)
     ? json_decode((string)file_get_contents($latestFeedStatusPath), true)
     : [];
 $latestFeedStatus = is_array($latestFeedStatus) ? $latestFeedStatus : [];
+$liveStatusEpoch = max(
+    (int)($latestFeedStatus['updated_at_epoch'] ?? 0),
+    (int)($savedAnalysisStatus['updated_at_epoch'] ?? 0)
+);
+$liveStatusCameraId = max(0, (int)($latestFeedStatus['camera_id'] ?? $savedAnalysisStatus['camera_id'] ?? 0));
+$hasRecentLiveStatus = $liveStatusEpoch > 0 && time() - $liveStatusEpoch <= 10;
+if ($hasRecentLiveStatus && ($liveStatusCameraId === 0 || $liveStatusCameraId === $selectedCameraId)) {
+    $cameraDisplayStatus = 'online';
+}
 $savedSourceType = (string)($savedAnalysisStatus['source_type'] ?? $latestFeedStatus['source_type'] ?? 'uploaded_video');
 if (!in_array($savedSourceType, ['uploaded_video', 'tapo_camera'], true)) {
     $savedSourceType = 'uploaded_video';
@@ -92,6 +132,7 @@ $activeAlerts = fetch_all("
     ORDER BY generated_at DESC 
     LIMIT 5
 ");
+$canManageCameras = strcasecmp((string)($_SESSION['user']['role'] ?? ''), 'Administrator') === 0;
 
 page_start('Live Monitoring', 'monitoring', 'Search monitoring logs...');
 ?>
@@ -479,9 +520,11 @@ a:hover{color:#fff}
 .monitoring-camera-card .camera-stage{flex:1;min-height:360px}
 .monitoring-controls-column{gap:16px}
 .monitoring-controls-column > .section-card{margin-bottom:0 !important}
-#uploadSourceCard{flex:1;display:flex;flex-direction:column}
+#uploadSourceCard{flex:none;display:flex;flex-direction:column}
+#uploadSourceCard.camera-source-hidden{display:none!important}
 #uploadVideoForm{display:flex;flex-direction:column}
 #uploadVideoBtn{width:100% !important;min-height:40px}
+.monitoring-control-card,.camera-session-card{padding:18px!important;border-radius:16px!important;box-shadow:0 10px 24px rgba(16,47,73,.07)!important}.control-card-title{display:flex;align-items:center;gap:11px;margin-bottom:16px}.control-card-icon{display:grid;flex:0 0 38px;width:38px;height:38px;place-items:center;border-radius:11px;background:rgba(8,125,120,.1);color:#087d78;font-size:1rem}.control-card-title h6{margin:0!important;color:#10202c!important;font-size:.9rem!important}.control-card-title small{display:block;margin-top:2px;color:#73857f!important;font-size:.64rem}.monitoring-control-card .form-label{margin-bottom:6px!important;color:#334c45!important;font-size:.68rem!important;text-transform:uppercase;letter-spacing:.04em}.monitoring-control-card .form-select{min-height:43px;border-radius:11px!important}.calibration-action-row{display:grid!important;grid-template-columns:minmax(0,1fr) 44px 44px;gap:8px!important;margin-bottom:0!important}.calibration-action-row .btn{height:38px!important;min-height:38px!important;border-radius:9px!important}.camera-session-selected{display:flex;align-items:center;gap:10px;margin-bottom:13px;padding:10px 12px;border:1px solid rgba(8,125,120,.14);border-radius:11px;background:rgba(8,125,120,.055)}.camera-session-selected i{color:#087d78}.camera-session-selected span{display:block;color:#667a74;font-size:.62rem;text-transform:uppercase;letter-spacing:.05em}.camera-session-selected strong{display:block;color:#10202c;font-size:.76rem}.camera-session-actions{display:grid!important;grid-template-columns:1fr auto;gap:8px!important;margin-top:0!important}.camera-session-actions .btn{min-height:40px!important;height:40px!important;border-radius:10px!important}.camera-session-card #stopAnalysisBtn:disabled{display:none!important}.camera-session-card #analysisMessage{min-height:1.2rem;margin-top:10px!important;color:#60736d!important;font-size:.69rem!important;line-height:1.45}
 .cv-process-modal .modal-dialog{max-width:460px}
 .cv-process-modal .modal-content{overflow:hidden;border-radius:18px!important}
 .cv-process-modal .cv-process-icon{display:grid;width:54px;height:54px;place-items:center;flex:0 0 54px;border-radius:15px;background:rgba(8,125,120,.11);color:#087d78;font-size:1.35rem}
@@ -570,10 +613,11 @@ body.municipal-portal #cctvVideoInput::-webkit-file-upload-button{
     height:100%;
     z-index:5;
     display:none;
+    pointer-events:none;
     cursor:crosshair;
     touch-action:none;
 }
-#calibrationCanvas.active{display:block;}
+#calibrationCanvas.active{display:block;pointer-events:auto;}
 
 /* Keep the monitoring summary balanced instead of leaving single cards behind. */
 .monitoring-kpi-grid{
@@ -613,8 +657,8 @@ body.municipal-portal #cctvVideoInput::-webkit-file-upload-button{
 
   <div class="d-flex gap-2">
     <span class="system-online-badge">
-      <span class="system-online-dot <?= ($camera['status'] ?? 'offline') === 'online' ? 'online' : 'offline' ?>"></span>
-      <?= esc($camera['status'] ?? 'offline') ?>
+      <span class="system-online-dot <?= $cameraDisplayStatus === 'online' ? 'online' : 'offline' ?>"></span>
+      <?= esc($cameraDisplayStatus) ?>
     </span>
   </div>
 </div>
@@ -630,13 +674,77 @@ body.municipal-portal #cctvVideoInput::-webkit-file-upload-button{
 </div>
 <?php endif; ?>
 
-<div class="row g-3 mb-4 monitoring-main-row">
-  <div class="col-lg-8 d-flex">
+<style>
+.camera-registry-panel{position:relative;z-index:6;margin-bottom:1.5rem;padding:18px 20px;border:1px solid rgba(16,47,73,.13);border-radius:18px;background:rgba(255,255,255,.78);box-shadow:0 12px 28px rgba(16,47,73,.07)}
+.camera-registry-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:14px}.camera-registry-heading h5{margin:0 0 3px;color:#10202c;font-size:1rem;font-weight:800}.camera-registry-heading small{color:#667a74;font-size:.75rem}
+.camera-registry-add{flex:0 0 auto;min-height:38px!important;height:38px!important;padding:0 15px!important;border-radius:10px!important;background:#087d78!important;box-shadow:none!important;color:#fff!important}
+.camera-registry-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.camera-registry-card{position:relative;z-index:1;display:flex;min-width:0;flex-direction:column;overflow:hidden;border:1px solid rgba(16,47,73,.14)!important;border-radius:14px;background:#fff!important;color:#10202c!important;box-shadow:0 5px 16px rgba(16,47,73,.05)}
+.camera-registry-card.is-selected{border-color:#0b8f89!important;box-shadow:0 0 0 2px rgba(8,125,120,.12),0 7px 18px rgba(16,47,73,.08)}
+.camera-monitor-screen canvas{position:absolute;inset:0;z-index:1;width:100%;height:100%;object-fit:cover}.camera-monitor-placeholder{z-index:0}
+.camera-monitor-screen{position:relative;aspect-ratio:16/9;overflow:hidden;background:linear-gradient(145deg,#07111f,#102f49);color:#d9e8e3}.camera-monitor-screen img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}.camera-monitor-placeholder{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:7px;background:radial-gradient(circle at 50% 30%,rgba(56,189,248,.12),transparent 45%)}.camera-monitor-placeholder i{font-size:1.45rem;color:#65d5ce}.camera-monitor-placeholder small{color:#9db4ad!important;font-size:.65rem}.camera-monitor-open{position:absolute;inset:0;z-index:3;border:0;background:transparent;cursor:zoom-in}.camera-monitor-open:focus-visible{outline:3px solid #38bdf8;outline-offset:-4px}.camera-monitor-live{position:absolute;top:9px;left:9px;z-index:4;display:inline-flex;align-items:center;gap:5px;padding:4px 8px;border-radius:999px;background:rgba(6,15,30,.78);color:#fff;font-size:.61rem;font-weight:800;text-transform:uppercase}.camera-monitor-live::before{content:"";width:6px;height:6px;border-radius:50%;background:#34d399;box-shadow:0 0 0 3px rgba(52,211,153,.2)}
+.camera-registry-card-foot{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px;padding:11px 12px}.camera-registry-card h6{margin:0;color:#10202c!important;font-size:.8rem;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.camera-registry-card p{margin:2px 0 0;color:#667a74!important;font-size:.64rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.camera-registry-actions{display:flex;align-items:center;gap:6px}.camera-registry-actions .btn{position:relative;z-index:5;min-height:32px!important;height:32px!important;border-radius:8px!important;box-shadow:none!important}.camera-registry-actions .camera-join-btn{width:auto!important;padding:0 10px!important;background:#087d78!important}.camera-registry-actions .camera-settings-btn{width:34px!important;padding:0!important;color:#405b54!important;background:#fff!important;border:1px solid rgba(16,47,73,.2)!important}
+.camera-registry-card.is-empty{border-style:dashed!important;background:rgba(247,250,249,.8)!important;box-shadow:none}.camera-registry-card.is-empty .camera-monitor-screen{background:#eef4f2}.camera-registry-card.is-empty .camera-monitor-placeholder{color:#6b7f79;background:none}.camera-registry-card.is-empty .camera-monitor-placeholder i{color:#8da39d}.camera-registry-card.is-empty .camera-monitor-placeholder small{color:#758a84!important}.camera-slot-add{position:absolute;inset:0;z-index:3;border:0;background:transparent;cursor:pointer}
+.camera-registry-empty{grid-column:1/-1;padding:18px;border:1px dashed rgba(16,47,73,.2);border-radius:12px;color:#667a74;text-align:center}
+body.municipal-portal .camera-settings-modal .modal-content{border:1px solid rgba(16,47,73,.16)!important;border-radius:18px!important;background:#fff!important;color:#10202c!important;box-shadow:0 22px 60px rgba(16,47,73,.22)!important}body.municipal-portal .camera-settings-modal .modal-header,body.municipal-portal .camera-settings-modal .modal-footer{border-color:rgba(16,47,73,.1)!important}body.municipal-portal .camera-settings-modal .modal-title{color:#10202c!important}body.municipal-portal .camera-settings-modal .btn-close{filter:none!important}
+#monitoringSetupCard{display:none!important}.camera-line-settings{padding:15px;border:1px solid rgba(8,125,120,.18);border-radius:13px;background:rgba(8,125,120,.045)}.camera-line-settings-head{display:flex;align-items:center;gap:10px;margin-bottom:13px}.camera-line-settings-head>i{display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:rgba(8,125,120,.11);color:#087d78}.camera-line-settings-head strong{display:block;color:#10202c;font-size:.82rem}.camera-line-settings-head small{display:block;color:#71817c;font-size:.67rem}.camera-line-settings #calibrationProfile{margin-bottom:9px!important}.camera-line-settings .calibration-action-row{margin:0!important}.calibration-editor-card{width:100%}.monitoring-main-row:has(#uploadSourceCard.camera-source-hidden):not(:has(#calibrationEditor:not(.d-none))) .monitoring-view-column{width:100%!important}.monitoring-main-row:has(#uploadSourceCard.camera-source-hidden):not(:has(#calibrationEditor:not(.d-none))) .monitoring-controls-column{display:none!important}
+@media(max-width:1199.98px){.camera-registry-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:575.98px){.camera-registry-panel{padding:15px}.camera-registry-heading{align-items:flex-start}.camera-registry-heading small{display:none}.camera-registry-grid{grid-template-columns:1fr}}
+</style>
+
+<section class="camera-registry-panel" aria-labelledby="cameraRegistryTitle">
+<div class="camera-registry-heading">
+  <div><h5 id="cameraRegistryTitle">Registered Cameras</h5><small>Choose a saved camera to join its monitoring session.</small></div>
+  <?php if ($canManageCameras): ?><button class="btn camera-registry-add" id="addCameraBtn" type="button"><i class="bi bi-plus-lg me-1"></i>Add Camera</button><?php endif; ?>
+</div>
+<div class="camera-registry-grid" id="cameraRegistryGrid">
+  <?php if (!$cameras): ?><div class="camera-registry-empty">No cameras registered yet. Use Add Camera to create the first one.</div><?php endif; ?>
+  <?php foreach ($cameras as $registeredCamera): ?>
+    <?php
+      $registeredId = (int)$registeredCamera['camera_id'];
+      $lastSeen = trim((string)($registeredCamera['last_seen_at'] ?? ''));
+      $lastSeenEpoch = strtotime($lastSeen) ?: 0;
+      $hasActiveFeed = $hasRecentLiveStatus
+        && ($liveStatusCameraId === 0 || $liveStatusCameraId === $registeredId);
+      $cardStatus = !empty($registeredCamera['is_enabled']) && ($hasActiveFeed || $lastSeenEpoch >= time() - 90)
+        ? 'online'
+        : 'offline';
+    ?>
+    <article class="camera-registry-card <?= $registeredId === $selectedCameraId ? 'is-selected' : '' ?>" data-camera='<?= esc(json_encode($registeredCamera, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT)) ?>'>
+      <div class="camera-monitor-screen">
+        <canvas class="camera-wall-preview" aria-label="<?= esc($registeredCamera['camera_name']) ?> live preview" hidden></canvas>
+        <div class="camera-monitor-placeholder"><i class="bi bi-camera-video"></i><small><?= $cardStatus === 'online' ? 'Opening live preview…' : 'Camera currently offline' ?></small></div>
+        <?php if ($cardStatus === 'online'): ?><span class="camera-monitor-live">Live</span><?php endif; ?>
+        <button class="camera-monitor-open" type="button" aria-label="Open large view for <?= esc($registeredCamera['camera_name']) ?>"></button>
+      </div>
+      <div class="camera-registry-card-foot">
+        <div><h6><?= esc($registeredCamera['camera_name']) ?></h6><p><?= esc($registeredCamera['location']) ?> · <?= esc(ucfirst($cardStatus)) ?></p></div>
+        <div class="camera-registry-actions">
+          <button class="btn btn-primary camera-join-btn" type="button" data-camera-id="<?= $registeredId ?>" <?= empty($registeredCamera['is_enabled']) ? 'disabled title="Camera is disabled"' : '' ?>><i class="bi bi-broadcast"></i><span class="d-none d-xl-inline ms-1">Join</span></button>
+          <?php if ($canManageCameras): ?><button class="btn btn-light camera-settings-btn" type="button" aria-label="Settings for <?= esc($registeredCamera['camera_name']) ?>"><i class="bi bi-gear"></i></button><?php endif; ?>
+        </div>
+      </div>
+    </article>
+  <?php endforeach; ?>
+  <?php for ($slot = count($cameras) + 1; $slot <= 6; $slot++): ?>
+    <article class="camera-registry-card is-empty">
+      <div class="camera-monitor-screen">
+        <div class="camera-monitor-placeholder"><i class="bi bi-camera-video-off"></i><strong>Camera <?= $slot ?></strong><small>Not configured</small></div>
+        <?php if ($canManageCameras): ?><button class="camera-slot-add" type="button" aria-label="Configure camera slot <?= $slot ?>"></button><?php endif; ?>
+      </div>
+      <div class="camera-registry-card-foot"><div><h6>Available Camera Slot</h6><p>Ready for future installation</p></div><span class="tag tag-muted">Inactive</span></div>
+    </article>
+  <?php endfor; ?>
+</div>
+</section>
+
+<div class="row g-3 mb-4 monitoring-main-row" id="monitoringDetailPanel">
+  <div class="col-lg-8 d-flex monitoring-view-column">
     <div class="section-card monitoring-camera-card w-100">
       <div class="section-head">
         <div>
-          <h6>Main Camera Monitor</h6>
-          <small class="text-muted">Live browser stream from the selected AI video source</small>
+          <h6 id="activeCameraName"><?= esc($camera['camera_name'] ?? 'Main Camera Monitor') ?></h6>
+          <small class="text-muted" id="activeCameraLocation"><?= esc($camera['location'] ?? 'Select a registered camera') ?></small>
         </div>
         <span class="tag tag-info" id="sourceStatus">Ready</span>
       </div>
@@ -645,6 +753,7 @@ body.municipal-portal #cctvVideoInput::-webkit-file-upload-button{
         class="camera-stage mb-3"
         id="cameraStage"
         data-webrtc-url="<?= esc($webrtcStreamUrl) ?>"
+        data-camera-id="<?= $selectedCameraId ?>"
       >
         <iframe
           id="webrtcLiveStream"
@@ -685,8 +794,8 @@ body.municipal-portal #cctvVideoInput::-webkit-file-upload-button{
   </div>
 
   <div class="col-lg-4 d-flex flex-column monitoring-controls-column">
-    <div class="section-card mb-3">
-      <div class="section-head"><h6>Monitoring Source</h6></div>
+    <div class="section-card monitoring-control-card mb-3" id="monitoringSetupCard">
+      <div class="control-card-title"><span class="control-card-icon"><i class="bi bi-sliders2"></i></span><div><h6>Monitoring Setup</h6><small>Choose the source and line configuration</small></div></div>
       <label class="form-label small fw-semibold" for="monitoringSource">Source</label>
       <select class="form-select mb-3" id="monitoringSource">
         <option value="uploaded_video" <?= $savedSourceType === 'uploaded_video' ? 'selected' : '' ?>>Uploaded CCTV video</option>
@@ -696,10 +805,10 @@ body.municipal-portal #cctvVideoInput::-webkit-file-upload-button{
       <label class="form-label small fw-semibold" for="calibrationProfile">Intersection Configuration</label>
       <select class="form-select mb-2" id="calibrationProfile">
         <?php foreach ($calibrationProfiles as $profile): ?>
-          <option value="<?= esc($profile['file']) ?>"><?= esc($profile['name']) ?></option>
+          <option value="<?= esc($profile['file']) ?>" <?= $cameraProfile === $profile['file'] ? 'selected' : '' ?>><?= esc($profile['name']) ?></option>
         <?php endforeach; ?>
       </select>
-      <div class="d-flex gap-2 mb-3">
+      <div class="calibration-action-row">
         <button class="btn btn-light flex-fill" type="button" id="newCalibrationBtn">
           <i class="bi bi-bezier2 me-1"></i>New Line Configuration
         </button>
@@ -757,8 +866,10 @@ body.municipal-portal #cctvVideoInput::-webkit-file-upload-button{
 
     </div>
 
-    <div class="section-card" id="uploadSourceCard">
-      <div class="section-head"><h6 id="sourceActionTitle">Upload CCTV Video</h6></div>
+    <div class="section-card camera-session-card" id="uploadSourceCard">
+      <div class="control-card-title"><span class="control-card-icon"><i class="bi bi-broadcast-pin"></i></span><div><h6 id="sourceActionTitle">Upload CCTV Video</h6><small>Connection and analysis controls</small></div></div>
+
+      <div class="camera-session-selected"><i class="bi bi-camera-video"></i><div><span>Selected monitor</span><strong id="sessionCameraName"><?= esc($camera['camera_name'] ?? 'No camera selected') ?></strong></div></div>
 
       <form method="post" enctype="multipart/form-data" id="uploadVideoForm" data-footage-ready="<?= is_file(dirname(__DIR__, 2) . '/computer_vision/uploads/videos/test.mp4') ? 'true' : 'false' ?>">
         <label class="form-label small fw-semibold">LGU CCTV Video Copy</label>
@@ -772,7 +883,7 @@ body.municipal-portal #cctvVideoInput::-webkit-file-upload-button{
         </small>
       </form>
 
-      <div class="d-flex gap-2 mt-3">
+      <div class="camera-session-actions">
         <button class="btn btn-accent flex-fill" type="button" id="startAnalysisBtn">
           <i class="bi bi-play-circle me-1"></i><span id="startAnalysisLabel">Start Analysis</span>
         </button>
@@ -959,6 +1070,39 @@ body.municipal-portal #cctvVideoInput::-webkit-file-upload-button{
   <button type="button" aria-label="Dismiss congestion alert" onclick="hideCongestionAlert()"><i class="bi bi-x-lg"></i></button>
 </div>
 
+<div class="modal fade camera-settings-modal" id="cameraSettingsModal" tabindex="-1" aria-labelledby="cameraSettingsTitle" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div><span class="dashboard-eyebrow">Camera registry</span><h5 class="modal-title" id="cameraSettingsTitle">Camera Settings</h5></div>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-light small"><i class="bi bi-shield-lock me-1"></i>The password is sent only to the assigned gate laptop. Leave it blank when the saved edge credential has not changed.</div>
+        <input type="hidden" id="registryCameraId" value="0">
+        <input type="hidden" id="cameraRegistryCsrf" value="<?= esc(csrf_token()) ?>">
+        <div class="row g-3">
+          <div class="col-md-6"><label class="form-label" for="registryCameraName">Camera name</label><input class="form-control" id="registryCameraName" maxlength="120" placeholder="Gate Entrance Camera"></div>
+          <div class="col-md-6"><label class="form-label" for="registryCameraLocation">Location</label><input class="form-control" id="registryCameraLocation" maxlength="255" placeholder="Main gate, inbound lane"></div>
+          <div class="col-md-6"><label class="form-label" for="registryCameraIp">Camera IP address</label><input class="form-control" id="registryCameraIp" inputmode="decimal" placeholder="192.168.1.100"></div>
+          <div class="col-md-6"><label class="form-label" for="registryCameraUsername">Tapo camera account</label><input class="form-control" id="registryCameraUsername" maxlength="120" autocomplete="username"></div>
+          <div class="col-md-6"><label class="form-label" for="registryCameraPassword">Camera password</label><input class="form-control" id="registryCameraPassword" type="password" autocomplete="new-password" placeholder="Leave blank to reuse saved edge password"></div>
+          <div class="col-md-6"><label class="form-label" for="registryCameraStream">Stream quality</label><select class="form-select" id="registryCameraStream"><option value="stream2">Standard quality (recommended)</option><option value="stream1">High quality</option></select></div>
+          <div class="col-md-6"><label class="form-label" for="registryCameraCalibration">Assigned line configuration</label><select class="form-select" id="registryCameraCalibration"><option value="">No profile assigned</option><?php foreach ($calibrationProfiles as $profile): ?><option value="<?= esc($profile['file']) ?>"><?= esc($profile['name']) ?></option><?php endforeach; ?></select><small class="text-muted">Select the configuration used by this camera.</small></div>
+          <div class="col-md-6"><label class="form-label" for="registryCameraWorker">Gate worker ID</label><input class="form-control" id="registryCameraWorker" maxlength="100" placeholder="GATE-LAPTOP-cv"><small class="text-muted">Optional until multiple gate workers are installed.</small></div>
+          <div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" id="registryCameraEnabled" checked><label class="form-check-label" for="registryCameraEnabled">Camera enabled for monitoring</label></div></div>
+          <div class="col-12"><div class="camera-line-settings" id="cameraLineSettings"><div class="camera-line-settings-head"><i class="bi bi-bezier2"></i><div><strong>Line configurations</strong><small>Create, edit, or remove counting-line profiles.</small></div></div><div id="cameraLineConfigurationControls"></div></div></div>
+        </div>
+        <div class="small mt-3" id="cameraSettingsMessage" aria-live="polite"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="saveCameraSettingsBtn"><i class="bi bi-check2-circle me-1"></i>Save Camera</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="modal fade cv-process-modal" id="cvProcessModal" tabindex="-1" aria-labelledby="cvProcessTitle" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
@@ -986,5 +1130,186 @@ body.municipal-portal #cctvVideoInput::-webkit-file-upload-button{
 </div>
 
 <script src="<?= esc(asset_url('js/monitoring.js') . '?v=' . filemtime(dirname(__DIR__, 2) . '/js/monitoring.js')) ?>"></script>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const modalElement = document.getElementById('cameraSettingsModal');
+  const modal = modalElement ? bootstrap.Modal.getOrCreateInstance(modalElement) : null;
+  const lineControlsTarget = document.getElementById('cameraLineConfigurationControls');
+  const calibrationProfile = document.getElementById('calibrationProfile');
+  const calibrationLabel = document.querySelector('label[for="calibrationProfile"]');
+  const calibrationActions = document.querySelector('.calibration-action-row');
+  const calibrationEditor = document.getElementById('calibrationEditor');
+  const uploadSourceCard = document.getElementById('uploadSourceCard');
+
+  if (lineControlsTarget && calibrationProfile && calibrationActions) {
+    calibrationLabel?.remove();
+    const modalLabel = document.createElement('label');
+    modalLabel.className = 'form-label small fw-semibold';
+    modalLabel.htmlFor = 'calibrationProfile';
+    modalLabel.textContent = 'Manage line configuration';
+    lineControlsTarget.append(modalLabel, calibrationProfile, calibrationActions);
+  }
+  if (calibrationEditor && uploadSourceCard) {
+    uploadSourceCard.parentElement?.insertBefore(calibrationEditor, uploadSourceCard);
+  }
+
+  ['newCalibrationBtn', 'editCalibrationBtn'].forEach(id => {
+    document.getElementById(id)?.addEventListener('click', () => {
+      modal?.hide();
+      window.setTimeout(() => document.getElementById('monitoringDetailPanel')?.scrollIntoView({behavior: 'smooth', block: 'start'}), 180);
+    });
+  });
+
+  const fields = {
+    id: document.getElementById('registryCameraId'),
+    name: document.getElementById('registryCameraName'),
+    location: document.getElementById('registryCameraLocation'),
+    ip: document.getElementById('registryCameraIp'),
+    username: document.getElementById('registryCameraUsername'),
+    password: document.getElementById('registryCameraPassword'),
+    stream: document.getElementById('registryCameraStream'),
+    calibration: document.getElementById('registryCameraCalibration'),
+    worker: document.getElementById('registryCameraWorker'),
+    enabled: document.getElementById('registryCameraEnabled')
+  };
+  const message = document.getElementById('cameraSettingsMessage');
+  const saveButton = document.getElementById('saveCameraSettingsBtn');
+
+  function readCamera(card) {
+    try { return JSON.parse(card?.dataset.camera || '{}'); } catch (_) { return {}; }
+  }
+
+  function populate(camera = {}) {
+    fields.id.value = camera.camera_id || 0;
+    fields.name.value = camera.camera_name || '';
+    fields.location.value = camera.location || '';
+    fields.ip.value = camera.ip_address || '';
+    fields.username.value = camera.camera_username || '';
+    fields.password.value = '';
+    fields.password.placeholder = camera.has_saved_password
+      ? 'Saved securely — leave blank to keep it'
+      : 'Enter camera password';
+    fields.stream.value = camera.stream_quality === 'stream1' ? 'stream1' : 'stream2';
+    fields.calibration.value = camera.calibration_profile || '';
+    fields.worker.value = camera.edge_worker_id || '';
+    fields.enabled.checked = String(camera.is_enabled ?? '1') !== '0';
+    message.textContent = '';
+    document.getElementById('cameraSettingsTitle').textContent = camera.camera_id ? 'Camera Settings' : 'Register Camera';
+  }
+
+  function selectCamera(camera, card) {
+    document.querySelectorAll('.camera-registry-card.is-selected').forEach(item => item.classList.remove('is-selected'));
+    card?.classList.add('is-selected');
+    document.getElementById('activeCameraName').textContent = camera.camera_name || 'Camera Monitor';
+    document.getElementById('activeCameraLocation').textContent = camera.location || '';
+    document.getElementById('sessionCameraName').textContent = camera.camera_name || 'No camera selected';
+    document.getElementById('cameraStage').dataset.cameraId = camera.camera_id || 0;
+    document.getElementById('tapoHost').value = camera.ip_address || '';
+    document.getElementById('tapoUsername').value = camera.camera_username || '';
+    document.getElementById('tapoStream').value = camera.stream_quality === 'stream1' ? 'stream1' : 'stream2';
+    const profile = document.getElementById('calibrationProfile');
+    if (profile && camera.calibration_profile) profile.value = camera.calibration_profile;
+  }
+
+  document.querySelectorAll('.camera-monitor-open').forEach(button => button.addEventListener('click', () => {
+    const card = button.closest('.camera-registry-card');
+    selectCamera(readCamera(card), card);
+    document.getElementById('monitoringDetailPanel')?.scrollIntoView({behavior: 'smooth', block: 'start'});
+  }));
+
+  document.querySelectorAll('.camera-settings-btn').forEach(button => button.addEventListener('click', () => {
+    populate(readCamera(button.closest('.camera-registry-card')));
+    modal?.show();
+  }));
+
+  document.getElementById('addCameraBtn')?.addEventListener('click', () => {
+    populate();
+    modal?.show();
+  });
+
+  document.querySelectorAll('.camera-slot-add').forEach(button => button.addEventListener('click', () => {
+    populate();
+    modal?.show();
+  }));
+
+  document.querySelectorAll('.camera-join-btn').forEach(button => button.addEventListener('click', () => {
+    const card = button.closest('.camera-registry-card');
+    const camera = readCamera(card);
+    selectCamera(camera, card);
+    const source = document.getElementById('monitoringSource');
+    source.value = 'tapo_camera';
+    source.dispatchEvent(new Event('change', { bubbles: true }));
+    if (typeof window.travisJoinMonitoringFeed === 'function') {
+      window.travisJoinMonitoringFeed();
+    } else {
+      document.getElementById('startAnalysisBtn')?.click();
+    }
+  }));
+
+  saveButton?.addEventListener('click', async () => {
+    if (Number(fields.id.value || 0) === 0 && !fields.password.value) {
+      message.className = 'small mt-3 text-danger';
+      message.textContent = 'Enter the camera password during first registration. It will be stored only on the gate laptop.';
+      fields.password.focus();
+      return;
+    }
+    saveButton.disabled = true;
+    message.className = 'small mt-3 text-info';
+    message.textContent = 'Saving camera settings...';
+    const payload = {
+      csrf_token: document.getElementById('cameraRegistryCsrf').value,
+      camera_id: Number(fields.id.value || 0),
+      camera_name: fields.name.value.trim(),
+      location: fields.location.value.trim(),
+      ip_address: fields.ip.value.trim(),
+      camera_username: fields.username.value.trim(),
+      camera_password: fields.password.value,
+      stream_quality: fields.stream.value,
+      calibration_profile: fields.calibration.value,
+      edge_worker_id: fields.worker.value.trim(),
+      is_enabled: fields.enabled.checked
+    };
+    try {
+      const response = await fetch('../api/cameras.php', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
+      const result = await response.json();
+      if (!response.ok || result.success !== true) throw new Error(result.message || 'Unable to save camera settings.');
+      fields.id.value = result.camera_id;
+      document.getElementById('cameraStage').dataset.cameraId = result.camera_id;
+      document.getElementById('tapoHost').value = payload.ip_address;
+      document.getElementById('tapoUsername').value = payload.camera_username;
+      document.getElementById('tapoPassword').value = fields.password.value;
+      document.getElementById('tapoStream').value = payload.stream_quality;
+      document.getElementById('calibrationProfile').value = payload.calibration_profile;
+      message.className = 'small mt-3 text-success';
+      if (fields.password.value) {
+        message.textContent = result.message + ' Connecting once now to securely store the credential on the gate laptop.';
+        const source = document.getElementById('monitoringSource');
+        source.value = 'tapo_camera';
+        source.dispatchEvent(new Event('change', { bubbles: true }));
+        window.setTimeout(() => {
+          modal?.hide();
+          if (typeof window.travisJoinMonitoringFeed === 'function') {
+            window.travisJoinMonitoringFeed();
+          } else {
+            document.getElementById('startAnalysisBtn')?.click();
+          }
+        }, 700);
+      } else {
+        message.textContent = result.message;
+        window.setTimeout(() => window.location.assign(`monitoring.php?camera_id=${result.camera_id}`), 900);
+      }
+    } catch (error) {
+      message.className = 'small mt-3 text-danger';
+      message.textContent = error.message;
+    } finally {
+      saveButton.disabled = false;
+    }
+  });
+});
+</script>
 
 <?php page_end(); ?>

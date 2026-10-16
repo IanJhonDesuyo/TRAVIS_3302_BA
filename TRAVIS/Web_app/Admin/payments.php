@@ -527,6 +527,8 @@ div[style*="border-radius: 999px"]:not(.tag){
 .payment-entry-panel{display:grid;grid-template-columns:1.2fr .7fr 1.2fr;gap:14px;align-items:start;padding:16px;border:1px solid rgba(8,125,120,.2);border-radius:14px;background:linear-gradient(135deg,rgba(8,125,120,.055),rgba(255,255,255,.55));}
 .payment-entry-action{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) minmax(220px,340px);gap:14px;align-items:stretch;}
 .payment-entry-action .btn{min-height:48px;}
+.payment-reference-note{display:flex;align-items:center;gap:9px;min-height:48px;padding:4px 2px;color:#60736d;font-size:.76rem;line-height:1.45;}
+.payment-reference-note i{display:grid;place-items:center;flex:0 0 28px;width:28px;height:28px;border-radius:50%;background:rgba(8,125,120,.1);color:#087d78;font-size:.82rem;}
 @media(max-width:991.98px){.payment-review-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.payment-entry-panel{grid-template-columns:1fr 1fr}.payment-entry-panel>div:nth-of-type(3){grid-column:1/-1}}
 @media(max-width:575.98px){.payment-review-grid,.payment-entry-panel,.payment-entry-action{grid-template-columns:1fr}.payment-entry-panel>div:nth-of-type(3),.payment-entry-action{grid-column:auto}}
 </style>
@@ -629,7 +631,10 @@ div[style*="border-radius: 999px"]:not(.tag){
             </div>
 
             <div class="payment-entry-action">
-              <div class="alert alert-light border small mb-0">The OR number will be saved together with an internal system payment reference.</div>
+              <div class="payment-reference-note" role="note">
+                <i class="bi bi-info-circle" aria-hidden="true"></i>
+                <span>The OR number will be saved together with an internal system payment reference.</span>
+              </div>
               <button class="btn btn-success" id="openPaymentConfirmation" type="button"><i class="bi bi-check2-circle me-1"></i>Confirm Payment</button>
             </div>
           </form>

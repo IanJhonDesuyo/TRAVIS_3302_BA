@@ -771,6 +771,48 @@ body.municipal-portal .content .ds-guidance-card.is-low::before { background: li
     font-size: .69rem;
 }
 
+.ds-evidence-panel { display:flex; gap:.55rem; flex-wrap:wrap; margin-top:.85rem; }
+.ds-evidence-label { display:inline-flex; align-items:center; gap:.35rem; padding:.42rem .62rem; border:1px solid var(--border-glass); border-radius:999px; background:rgba(8,125,120,.08); color:var(--text-soft); font-size:.7rem; line-height:1.2; }
+.ds-evidence-label strong { color:var(--text-main); }
+.ds-monthly-matrix { margin-top:.85rem; overflow:hidden; border:1px solid var(--border-glass); border-radius:13px; }
+.ds-monthly-matrix-head { display:flex; justify-content:space-between; gap:.75rem; padding:.6rem .75rem; border-bottom:1px solid var(--border-glass); background:rgba(8,125,120,.05); font-size:.68rem; }
+.ds-monthly-matrix-head strong { color:var(--text-main); }
+.ds-monthly-matrix-head span { color:var(--text-soft); }
+.ds-monthly-matrix-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); }
+.ds-monthly-matrix-item { padding:.65rem .75rem; border-right:1px solid var(--border-glass); color:var(--text-soft); }
+.ds-monthly-matrix-item:last-child { border-right:0; }
+.ds-monthly-matrix-item span { display:block; font-size:.64rem; font-weight:800; text-transform:uppercase; }
+.ds-monthly-matrix-item strong { display:block; margin-top:.18rem; color:var(--text-main); font-size:.76rem; }
+.ds-monthly-matrix-item.is-selected { background:rgba(8,125,120,.1); box-shadow:inset 0 -3px #087d78; }
+.ds-monthly-matrix-item.high.is-selected { background:#fff0f0; box-shadow:inset 0 -3px #dc3545; }
+.ds-monthly-matrix-item.medium.is-selected { background:#fff8e8; box-shadow:inset 0 -3px #e5a100; }
+.ds-monthly-matrix-item.low.is-selected { background:#edf9f3; box-shadow:inset 0 -3px #18a878; }
+.ds-hotspot-reason { display:flex; align-items:center; gap:.35rem; margin-top:.25rem; flex-wrap:wrap; }
+.ds-record-count { display:inline-flex; padding:.18rem .42rem; border-radius:999px; background:rgba(8,125,120,.11); color:#087d78; font-size:.65rem; font-weight:800; white-space:nowrap; }
+
+.ds-risk-matrix { margin-bottom:1rem; overflow:hidden; border:1px solid var(--border-glass); border-radius:16px; background:rgba(255,255,255,.03); }
+.ds-risk-matrix-head { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:.85rem 1rem; border-bottom:1px solid var(--border-glass); }
+.ds-risk-matrix-head strong { color:#fff; font-size:.88rem; }
+.ds-risk-matrix-head small { color:var(--text-soft); }
+.ds-risk-matrix-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); }
+.ds-risk-matrix-item { padding:1rem; border-right:1px solid var(--border-glass); }
+.ds-risk-matrix-item:last-child { border-right:0; }
+.ds-risk-matrix-level { display:flex; align-items:center; gap:.45rem; margin-bottom:.55rem; font-size:.77rem; font-weight:800; text-transform:uppercase; }
+.ds-risk-matrix-level::before { content:''; width:9px; height:9px; border-radius:50%; }
+.ds-risk-matrix-item.high .ds-risk-matrix-level { color:#d94f55; }
+.ds-risk-matrix-item.high .ds-risk-matrix-level::before { background:#ef6b6b; }
+.ds-risk-matrix-item.medium .ds-risk-matrix-level { color:#99610b; }
+.ds-risk-matrix-item.medium .ds-risk-matrix-level::before { background:#e9a72e; }
+.ds-risk-matrix-item.low .ds-risk-matrix-level { color:#147153; }
+.ds-risk-matrix-item.low .ds-risk-matrix-level::before { background:#23a477; }
+.ds-risk-matrix-range { display:block; margin-bottom:.35rem; color:#102f49; font-size:1rem; font-weight:800; }
+.ds-risk-matrix-item p { margin:0; color:#657a75; font-size:.72rem; line-height:1.5; }
+body.municipal-portal .content .ds-risk-matrix { border-color:#d7e4e8; background:#fff; box-shadow:0 8px 22px rgba(16,47,73,.05); }
+body.municipal-portal .content .ds-risk-matrix-head { border-bottom-color:#d7e4e8; background:#f7fbfa; }
+body.municipal-portal .content .ds-risk-matrix-head strong { color:#102f49; }
+body.municipal-portal .content .ds-risk-matrix-head small { color:#657a75; }
+body.municipal-portal .content .ds-risk-matrix-item { border-right-color:#d7e4e8; }
+
 .ds-hotspot-list::-webkit-scrollbar {
     width: 7px;
 }
@@ -1247,6 +1289,10 @@ body.municipal-portal .content .ds-deployment-note i {
 }
 
 @media (max-width: 767.98px) {
+    .ds-risk-matrix-grid { grid-template-columns:1fr; }
+    .ds-risk-matrix-item { border-right:0; border-bottom:1px solid var(--border-glass); }
+    .ds-risk-matrix-item:last-child { border-bottom:0; }
+    .ds-risk-matrix-head { align-items:flex-start; flex-direction:column; }
     .ds-kpi-grid,
     .ds-analysis-grid {
         grid-template-columns: 1fr;
@@ -1324,6 +1370,15 @@ body.municipal-portal .content .ds-deployment-note i {
             <div class="progress-bar" id="dsConfidenceBar" style="width:0%"></div>
           </div>
         </div>
+        <div class="ds-evidence-panel" id="dsPredictionEvidence" aria-label="Prediction basis"></div>
+        <div class="ds-monthly-matrix" aria-label="Monthly risk classification matrix">
+          <div class="ds-monthly-matrix-head"><strong>Monthly Risk Matrix</strong><span id="dsMonthlyMatrixBasis">Waiting for historical records...</span></div>
+          <div class="ds-monthly-matrix-grid">
+            <div class="ds-monthly-matrix-item low" data-monthly-risk="low"><span>Low</span><strong id="dsMonthlyLowRange">—</strong></div>
+            <div class="ds-monthly-matrix-item medium" data-monthly-risk="medium"><span>Medium</span><strong id="dsMonthlyMediumRange">—</strong></div>
+            <div class="ds-monthly-matrix-item high" data-monthly-risk="high"><span>High</span><strong id="dsMonthlyHighRange">—</strong></div>
+          </div>
+        </div>
         <p class="small text-muted mt-3 mb-0">
           This forecast does not use traffic-flow, congestion, or live camera data.
         </p>
@@ -1384,12 +1439,39 @@ body.municipal-portal .content .ds-deployment-note i {
   <div class="ds-section-title">
     <div>
       <h5>Historical Hotspot Classification</h5>
-      <small>K-Means clustering of historical TMO records</small>
+      <small>K-Means groups similar violation patterns; High, Medium, and Low risk are assigned separately from each location's total records.</small>
     </div>
 
     <span class="badge text-bg-light border">
       Forecast emphasis: <strong id="dsForecastEmphasis">—</strong>
     </span>
+  </div>
+
+  <div class="ds-risk-matrix" aria-labelledby="dsRiskMatrixTitle">
+    <div class="ds-risk-matrix-head">
+      <div>
+        <strong id="dsRiskMatrixTitle">Risk Classification Matrix</strong>
+        <small class="d-block">Thresholds are calculated from the 33rd and 67th percentiles of all location record totals.</small>
+      </div>
+      <small id="dsRiskMatrixSample">Waiting for hotspot records...</small>
+    </div>
+    <div class="ds-risk-matrix-grid">
+      <div class="ds-risk-matrix-item high">
+        <span class="ds-risk-matrix-level">High Risk</span>
+        <strong class="ds-risk-matrix-range" id="dsMatrixHighRange">—</strong>
+        <p>Locations above the upper threshold. These have the greatest historical violation volume and receive priority attention.</p>
+      </div>
+      <div class="ds-risk-matrix-item medium">
+        <span class="ds-risk-matrix-level">Medium Risk</span>
+        <strong class="ds-risk-matrix-range" id="dsMatrixMediumRange">—</strong>
+        <p>Locations between the lower and upper thresholds. These require focused observation and periodic intervention.</p>
+      </div>
+      <div class="ds-risk-matrix-item low">
+        <span class="ds-risk-matrix-level">Low Risk</span>
+        <strong class="ds-risk-matrix-range" id="dsMatrixLowRange">—</strong>
+        <p>Locations at or below the lower threshold. These remain under routine monitoring as new records are added.</p>
+      </div>
+    </div>
   </div>
 
   <div class="row g-3">
@@ -1764,7 +1846,65 @@ function dsSortLocations(records) {
   );
 }
 
-function dsRenderHotspots(risk, records) {
+function dsEscapeHtml(value) {
+  const element = document.createElement('div');
+  element.textContent = String(value ?? '');
+  return element.innerHTML;
+}
+
+function dsRecordTotal(record) {
+  return Number(record['Total Violations'] ?? record.Total_Violations ?? record.total ?? 0);
+}
+
+function dsRiskReason(risk, thresholds) {
+  const lowMax = Number(thresholds?.low_max || 0).toLocaleString();
+  const mediumMax = Number(thresholds?.medium_max || 0).toLocaleString();
+  if (risk === 'high') return `High: more than ${mediumMax} records`;
+  if (risk === 'medium') return `Medium: more than ${lowMax}, up to ${mediumMax} records`;
+  return `Low: up to ${lowMax} records`;
+}
+
+function dsRenderRiskMatrix(thresholds, records) {
+  const lowMax = Number(thresholds?.low_max);
+  const mediumMax = Number(thresholds?.medium_max);
+  if (!Number.isFinite(lowMax) || !Number.isFinite(mediumMax)) return;
+
+  const firstMedium = Math.floor(lowMax) + 1;
+  const firstHigh = Math.floor(mediumMax) + 1;
+  document.getElementById('dsMatrixHighRange').textContent = `${firstHigh.toLocaleString()}+ records`;
+  document.getElementById('dsMatrixMediumRange').textContent = `${firstMedium.toLocaleString()}–${Math.floor(mediumMax).toLocaleString()} records`;
+  document.getElementById('dsMatrixLowRange').textContent = `0–${Math.floor(lowMax).toLocaleString()} records`;
+
+  const totalRecords = records.reduce((sum, record) => sum + dsRecordTotal(record), 0);
+  document.getElementById('dsRiskMatrixSample').textContent =
+    `Basis: ${records.length.toLocaleString()} locations · ${totalRecords.toLocaleString()} total historical records`;
+}
+
+function dsRenderMonthlyRiskMatrix(prediction) {
+  const thresholds = prediction.risk_thresholds || {};
+  const lowMax = Number(thresholds.low_max);
+  const mediumMax = Number(thresholds.medium_max);
+  if (!Number.isFinite(lowMax) || !Number.isFinite(mediumMax)) return;
+
+  const lowLimit = Math.floor(lowMax);
+  const mediumLimit = Math.floor(mediumMax);
+  document.getElementById('dsMonthlyLowRange').textContent = `0–${lowLimit.toLocaleString()} records/month`;
+  document.getElementById('dsMonthlyMediumRange').textContent = `${(lowLimit + 1).toLocaleString()}–${mediumLimit.toLocaleString()} records/month`;
+  document.getElementById('dsMonthlyHighRange').textContent = `${(mediumLimit + 1).toLocaleString()}+ records/month`;
+
+  const months = Number(prediction.historical_record_count || 0);
+  const violations = Number(prediction.historical_violation_total || 0);
+  document.getElementById('dsMonthlyMatrixBasis').textContent = violations > 0
+    ? `Basis: ${months.toLocaleString()} months · ${violations.toLocaleString()} total violations`
+    : `Basis: ${months.toLocaleString()} historical months`;
+
+  const selectedRisk = dsNormalizeRisk(prediction.risk_level);
+  document.querySelectorAll('[data-monthly-risk]').forEach(item => {
+    item.classList.toggle('is-selected', item.dataset.monthlyRisk === selectedRisk);
+  });
+}
+
+function dsRenderHotspots(risk, records, thresholds) {
   const count = document.getElementById(
     `ds${risk.charAt(0).toUpperCase()}${risk.slice(1)}Count`
   );
@@ -1788,7 +1928,11 @@ function dsRenderHotspots(risk, records) {
     item.innerHTML = `
       <span class="ds-rank">${index + 1}</span>
       <span class="ds-location-copy">
-        <strong>${name}</strong>
+        <strong>${dsEscapeHtml(name)}</strong>
+        <span class="ds-hotspot-reason">
+          <span class="ds-record-count">${dsRecordTotal(record).toLocaleString()} records</span>
+          <small>${dsEscapeHtml(dsRiskReason(risk, thresholds))}</small>
+        </span>
       </span>
     `;
 
@@ -1923,9 +2067,12 @@ async function loadDecisionSupport() {
     const riskLevel = prediction.risk_level || 'Unknown';
     const confidence = Number(prediction.confidence || 0);
     const guidance = dsGuidance(riskLevel);
+    dsRenderMonthlyRiskMatrix(prediction);
 
     const records = dsExtractLocations(hotspotPayload);
     const groups = dsGroupLocations(records);
+    const hotspotThresholds = hotspotPayload?.data?.risk_thresholds || {};
+    dsRenderRiskMatrix(hotspotThresholds, records);
 
     const riskBadge = document.getElementById('dsRiskBadge');
     riskBadge.textContent = String(riskLevel).toUpperCase();
@@ -1939,6 +2086,25 @@ async function loadDecisionSupport() {
 
     document.getElementById('dsConfidenceBar').style.width =
       `${Math.max(0, Math.min(100, confidence))}%`;
+
+    const thresholds = prediction.risk_thresholds || {};
+    const historicalCount = Number(prediction.historical_record_count || 0);
+    const selectedMonthHistoricalTotal = Number(prediction.selected_month_historical_total || 0);
+    const selectedMonthHistoricalCount = Number(prediction.selected_month_historical_count || 0);
+    const normalizedPredictionRisk = dsNormalizeRisk(riskLevel);
+    const selectedProbability = (prediction.probabilities || [])
+      .find(item => dsNormalizeRisk(item.risk_level) === normalizedPredictionRisk);
+    const thresholdText = normalizedPredictionRisk === 'high'
+      ? `High historically means above ${Number(thresholds.medium_max || 0).toLocaleString()} records per month`
+      : normalizedPredictionRisk === 'medium'
+        ? `Medium historically means ${Number(thresholds.low_max || 0).toLocaleString()}–${Number(thresholds.medium_max || 0).toLocaleString()} records per month`
+        : `Low historically means up to ${Number(thresholds.low_max || 0).toLocaleString()} records per month`;
+    const evidenceLabels = [];
+    if (historicalCount > 0) evidenceLabels.push(`<span class="ds-evidence-label"><i class="bi bi-database"></i><strong>${historicalCount.toLocaleString()}</strong> historical months used</span>`);
+    if (selectedMonthHistoricalCount > 0) evidenceLabels.push(`<span class="ds-evidence-label"><i class="bi bi-calendar3"></i><strong>${selectedMonthHistoricalTotal.toLocaleString()}</strong> total historical ${dsEscapeHtml(prediction.month_name || 'selected-month')} violations from ${selectedMonthHistoricalCount.toLocaleString()} recorded month${selectedMonthHistoricalCount === 1 ? '' : 's'}</span>`);
+    if (prediction.risk_thresholds) evidenceLabels.push(`<span class="ds-evidence-label"><i class="bi bi-bar-chart"></i>${dsEscapeHtml(thresholdText)}</span>`);
+    evidenceLabels.push(`<span class="ds-evidence-label"><i class="bi bi-check2-circle"></i><strong>${Number(selectedProbability?.probability ?? confidence).toFixed(1)}%</strong> model probability for ${dsEscapeHtml(riskLevel)}</span>`);
+    document.getElementById('dsPredictionEvidence').innerHTML = evidenceLabels.join('');
 
     document.getElementById('dsDeploymentPriority').textContent =
       guidance.priority;
@@ -1956,9 +2122,9 @@ async function loadDecisionSupport() {
 
     document.getElementById('dsFocusArea').textContent = focusArea;
 
-    dsRenderHotspots('high', groups.high);
-    dsRenderHotspots('medium', groups.medium);
-    dsRenderHotspots('low', groups.low);
+    dsRenderHotspots('high', groups.high, hotspotThresholds);
+    dsRenderHotspots('medium', groups.medium, hotspotThresholds);
+    dsRenderHotspots('low', groups.low, hotspotThresholds);
     dsHighlightCard(riskLevel);
 
     document.getElementById('dsInterpretation').textContent =

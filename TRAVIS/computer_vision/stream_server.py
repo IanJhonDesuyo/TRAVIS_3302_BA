@@ -11,6 +11,7 @@ import hmac
 import json
 from pathlib import Path
 import requests
+import subprocess
 import threading
 import time
 
@@ -30,15 +31,105 @@ relay_condition = threading.Condition()
 relay_jpeg = None
 relay_started = False
 last_relay_queued_at = 0.0
+webrtc_condition = threading.Condition()
+webrtc_frame = None
+webrtc_started = False
 # The AI still receives the camera's full-resolution frame. Only the browser
 # copy is reduced so each hosted upload finishes quickly and the viewer stays
 # close to real time instead of waiting on large JPEG transfers.
-STREAM_MAX_WIDTH = 800
-STREAM_JPEG_QUALITY = 60
+STREAM_MAX_WIDTH = 720
+STREAM_JPEG_QUALITY = 55
 # Match the hosted browser's low-latency snapshot cadence. The relay always
 # replaces its single pending JPEG, so slow uploads drop old frames instead of
 # building a latency-producing queue.
-HOSTED_RELAY_INTERVAL_SECONDS = 0.15
+HOSTED_RELAY_INTERVAL_SECONDS = 0.10
+WEBRTC_PUBLISH_FPS = 12
+
+
+def _webrtc_publish_url():
+    try:
+        config_path = Path(__file__).resolve().parent / "edge_config.json"
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        url = str(config.get("webrtc_publish_url", "")).strip()
+    except (OSError, ValueError):
+        return ""
+    return url if url.startswith("rtsp://") else ""
+
+
+def _webrtc_publisher_loop():
+    """Publish the newest processed frame to MediaMTX at a stable cadence."""
+    global webrtc_frame
+    publish_url = _webrtc_publish_url()
+    if not publish_url:
+        return
+
+    try:
+        import imageio_ffmpeg
+        ffmpeg_executable = imageio_ffmpeg.get_ffmpeg_exe()
+    except (ImportError, RuntimeError):
+        return
+
+    log_path = Path(__file__).resolve().parent.parent / "storage" / "webrtc-publisher.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    process = None
+    frame_size = None
+    frame_interval = 1.0 / WEBRTC_PUBLISH_FPS
+    next_frame_at = time.monotonic()
+
+    while True:
+        with webrtc_condition:
+            webrtc_condition.wait_for(lambda: webrtc_frame is not None, timeout=2)
+            if webrtc_frame is None:
+                continue
+            frame = webrtc_frame.copy()
+
+        height, width = frame.shape[:2]
+        current_size = (width, height)
+        if process is None or process.poll() is not None or frame_size != current_size:
+            if process is not None:
+                try:
+                    process.kill()
+                except OSError:
+                    pass
+            command = [
+                ffmpeg_executable,
+                "-hide_banner", "-loglevel", "error",
+                "-f", "rawvideo", "-pix_fmt", "bgr24",
+                "-video_size", f"{width}x{height}",
+                "-framerate", str(WEBRTC_PUBLISH_FPS), "-i", "pipe:0",
+                "-an", "-c:v", "libx264", "-preset", "ultrafast",
+                "-tune", "zerolatency", "-pix_fmt", "yuv420p",
+                "-profile:v", "baseline", "-g", str(WEBRTC_PUBLISH_FPS),
+                "-bf", "0", "-f", "rtsp", "-rtsp_transport", "tcp",
+                publish_url,
+            ]
+            log_handle = log_path.open("ab", buffering=0)
+            process = subprocess.Popen(
+                command,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=log_handle,
+            )
+            frame_size = current_size
+
+        try:
+            process.stdin.write(frame.tobytes())
+        except (BrokenPipeError, OSError, AttributeError):
+            try:
+                process.kill()
+            except OSError:
+                pass
+            process = None
+            time.sleep(2)
+            continue
+
+        next_frame_at += frame_interval
+        remaining = next_frame_at - time.monotonic()
+        if remaining > 0:
+            time.sleep(remaining)
+        else:
+            next_frame_at = time.monotonic()
 
 
 def _relay_settings():
@@ -87,7 +178,7 @@ def _snapshot_relay_loop():
 
 def _frame_encoder_loop():
     """Encode only the newest rendered frame without blocking inference."""
-    global pending_frame, latest_jpeg, frame_version, relay_jpeg, last_relay_queued_at
+    global pending_frame, latest_jpeg, frame_version, relay_jpeg, last_relay_queued_at, webrtc_frame
 
     while True:
         with encode_condition:
@@ -101,9 +192,12 @@ def _frame_encoder_loop():
         stream_frame = frame
         if frame.shape[1] > STREAM_MAX_WIDTH:
             ratio = STREAM_MAX_WIDTH / frame.shape[1]
+            scaled_height = max(2, int(frame.shape[0] * ratio))
+            # H.264 yuv420p requires even frame dimensions.
+            scaled_height -= scaled_height % 2
             stream_frame = cv2.resize(
                 frame,
-                (STREAM_MAX_WIDTH, max(1, int(frame.shape[0] * ratio))),
+                (STREAM_MAX_WIDTH, scaled_height),
                 interpolation=cv2.INTER_AREA,
             )
 
@@ -114,6 +208,10 @@ def _frame_encoder_loop():
         )
         if not success:
             continue
+
+        with webrtc_condition:
+            webrtc_frame = stream_frame
+            webrtc_condition.notify()
 
         with frame_condition:
             latest_jpeg = buffer.tobytes()
@@ -208,13 +306,20 @@ def snapshot():
 
 def start_stream():
 
-    global relay_started, encoder_started
+    global relay_started, encoder_started, webrtc_started
     if not encoder_started:
         threading.Thread(target=_frame_encoder_loop, daemon=True, name="mjpeg-frame-encoder").start()
         encoder_started = True
     if not relay_started:
         threading.Thread(target=_snapshot_relay_loop, daemon=True).start()
         relay_started = True
+    if not webrtc_started:
+        threading.Thread(
+            target=_webrtc_publisher_loop,
+            daemon=True,
+            name="mediamtx-webrtc-publisher",
+        ).start()
+        webrtc_started = True
 
     threading.Thread(
         target=lambda: app.run(

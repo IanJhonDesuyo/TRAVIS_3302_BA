@@ -64,10 +64,9 @@
   "selected_clusters": 3,
   "selected_inertia": 205.07983332543213,
   "silhouette_score": 0.2938371612989766,
-  "risk_mapping": {
-    "0": "Low Risk",
-    "2": "Medium Risk",
-    "1": "High Risk"
+  "risk_thresholds": {
+    "low_max": 38.0,
+    "medium_max": 111.0
   },
   "cluster_profiles": [
     {
@@ -77,18 +76,7 @@
       "Median_Total_Violations": 37.5,
       "Min_Total_Violations": 30,
       "Max_Total_Violations": 48,
-      "Sum_Total_Violations": 303,
-      "Risk Level": "Low Risk"
-    },
-    {
-      "Cluster": 2,
-      "Location_Count": 3,
-      "Mean_Total_Violations": 127.33333333333333,
-      "Median_Total_Violations": 127.0,
-      "Min_Total_Violations": 116,
-      "Max_Total_Violations": 139,
-      "Sum_Total_Violations": 382,
-      "Risk Level": "Medium Risk"
+      "Sum_Total_Violations": 303
     },
     {
       "Cluster": 1,
@@ -97,10 +85,18 @@
       "Median_Total_Violations": 111.0,
       "Min_Total_Violations": 111,
       "Max_Total_Violations": 221,
-      "Sum_Total_Violations": 554,
-      "Risk Level": "High Risk"
+      "Sum_Total_Violations": 554
+    },
+    {
+      "Cluster": 2,
+      "Location_Count": 3,
+      "Mean_Total_Violations": 127.33333333333333,
+      "Median_Total_Violations": 127.0,
+      "Min_Total_Violations": 116,
+      "Max_Total_Violations": 139,
+      "Sum_Total_Violations": 382
     }
   ],
-  "interpretation": "Locations are grouped according to similar historical traffic violation patterns. Risk labels are assigned by ordering clusters according to their mean total historical violations.",
+  "interpretation": "Locations are grouped according to similar historical traffic violation patterns. Operational risk labels are assigned separately from each location's total historical records using dataset tertile thresholds, which keeps the risk order consistent with record volume.",
   "limitation": "The clusters reflect historical patterns from the available TMO records and do not guarantee future traffic conditions. The model should be retrained when additional records become available."
 }

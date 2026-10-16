@@ -9,10 +9,9 @@ $statusFile = __DIR__ . "/analysis_status.json";
 $payload = json_decode((string)file_get_contents("php://input"), true);
 $payload = is_array($payload) ? $payload : [];
 
-// TEMPORARY DIAGNOSTIC SWITCH. This prevents every hosted/local stop request
-// from terminating detect_video.py during the continuous Tapo stream test.
-// Set to true after the test to restore the normal Stop/Disconnect behavior.
-$stopAnalysisEnabled = false;
+// Normal production behavior: allow a stale or unhealthy detector to be
+// stopped cleanly before a camera session is restarted.
+$stopAnalysisEnabled = true;
 if (!$stopAnalysisEnabled) {
     http_response_code(423);
     echo json_encode([

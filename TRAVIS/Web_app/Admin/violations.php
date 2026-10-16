@@ -31,6 +31,18 @@ function generateTicketNumber(mysqli $conn): string
     return $prefix . str_pad((string)$nextNumber, 6, '0', STR_PAD_LEFT);
 }
 
+$tmoOfficers = [];
+try {
+    $tmoOfficers = fetch_all("
+        SELECT officer_id, first_name, last_name, badge_number, rank
+        FROM officers
+        WHERE status = 'active'
+        ORDER BY last_name, first_name
+    ");
+} catch (Throwable $exception) {
+    error_log('Unable to load TMO officers: ' . $exception->getMessage());
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
 
@@ -48,10 +60,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $hasNoPlate = isset($_POST['has_no_plate']) || in_array($submittedPlate, ['NO PLATE', 'NOPLATE', 'NONE', 'N/A', 'NA'], true);
         $plate = $hasNoPlate ? 'NO PLATE' : $submittedPlate;
         $vehicleOwner = violation_post('vehicle_owner');
-        $vehicleRegistration = strtoupper(violation_post('vehicle_registration_number'));
+        $registrationNotApplicable = isset($_POST['registration_not_applicable']);
+        $vehicleRegistration = $registrationNotApplicable ? 'NOT APPLICABLE' : strtoupper(violation_post('vehicle_registration_number'));
         $vehicle = violation_post('vehicle_type');
-        $vehicleColor = violation_post('vehicle_color');
-        $insurancePolicy = violation_post('insurance_policy_number');
+        $vehicleColorNotSpecified = isset($_POST['vehicle_color_not_specified']);
+        $insurancePolicyNotSpecified = isset($_POST['insurance_policy_not_specified']);
+        $vehicleColor = $vehicleColorNotSpecified ? 'NOT SPECIFIED' : violation_post('vehicle_color');
+        $insurancePolicy = $insurancePolicyNotSpecified ? 'NOT SPECIFIED' : violation_post('insurance_policy_number');
         $isPampasadaTricycle = $vehicle === 'Tricycle';
         $codingSticker = $isPampasadaTricycle ? violation_post('coding_sticker_number') : '';
         $vehicleToda = $isPampasadaTricycle ? violation_post('vehicle_toda') : '';
@@ -62,8 +77,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $time = violation_post('violation_time');
         $offenseNumber = max(1, min(4, (int)violation_post('offense_number', '1')));
         $ticketRemarks = violation_post('ticket_remarks');
+        $officerAgency = violation_post('apprehending_officer_agency', 'police');
         $officerName = violation_post('apprehending_officer_name');
         $officerPosition = violation_post('apprehending_officer_position');
+        $selectedTmoOfficerId = (int)violation_post('tmo_officer_id', '0');
+        $validOfficer = in_array($officerAgency, ['police', 'tmo'], true);
+        if ($officerAgency === 'tmo') {
+            $validOfficer = false;
+            foreach ($tmoOfficers as $tmoOfficer) {
+                if ((int)$tmoOfficer['officer_id'] !== $selectedTmoOfficerId) continue;
+                $officerName = trim((string)$tmoOfficer['first_name'] . ' ' . (string)$tmoOfficer['last_name']);
+                $officerPosition = trim((string)($tmoOfficer['rank'] ?? '')) ?: 'TMO Officer';
+                $validOfficer = true;
+                break;
+            }
+        }
         $apprehensionDate = violation_post('apprehension_date', $date);
         $apprehensionTime = violation_post('apprehension_time', $time);
         $apprehensionDatetime = $apprehensionDate !== '' && $apprehensionTime !== '' ? $apprehensionDate . ' ' . $apprehensionTime . ':00' : null;
@@ -86,7 +114,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (
             $driver === '' || $license === '' || $plate === '' ||
             $vehicle === '' || $type === '' || $location === '' ||
-            $date === '' || $time === '' || $amount <= 0
+            $date === '' || $time === '' || $amount <= 0 || $officerName === '' || !$validOfficer
         ) {
             $message = 'Please complete all required fields and enter a valid penalty amount.';
             $messageType = 'danger';
@@ -239,13 +267,44 @@ foreach ($violations as $violation) {
             'records' => [],
             'total_penalties' => 0.0,
             'unpaid_count' => 0,
+            'ranked_record_count' => 0,
+            'ranked_total_penalties' => 0.0,
+            'ranked_unpaid_count' => 0,
+            'ranked_latest' => null,
         ];
     }
     $violators[$violatorKey]['records'][] = $violation;
     $violators[$violatorKey]['total_penalties'] += (float)$violation['penalty_amount'];
     if (in_array($violation['status'], ['pending', 'overdue'], true)) $violators[$violatorKey]['unpaid_count']++;
+    if ($violation['status'] !== 'cancelled') {
+        $violators[$violatorKey]['ranked_record_count']++;
+        $violators[$violatorKey]['ranked_total_penalties'] += (float)$violation['penalty_amount'];
+        if (in_array($violation['status'], ['pending', 'overdue'], true)) {
+            $violators[$violatorKey]['ranked_unpaid_count']++;
+        }
+        if ($violators[$violatorKey]['ranked_latest'] === null) {
+            $violators[$violatorKey]['ranked_latest'] = $violation;
+        }
+    }
 }
 $violators = array_values($violators);
+
+$topViolators = array_values(array_filter(
+    $violators,
+    static fn(array $violator): bool => $violator['ranked_record_count'] > 0
+));
+usort($topViolators, static function (array $left, array $right): int {
+    $recordOrder = $right['ranked_record_count'] <=> $left['ranked_record_count'];
+    if ($recordOrder !== 0) return $recordOrder;
+
+    $penaltyOrder = $right['ranked_total_penalties'] <=> $left['ranked_total_penalties'];
+    if ($penaltyOrder !== 0) return $penaltyOrder;
+
+    $leftLatest = (string)(($left['ranked_latest']['violation_date'] ?? '') . ' ' . ($left['ranked_latest']['violation_time'] ?? ''));
+    $rightLatest = (string)(($right['ranked_latest']['violation_date'] ?? '') . ' ' . ($right['ranked_latest']['violation_time'] ?? ''));
+    return strcmp($rightLatest, $leftLatest);
+});
+$topViolators = array_slice($topViolators, 0, 5);
 
 // Filters decide which violators appear, but each matching modal still shows
 // that person's complete history.
@@ -705,7 +764,19 @@ div[style*="border-radius: 999px"]:not(.tag){
 .violator-record-field strong{display:block;color:#10202c!important;font-size:.82rem;line-height:1.45;overflow-wrap:anywhere}
 .violator-history-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:4px 0 12px}
 .violator-history-heading h6{margin:0;color:#102f49!important}
+.violations-top-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
+.violations-top-card{display:grid;min-width:0;gap:12px;padding:14px;border:1px solid rgba(56,189,248,.18)!important;border-radius:13px;background:linear-gradient(145deg,rgba(56,189,248,.075),rgba(255,255,255,.025))!important;color:#fff!important;text-decoration:none;transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease}
+.violations-top-card:hover{transform:translateY(-2px);border-color:rgba(56,189,248,.48)!important;color:#fff!important;box-shadow:0 13px 25px rgba(0,0,0,.22)!important}
+.violations-top-head{display:flex;align-items:center;gap:10px;min-width:0}
+.violations-top-rank{display:grid;place-items:center;flex:0 0 34px;width:34px;height:34px;border-radius:10px;background:rgba(56,189,248,.14)!important;color:#4fc3f7!important;font-size:.75rem;font-weight:900}
+.violations-top-card:nth-child(1) .violations-top-rank{background:rgba(251,191,36,.17)!important;color:#fbbf24!important}
+.violations-top-card:nth-child(2) .violations-top-rank{background:rgba(203,213,225,.13)!important;color:#dbe5f0!important}
+.violations-top-card:nth-child(3) .violations-top-rank{background:rgba(251,146,60,.14)!important;color:#fb923c!important}
+.violations-top-person{min-width:0}.violations-top-person strong{display:block;overflow:hidden;color:#fff!important;font-size:.78rem;text-overflow:ellipsis;white-space:nowrap}.violations-top-person small{display:block;overflow:hidden;color:var(--text-soft)!important;font-size:.61rem;text-overflow:ellipsis;white-space:nowrap}
+.violations-top-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.violations-top-metric{padding:8px;border-radius:9px;background:rgba(255,255,255,.045)!important}.violations-top-metric:last-child{grid-column:1/-1}.violations-top-metric span{display:block;color:var(--text-soft)!important;font-size:.55rem;font-weight:800;letter-spacing:.045em;text-transform:uppercase}.violations-top-metric strong{display:block;margin-top:2px;color:#fff!important;font-size:.75rem}
+@media(max-width:1199.98px){.violations-top-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:767.98px){.violator-record-overview{align-items:flex-start;flex-direction:column}.violator-record-totals{width:100%;justify-content:stretch}.violator-record-total{flex:1 1 90px}.violator-record-summary{grid-template-columns:1fr}}
+@media(max-width:767.98px){.violations-top-grid{grid-template-columns:1fr}}
 @media(max-width:420px){.violator-record-grid{grid-template-columns:1fr}.violator-record-field.field-wide{grid-column:auto}}
 </style>
 
@@ -753,6 +824,43 @@ div[style*="border-radius: 999px"]:not(.tag){
       <div class="stat-value"><?= num($cancelled) ?></div>
     </div>
   </div>
+</div>
+
+<div class="section-card mb-4">
+  <div class="section-head">
+    <div>
+      <h6 class="mb-0">Top 5 Violators</h6>
+      <small class="text-muted">All-time ranking based on non-cancelled records and assessed fines.</small>
+    </div>
+  </div>
+
+  <?php if (!$topViolators): ?>
+    <?php empty_state('No active violation records are available for ranking.'); ?>
+  <?php else: ?>
+    <div class="violations-top-grid">
+      <?php foreach ($topViolators as $rankIndex => $topViolator): ?>
+        <?php
+          $topName = trim((string)$topViolator['driver_name']) ?: 'Unknown driver';
+          $topLicense = strtoupper(trim((string)$topViolator['license_number']));
+          $topHasLicense = $topLicense !== '' && $topLicense !== 'NO LICENSE';
+        ?>
+        <a class="violations-top-card" href="<?= esc(app_url('violations.php?search=' . rawurlencode($topName))) ?>">
+          <span class="violations-top-head">
+            <span class="violations-top-rank">#<?= $rankIndex + 1 ?></span>
+            <span class="violations-top-person">
+              <strong><?= esc($topName) ?></strong>
+              <small><?= esc($topHasLicense ? $topLicense : 'No license recorded') ?></small>
+            </span>
+          </span>
+          <span class="violations-top-metrics">
+            <span class="violations-top-metric"><span>Records</span><strong><?= num($topViolator['ranked_record_count']) ?></strong></span>
+            <span class="violations-top-metric"><span>Unpaid</span><strong><?= num($topViolator['ranked_unpaid_count']) ?></strong></span>
+            <span class="violations-top-metric"><span>Total fines</span><strong><?= peso($topViolator['ranked_total_penalties']) ?></strong></span>
+          </span>
+        </a>
+      <?php endforeach; ?>
+    </div>
+  <?php endif; ?>
 </div>
 
 <div class="section-card">
@@ -942,6 +1050,7 @@ div[style*="border-radius: 999px"]:not(.tag){
             data-owner="<?= esc($latest['vehicle_owner'] ?? '') ?>"
             data-registration="<?= esc($latest['vehicle_registration_number'] ?? '') ?>"
             data-color="<?= esc($latest['vehicle_color'] ?? '') ?>"
+            data-insurance="<?= esc($latest['insurance_policy_number'] ?? '') ?>"
             data-offense-level="<?= min(4, count($violator['records']) + 1) ?>"
           ><i class="bi bi-plus-circle"></i>Add Violation for This Person</button>
           <a class="btn btn-light" href="#" data-bs-dismiss="modal">Close</a>
@@ -989,17 +1098,35 @@ div[style*="border-radius: 999px"]:not(.tag){
               <label class="form-label" for="plateNumberInput">Plate Number</label>
               <input type="text" id="plateNumberInput" name="plate_number" class="form-control text-uppercase" required>
             </div>
-            <div class="col-md-6"><label class="form-label">Vehicle Registration Number</label><input type="text" name="vehicle_registration_number" class="form-control text-uppercase" maxlength="80"></div>
+            <div class="col-md-6"><label class="form-label" for="vehicleRegistrationInput">Vehicle Registration Number</label><input type="text" id="vehicleRegistrationInput" name="vehicle_registration_number" class="form-control text-uppercase" maxlength="80"></div>
             <div class="col-12"><div class="license-status-row vehicle-status-row">
               <div class="form-check">
                 <input class="form-check-input" type="checkbox" name="has_no_plate" value="1" id="noPlateCheck">
                 <label class="form-check-label" for="noPlateCheck">Vehicle has no plate number</label>
               </div>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="registration_not_applicable" value="1" id="registrationNotApplicableCheck">
+                <label class="form-check-label" for="registrationNotApplicableCheck">Registration number is not applicable</label>
+              </div>
             </div></div>
             <div class="col-md-6"><label class="form-label">Owner of Vehicle</label><input type="text" name="vehicle_owner" class="form-control" maxlength="150"></div>
             <div class="col-md-6"><label class="form-label">Vehicle Type</label><select name="vehicle_type" class="form-select" required><option value="">Select vehicle type</option><option>Motorcycle</option><option value="Tricycle">Tricycle (Pampasada)</option><option>Car</option><option>SUV</option><option>Truck</option><option>Bus</option><option>Other</option></select></div>
-            <div class="col-md-6"><label class="form-label">Color of Vehicle</label><input type="text" name="vehicle_color" class="form-control" maxlength="80"></div>
-            <div class="col-md-6"><label class="form-label">Insurance Policy Number</label><input type="text" name="insurance_policy_number" class="form-control" maxlength="100"></div>
+            <div class="col-md-6">
+              <label class="form-label" for="vehicleColorInput">Color of Vehicle</label>
+              <input type="text" id="vehicleColorInput" name="vehicle_color" class="form-control" maxlength="80">
+              <div class="form-check mt-2">
+                <input class="form-check-input" type="checkbox" name="vehicle_color_not_specified" value="1" id="vehicleColorNotSpecifiedCheck">
+                <label class="form-check-label" for="vehicleColorNotSpecifiedCheck">Not specified</label>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="insurancePolicyInput">Insurance Policy Number</label>
+              <input type="text" id="insurancePolicyInput" name="insurance_policy_number" class="form-control" maxlength="100">
+              <div class="form-check mt-2">
+                <input class="form-check-input" type="checkbox" name="insurance_policy_not_specified" value="1" id="insurancePolicyNotSpecifiedCheck">
+                <label class="form-check-label" for="insurancePolicyNotSpecifiedCheck">Not specified</label>
+              </div>
+            </div>
             <div class="col-md-6 d-none" id="codingStickerField"><label class="form-label">Coding Sticker Number</label><input type="text" name="coding_sticker_number" class="form-control" maxlength="100"><small class="text-muted">For tricycles operating as public transport only.</small></div>
             <div class="col-md-6 d-none" id="vehicleTodaField"><label class="form-label">TODA</label><input type="text" name="vehicle_toda" class="form-control" maxlength="120"><small class="text-muted">Tricycle Operators and Drivers Association.</small></div>
             <div class="col-12"><div class="ticket-form-section"><span class="section-number">4</span><div><strong>Violation Details</strong><small class="text-muted">Offenses, penalties, place, date, and remarks</small></div></div></div>
@@ -1031,8 +1158,24 @@ div[style*="border-radius: 999px"]:not(.tag){
             </div>
             <div class="col-md-8"><label class="form-label">Ticket Remarks</label><textarea name="ticket_remarks" class="form-control" rows="2" placeholder="Remarks or Treasurer's Office disposition"></textarea></div>
             <div class="col-12"><div class="ticket-form-section"><span class="section-number">5</span><div><strong>Apprehending / Arresting Officer</strong><small class="text-muted">Officer identity and apprehension schedule</small></div></div></div>
-            <div class="col-md-6"><label class="form-label">Officer Name</label><input type="text" name="apprehending_officer_name" class="form-control" maxlength="150"></div>
-            <div class="col-md-6"><label class="form-label">Position</label><input type="text" name="apprehending_officer_position" class="form-control" maxlength="120"></div>
+            <div class="col-12"><div class="license-status-row">
+              <div class="form-check"><input class="form-check-input" type="radio" name="apprehending_officer_agency" id="officerAgencyPolice" value="police" checked><label class="form-check-label" for="officerAgencyPolice">Police</label></div>
+              <div class="form-check"><input class="form-check-input" type="radio" name="apprehending_officer_agency" id="officerAgencyTmo" value="tmo"><label class="form-check-label" for="officerAgencyTmo">TMO</label></div>
+            </div></div>
+            <div class="col-12"><div class="row g-3" id="policeOfficerFields">
+              <div class="col-md-6"><label class="form-label">Officer Name</label><input type="text" name="apprehending_officer_name" class="form-control" maxlength="150" required></div>
+              <div class="col-md-6"><label class="form-label">Position</label><input type="text" name="apprehending_officer_position" class="form-control" maxlength="120"></div>
+            </div></div>
+            <div class="col-12 d-none" id="tmoOfficerField">
+              <label class="form-label" for="tmoOfficerSelect">TMO Officer</label>
+              <select class="form-select" name="tmo_officer_id" id="tmoOfficerSelect">
+                <option value="">Select TMO officer</option>
+                <?php foreach ($tmoOfficers as $officer): ?>
+                  <option value="<?= (int)$officer['officer_id'] ?>"><?= esc(trim((string)$officer['last_name'] . ', ' . (string)$officer['first_name'])) ?><?= !empty($officer['badge_number']) ? ' · ' . esc($officer['badge_number']) : '' ?><?= !empty($officer['rank']) ? ' · ' . esc($officer['rank']) : '' ?></option>
+                <?php endforeach; ?>
+              </select>
+              <?php if (!$tmoOfficers): ?><small class="text-danger">No active TMO officers are available in the officers table.</small><?php endif; ?>
+            </div>
             <div class="col-md-6"><label class="form-label">Apprehension Date</label><input type="date" name="apprehension_date" class="form-control" value="<?= date('Y-m-d') ?>"></div>
             <div class="col-md-6"><label class="form-label">Apprehension Time</label><input type="time" name="apprehension_time" class="form-control" value="<?= date('H:i') ?>"></div>
           </div>
@@ -1063,6 +1206,12 @@ const licenseExpiryInput = document.getElementById('licenseExpiryInput');
 const licenseExpiryNotApplicable = document.getElementById('licenseExpiryNotApplicable');
 const noPlateCheck = document.getElementById('noPlateCheck');
 const plateNumberInput = document.getElementById('plateNumberInput');
+const registrationNotApplicableCheck = document.getElementById('registrationNotApplicableCheck');
+const vehicleRegistrationInput = document.getElementById('vehicleRegistrationInput');
+const vehicleColorNotSpecifiedCheck = document.getElementById('vehicleColorNotSpecifiedCheck');
+const vehicleColorInput = document.getElementById('vehicleColorInput');
+const insurancePolicyNotSpecifiedCheck = document.getElementById('insurancePolicyNotSpecifiedCheck');
+const insurancePolicyInput = document.getElementById('insurancePolicyInput');
 const vehicleTypeInput = document.querySelector('#addViolationModal select[name="vehicle_type"]');
 const codingStickerField = document.getElementById('codingStickerField');
 const vehicleTodaField = document.getElementById('vehicleTodaField');
@@ -1071,6 +1220,9 @@ const ticketForm = document.querySelector('#addViolationModal form');
 const offenseAnalysisUrl = <?= json_encode('../api/analyze_offense.php') ?>;
 const offenseNumberInput = document.getElementById('offenseNumberInput');
 const offenseNumberLabel = document.getElementById('offenseNumberLabel');
+const policeOfficerFields = document.getElementById('policeOfficerFields');
+const tmoOfficerField = document.getElementById('tmoOfficerField');
+const tmoOfficerSelect = document.getElementById('tmoOfficerSelect');
 let driverAnalysisTimer = null;
 let automaticOffenseFloor = 1;
 
@@ -1095,6 +1247,46 @@ function syncTricycleFields() {
   if (!isPampasadaTricycle && ticketForm) {
     ticketForm.elements.coding_sticker_number.value = '';
     ticketForm.elements.vehicle_toda.value = '';
+  }
+}
+
+function syncRegistrationField() {
+  const notApplicable = Boolean(registrationNotApplicableCheck?.checked);
+  if (!vehicleRegistrationInput) return;
+  vehicleRegistrationInput.disabled = notApplicable;
+  vehicleRegistrationInput.value = notApplicable
+    ? 'NOT APPLICABLE'
+    : (vehicleRegistrationInput.value === 'NOT APPLICABLE' ? '' : vehicleRegistrationInput.value);
+}
+
+function syncNotSpecifiedField(checkbox, input) {
+  const notSpecified = Boolean(checkbox?.checked);
+  if (!input) return;
+  input.disabled = notSpecified;
+  input.value = notSpecified
+    ? 'NOT SPECIFIED'
+    : (input.value === 'NOT SPECIFIED' ? '' : input.value);
+}
+
+function syncOptionalVehicleFields() {
+  syncNotSpecifiedField(vehicleColorNotSpecifiedCheck, vehicleColorInput);
+  syncNotSpecifiedField(insurancePolicyNotSpecifiedCheck, insurancePolicyInput);
+}
+
+function syncOfficerFields() {
+  const isTmo = document.querySelector('input[name="apprehending_officer_agency"]:checked')?.value === 'tmo';
+  policeOfficerFields?.classList.toggle('d-none', isTmo);
+  tmoOfficerField?.classList.toggle('d-none', !isTmo);
+  const policeName = ticketForm?.elements.apprehending_officer_name;
+  const policePosition = ticketForm?.elements.apprehending_officer_position;
+  if (policeName) {
+    policeName.disabled = isTmo;
+    policeName.required = !isTmo;
+  }
+  if (policePosition) policePosition.disabled = isTmo;
+  if (tmoOfficerSelect) {
+    tmoOfficerSelect.disabled = !isTmo;
+    tmoOfficerSelect.required = isTmo;
   }
 }
 
@@ -1129,8 +1321,17 @@ document.querySelectorAll('.add-existing-violator').forEach(function (button) {
     vehicleTypeInput.value = button.dataset.vehicle || '';
     syncTricycleFields();
     ticketForm.elements.vehicle_owner.value = button.dataset.owner || '';
-    ticketForm.elements.vehicle_registration_number.value = button.dataset.registration || '';
-    ticketForm.elements.vehicle_color.value = button.dataset.color || '';
+    const registration = button.dataset.registration || '';
+    registrationNotApplicableCheck.checked = registration === 'NOT APPLICABLE';
+    ticketForm.elements.vehicle_registration_number.value = registration;
+    syncRegistrationField();
+    const vehicleColor = button.dataset.color || '';
+    vehicleColorNotSpecifiedCheck.checked = vehicleColor.toUpperCase() === 'NOT SPECIFIED';
+    vehicleColorInput.value = vehicleColor;
+    const insurancePolicy = button.dataset.insurance || '';
+    insurancePolicyNotSpecifiedCheck.checked = insurancePolicy.toUpperCase() === 'NOT SPECIFIED';
+    insurancePolicyInput.value = insurancePolicy;
+    syncOptionalVehicleFields();
     violationLocationInput.value = '';
 
     const rows = Array.from(violationItems.querySelectorAll('.violation-item-row'));
@@ -1263,6 +1464,12 @@ noLicenseCheck?.addEventListener('change', function () {
 });
 
 vehicleTypeInput?.addEventListener('change', syncTricycleFields);
+registrationNotApplicableCheck?.addEventListener('change', syncRegistrationField);
+vehicleColorNotSpecifiedCheck?.addEventListener('change', syncOptionalVehicleFields);
+insurancePolicyNotSpecifiedCheck?.addEventListener('change', syncOptionalVehicleFields);
+document.querySelectorAll('input[name="apprehending_officer_agency"]').forEach(function (input) {
+  input.addEventListener('change', syncOfficerFields);
+});
 
 noPlateCheck?.addEventListener('change', function () {
   plateNumberInput.disabled = this.checked;
@@ -1326,6 +1533,9 @@ refreshViolationItemButtons();
 updateAutomaticOffenseNumber();
 syncLicenseFields();
 syncTricycleFields();
+syncRegistrationField();
+syncOptionalVehicleFields();
+syncOfficerFields();
 
 document.getElementById('addViolationModal')?.addEventListener('hidden.bs.modal', function () {
   automaticOffenseFloor = 1;

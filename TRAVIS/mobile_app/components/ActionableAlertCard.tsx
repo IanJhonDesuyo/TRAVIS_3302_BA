@@ -115,9 +115,9 @@ export default function ActionableAlertCard() {
     }
   };
 
-  const viewLive = () => {
+  const viewAlerts = () => {
     setCurrent(null);
-    router.push('/(drawer)/monitoring' as Href);
+    router.push('/(drawer)/alerts' as Href);
   };
 
   if (!current) return null;
@@ -159,9 +159,9 @@ export default function ActionableAlertCard() {
         <Text style={styles.timestamp}>Detected {formatTimestamp(current.generated_at)}</Text>
 
         <View style={styles.actions}>
-          <TouchableOpacity style={styles.secondaryButton} onPress={viewLive}>
-            <Ionicons name="videocam-outline" size={15} color="#087D78" />
-            <Text style={styles.secondaryText}>View live</Text>
+          <TouchableOpacity style={styles.secondaryButton} onPress={viewAlerts}>
+            <Ionicons name="notifications-outline" size={15} color="#087D78" />
+            <Text style={styles.secondaryText}>View alerts</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.primaryButton, { backgroundColor: accent }]}

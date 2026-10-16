@@ -792,7 +792,7 @@ hr {
         <i class="bi bi-stars"></i> AI Smart Traffic Command Center
     </span>
     <h1>TRAVIS</h1>
-    <h4>An AI, Computer Vision, and IoT-Based Traffic Monitoring and Decision Support System</h4>
+    <h4>A Computer Vision, IoT-Based Traffic Monitoring and Decision Support System</h4>
 
     <p class="lead-copy">
         An AI-powered intelligent traffic monitoring platform designed to assist Local Government Units

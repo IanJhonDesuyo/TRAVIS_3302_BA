@@ -35,22 +35,13 @@ if ($input['year'] < 2000 || $input['year'] > 2100 || $input['month'] < 1 || $in
     exit;
 }
 
-if (!travis_is_edge_host()) {
-    try {
-        $result = travis_dispatch_edge_job($conn, 'ml_monthly', $input, 35);
-        if (!empty($result['pending'])) http_response_code(503);
-        echo json_encode($result, JSON_UNESCAPED_SLASHES);
-    } catch (Throwable $error) {
-        error_log('TRAVIS monthly hybrid prediction: ' . $error->getMessage());
-        http_response_code(503);
-        echo json_encode(['success' => false, 'message' => $error->getMessage()]);
-    }
-    exit;
-}
+$isEdgeHost = travis_is_edge_host();
+if ($isEdgeHost) ensure_ml_service_running();
 
-ensure_ml_service_running();
-
-$flask_api = "http://127.0.0.1:5001/predict/monthly";
+$mlBaseUrl = $isEdgeHost
+    ? 'http://127.0.0.1:5001'
+    : rtrim((string)(getenv('TRAVIS_ML_API_URL') ?: 'http://ml:5001'), '/');
+$flask_api = $mlBaseUrl . '/predict/monthly';
 
 $response = false;
 $curlError = 'Machine-learning API is still starting.';

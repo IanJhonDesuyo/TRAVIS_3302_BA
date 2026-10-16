@@ -1,7 +1,7 @@
 # Hostinger staging deployment
 
-The generated archive is intended for `public_html/TRAVIS/`, so the staging
-site is available at `https://travis-nasugbu.site/TRAVIS/`.
+This legacy shared-hosting workflow is archived. Current deployments must use
+the VPS Docker environment at `https://travis-nasugbu.tech/`.
 
 After extracting the archive in Hostinger File Manager:
 

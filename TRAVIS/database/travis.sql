@@ -25,10 +25,16 @@
     `camera_name` VARCHAR(120) NOT NULL,
     `location` VARCHAR(255) NOT NULL,
     `ip_address` VARCHAR(45) NOT NULL,
+    `camera_username` VARCHAR(120) NULL,
+    `stream_quality` ENUM('stream1','stream2') NOT NULL DEFAULT 'stream2',
+    `calibration_profile` VARCHAR(190) NULL,
+    `edge_worker_id` VARCHAR(100) NULL,
+    `is_enabled` TINYINT(1) NOT NULL DEFAULT 1,
     `status` ENUM('online','offline','maintenance','decommissioned') NOT NULL DEFAULT 'offline',
     `installed_at` DATE NULL,
     `last_maintenance_at` DATETIME NULL,
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`camera_id`),
     UNIQUE KEY `uq_cameras_ip_address` (`ip_address`)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

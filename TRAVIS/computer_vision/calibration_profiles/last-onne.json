@@ -1,0 +1,63 @@
+{
+    "profile_name": "last onne",
+    "road_roi": [
+        [
+            0,
+            0
+        ],
+        [
+            1,
+            0
+        ],
+        [
+            1,
+            1
+        ],
+        [
+            0,
+            1
+        ]
+    ],
+    "inbound_line": [
+        [
+            0.21257816520342446,
+            0.9400805220047203
+        ],
+        [
+            0.7006097275718496,
+            0.10665000694155213
+        ]
+    ],
+    "outbound_line": [
+        [
+            0.9461225380884807,
+            0.028460363737331667
+        ],
+        [
+            0.8992156190060349,
+            0.04623073719283632
+        ]
+    ],
+    "officer_zone": [],
+    "officer": {
+        "enabled": false,
+        "presence_frames": 3,
+        "absence_frames": 15
+    },
+    "collision": {
+        "enabled": true,
+        "ttc_warning_seconds": 2.5,
+        "maximum_pair_distance": 2.6,
+        "contact_iou": 0.08,
+        "confirmation_iou": 0.04,
+        "possible_frames": 3,
+        "confirmed_frames": 4,
+        "risk_memory_seconds": 4,
+        "minimum_track_confidence": 0.45,
+        "minimum_motorcycle_confidence": 0.25,
+        "occlusion_confirmation_frames": 3,
+        "occlusion_window_seconds": 2,
+        "occlusion_max_distance": 1.5,
+        "cooldown_seconds": 30
+    }
+}

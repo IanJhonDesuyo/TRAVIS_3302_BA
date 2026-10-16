@@ -90,7 +90,9 @@ PHONE_STREAM_URL = str(_phone_camera_config.get("stream_url", "")).strip()
 
 # Live-camera latency control. Tapo capture drops buffered frames between
 # inference passes, while HTTP/MJPEG phone sources expose their newest frame.
-LIVE_INFERENCE_SIZE = 320
+# 416 materially improves early recognition of motorcycles/tricycles in the
+# distance while remaining within real-time speed on the gate laptop.
+LIVE_INFERENCE_SIZE = 416
 # 640 keeps CPU-only processing close to real time while retaining materially
 # more detail than the live-camera preset. At 960, the reference workstation
 # processes only about half of a 30 FPS video's frames per second.
@@ -109,7 +111,10 @@ SHOW_DEBUG_WINDOW = False
 # ==========================================
 # Monitoring API
 # ==========================================
-CAMERA_ID = 1
+try:
+    CAMERA_ID = max(1, int(_camera_config.get("camera_id", 1)))
+except (TypeError, ValueError):
+    CAMERA_ID = 1
 _web_base_url = str(_edge_config.get("web_base_url", "http://localhost/TRAVIS")).rstrip("/")
 STATUS_API_URL = f"{_web_base_url}/Web_app/api/update_status.php"
 MONITORING_LOG_API_URL = f"{_web_base_url}/Web_app/api/save_monitoring_log.php"

@@ -245,10 +245,9 @@ header.topbar,
 .deployment-kpi,
 .compact-metric,
 #currentMonitoringCard .mini-metric,
-.card,
-[class*="card"] {
+.card {
     background: #ffffff !important;
-    border: 2px solid #1a2350 !important;
+    border: 1px solid #d7e3e1 !important;
     border-radius: 16px !important;
     padding: 20px !important;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04) !important;
@@ -273,9 +272,7 @@ header.topbar,
 .ai-decision-card small,
 .ai-decision-card .text-muted,
 .card small,
-.card .text-muted,
-[class*="card"] small,
-[class*="card"] .text-muted {
+.card .text-muted {
     color: #5a6a8a !important;
 }
 
@@ -324,7 +321,7 @@ header.topbar,
 /* ==== AI Decision Card Specific ==== */
 .ai-decision-card {
     background: #ffffff !important;
-    border: 2px solid #1a2350 !important;
+    border: 1px solid #d7e3e1 !important;
     border-radius: 16px !important;
     padding: 24px !important;
 }
@@ -442,7 +439,7 @@ header.topbar,
 
 .ai-decision-card .hotspot-risk-card {
     background: #ffffff !important;
-    border: 2px solid #1a2350 !important;
+    border: 1px solid #d7e3e1 !important;
     border-radius: 16px !important;
     padding: 16px !important;
 }
@@ -1028,40 +1025,50 @@ body.municipal-portal #currentMonitoringCard .mini-metric strong {
 </style>
 
 <?php
-$overviewPeriod = strtolower(trim((string)($_GET['overview_period'] ?? 'today')));
-$allowedOverviewPeriods = ['all', 'today', 'week', 'month', 'custom'];
-if (!in_array($overviewPeriod, $allowedOverviewPeriods, true)) {
-    $overviewPeriod = 'all';
-}
+$overviewPeriod = strtolower(trim((string)($_GET['dashboard_scope'] ?? 'all')));
+$allowedOverviewPeriods = ['all', 'day', 'month', 'year'];
+if (!in_array($overviewPeriod, $allowedOverviewPeriods, true)) $overviewPeriod = 'all';
 
-$overviewFrom = trim((string)($_GET['overview_from'] ?? ''));
-$overviewTo = trim((string)($_GET['overview_to'] ?? ''));
+$overviewValue = trim((string)($_GET['period_value'] ?? ''));
 $isValidOverviewDate = static function (string $date): bool {
     $parsed = DateTimeImmutable::createFromFormat('!Y-m-d', $date);
     return $parsed !== false && $parsed->format('Y-m-d') === $date;
 };
 
 $overviewDateCondition = '1=1';
+$previousDateCondition = '1=0';
 $overviewLabel = 'All Records';
-if ($overviewPeriod === 'today') {
-    $overviewDateCondition = '%s = CURDATE()';
-    $overviewLabel = 'Today';
-} elseif ($overviewPeriod === 'week') {
-    $overviewDateCondition = 'YEARWEEK(%s, 1) = YEARWEEK(CURDATE(), 1)';
-    $overviewLabel = 'This Week';
+$overviewInputType = '';
+$overviewInputLabel = '';
+// These normalized values drive every dashboard section except the independent
+// Decision Support preview.
+if ($overviewPeriod === 'day') {
+    if (!$isValidOverviewDate($overviewValue)) $overviewValue = date('Y-m-d');
+    $selectedDay = new DateTimeImmutable($overviewValue);
+    $previousDay = $selectedDay->modify('-1 day')->format('Y-m-d');
+    $overviewDateCondition = "%s = '{$overviewValue}'";
+    $previousDateCondition = "%s = '{$previousDay}'";
+    $overviewLabel = $selectedDay->format('F j, Y');
+    $overviewInputType = 'date';
+    $overviewInputLabel = 'Selected day';
 } elseif ($overviewPeriod === 'month') {
-    $overviewDateCondition = 'YEAR(%s) = YEAR(CURDATE()) AND MONTH(%s) = MONTH(CURDATE())';
-    $overviewLabel = 'This Month';
-} elseif ($overviewPeriod === 'custom') {
-    if ($isValidOverviewDate($overviewFrom) && $isValidOverviewDate($overviewTo) && $overviewFrom <= $overviewTo) {
-        $overviewDateCondition = "%s BETWEEN '{$overviewFrom}' AND '{$overviewTo}'";
-        $overviewLabel = date('M j, Y', strtotime($overviewFrom)) . ' – ' . date('M j, Y', strtotime($overviewTo));
-    } else {
-        $overviewPeriod = 'all';
-        $overviewLabel = 'All Records';
-        $overviewFrom = '';
-        $overviewTo = '';
-    }
+    if (!preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $overviewValue)) $overviewValue = date('Y-m');
+    $selectedMonth = new DateTimeImmutable($overviewValue . '-01');
+    $previousMonth = $selectedMonth->modify('-1 month')->format('Y-m');
+    $overviewDateCondition = "DATE_FORMAT(%s, '%%Y-%%m') = '{$overviewValue}'";
+    $previousDateCondition = "DATE_FORMAT(%s, '%%Y-%%m') = '{$previousMonth}'";
+    $overviewLabel = $selectedMonth->format('F Y');
+    $overviewInputType = 'month';
+    $overviewInputLabel = 'Selected month';
+} elseif ($overviewPeriod === 'year') {
+    $selectedYear = preg_match('/^\d{4}$/', $overviewValue) ? (int)$overviewValue : (int)date('Y');
+    $selectedYear = max(2000, min((int)date('Y') + 1, $selectedYear));
+    $overviewValue = (string)$selectedYear;
+    $overviewDateCondition = "YEAR(%s) = {$selectedYear}";
+    $previousDateCondition = 'YEAR(%s) = ' . ($selectedYear - 1);
+    $overviewLabel = $overviewValue;
+    $overviewInputType = 'number';
+    $overviewInputLabel = 'Selected year';
 }
 
 $overviewConditionFor = static function (string $column) use ($overviewDateCondition): string {
@@ -1069,6 +1076,55 @@ $overviewConditionFor = static function (string $column) use ($overviewDateCondi
     return $placeholderCount > 0
         ? vsprintf($overviewDateCondition, array_fill(0, $placeholderCount, $column))
         : $overviewDateCondition;
+};
+$previousConditionFor = static function (string $column) use ($previousDateCondition): string {
+    $placeholderCount = substr_count($previousDateCondition, '%s');
+    return $placeholderCount > 0
+        ? vsprintf($previousDateCondition, array_fill(0, $placeholderCount, $column))
+        : $previousDateCondition;
+};
+
+// Charts use their own timeline so changing a graph view does not disturb the
+// rest of the dashboard. Day = hourly, month = daily, year = monthly, all = yearly.
+$chartPeriod = strtolower(trim((string)($_GET['chart_scope'] ?? 'year')));
+$allowedChartPeriods = ['all', 'day', 'month', 'year'];
+if (!in_array($chartPeriod, $allowedChartPeriods, true)) $chartPeriod = 'year';
+
+$chartValue = trim((string)($_GET['chart_period_value'] ?? ''));
+$chartDateCondition = '1=1';
+$chartLabel = 'All Records';
+$chartInputType = '';
+$chartInputLabel = '';
+
+if ($chartPeriod === 'day') {
+    if (!$isValidOverviewDate($chartValue)) $chartValue = date('Y-m-d');
+    $selectedChartDay = new DateTimeImmutable($chartValue);
+    $chartDateCondition = "%s = '{$chartValue}'";
+    $chartLabel = $selectedChartDay->format('F j, Y');
+    $chartInputType = 'date';
+    $chartInputLabel = 'Selected day';
+} elseif ($chartPeriod === 'month') {
+    if (!preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $chartValue)) $chartValue = date('Y-m');
+    $selectedChartMonth = new DateTimeImmutable($chartValue . '-01');
+    $chartDateCondition = "DATE_FORMAT(%s, '%%Y-%%m') = '{$chartValue}'";
+    $chartLabel = $selectedChartMonth->format('F Y');
+    $chartInputType = 'month';
+    $chartInputLabel = 'Selected month';
+} elseif ($chartPeriod === 'year') {
+    $selectedChartYear = preg_match('/^\d{4}$/', $chartValue) ? (int)$chartValue : (int)date('Y');
+    $selectedChartYear = max(2000, min((int)date('Y') + 1, $selectedChartYear));
+    $chartValue = (string)$selectedChartYear;
+    $chartDateCondition = "YEAR(%s) = {$selectedChartYear}";
+    $chartLabel = $chartValue;
+    $chartInputType = 'number';
+    $chartInputLabel = 'Selected year';
+}
+
+$chartConditionFor = static function (string $column) use ($chartDateCondition): string {
+    $placeholderCount = substr_count($chartDateCondition, '%s');
+    return $placeholderCount > 0
+        ? vsprintf($chartDateCondition, array_fill(0, $placeholderCount, $column))
+        : $chartDateCondition;
 };
 
 $overviewMonitoringCondition = $overviewConditionFor('DATE(recorded_at)');
@@ -1110,6 +1166,7 @@ $allPendingViolations = scalar("
     SELECT COUNT(*)
     FROM violations
     WHERE LOWER(status) IN ('pending', 'unpaid', 'overdue')
+      AND " . $overviewConditionFor('violation_date') . "
 ", 0);
 
 $paymentSummary = fetch_one("
@@ -1163,12 +1220,10 @@ $onlineCameras = scalar("
 
 $totalCameras = scalar("SELECT COUNT(*) FROM cameras", 0);
 
-$trendData = monthly_violation_counts();
-$monthlyCollectionData = monthly_collection_totals();
-
 $recentAlerts = fetch_all("
     SELECT alert_type, severity, message, status, generated_at
     FROM monitoring_alerts
+    WHERE " . $overviewConditionFor('DATE(generated_at)') . "
     ORDER BY generated_at DESC
     LIMIT 5
 ");
@@ -1183,9 +1238,245 @@ $recentViolations = fetch_all("
         status,
         created_at
     FROM violations
+    WHERE " . $overviewConditionFor('violation_date') . "
     ORDER BY created_at DESC
     LIMIT 5
 ");
+
+$topViolators = fetch_all("
+    SELECT
+        MAX(ranked.driver_name) AS driver_name,
+        MAX(ranked.display_license) AS license_number,
+        COUNT(*) AS record_count,
+        SUM(CASE WHEN ranked.status IN ('pending', 'overdue') THEN 1 ELSE 0 END) AS unpaid_count,
+        COALESCE(SUM(ranked.penalty_amount), 0) AS total_penalties,
+        MAX(CONCAT(ranked.violation_date, ' ', ranked.violation_time)) AS last_recorded
+    FROM (
+        SELECT
+            v.driver_name,
+            v.status,
+            v.penalty_amount,
+            v.violation_date,
+            v.violation_time,
+            CASE
+                WHEN COALESCE(v.has_no_license, 0) = 0
+                     AND UPPER(TRIM(v.license_number)) NOT IN ('', 'NO LICENSE')
+                    THEN UPPER(TRIM(v.license_number))
+                ELSE ''
+            END AS display_license,
+            CASE
+                WHEN COALESCE(v.has_no_license, 0) = 0
+                     AND UPPER(TRIM(v.license_number)) NOT IN ('', 'NO LICENSE')
+                    THEN CONCAT('license:', UPPER(TRIM(v.license_number)))
+                WHEN v.date_of_birth IS NOT NULL
+                    THEN CONCAT('name-dob:', LOWER(TRIM(v.driver_name)), '|', v.date_of_birth)
+                ELSE CONCAT('name:', LOWER(TRIM(v.driver_name)))
+            END AS violator_key
+        FROM violations v
+        WHERE LOWER(v.status) <> 'cancelled'
+          AND " . $overviewConditionFor('v.violation_date') . "
+    ) ranked
+    GROUP BY ranked.violator_key
+    ORDER BY record_count DESC, total_penalties DESC, last_recorded DESC
+    LIMIT 5
+");
+
+$dailyTrafficSql = "
+    SELECT
+        recorded_date,
+        COALESCE(SUM(inbound_total), 0) AS inbound_total,
+        COALESCE(SUM(outbound_total), 0) AS outbound_total,
+        COALESCE(SUM(inbound_total + outbound_total), 0) AS vehicle_total
+    FROM (
+        SELECT
+            DATE(recorded_at) AS recorded_date,
+            camera_id,
+            MAX(inbound_count) AS inbound_total,
+            MAX(outbound_count) AS outbound_total
+        FROM camera_monitoring_logs
+        GROUP BY DATE(recorded_at), camera_id
+    ) daily_camera
+    GROUP BY recorded_date
+";
+
+$trafficPeriodSummary = fetch_one("
+    SELECT
+        COALESCE(SUM(vehicle_total), 0) AS vehicle_total,
+        COALESCE(SUM(inbound_total), 0) AS inbound_total,
+        COALESCE(SUM(outbound_total), 0) AS outbound_total,
+        COALESCE(AVG(vehicle_total), 0) AS daily_average,
+        COUNT(*) AS recorded_days
+    FROM ({$dailyTrafficSql}) traffic_days
+    WHERE " . $overviewConditionFor('recorded_date') . "
+") ?: [];
+
+$trafficBusiest = fetch_one("
+    SELECT recorded_date, vehicle_total
+    FROM ({$dailyTrafficSql}) traffic_days
+    WHERE " . $overviewConditionFor('recorded_date') . "
+    ORDER BY vehicle_total DESC, recorded_date DESC
+    LIMIT 1
+") ?: [];
+
+$periodViolationSummary = fetch_one("
+    SELECT
+        COUNT(*) AS violation_total,
+        COALESCE(SUM(penalty_amount), 0) AS assessed_amount,
+        COALESCE(SUM(CASE WHEN LOWER(status) IN ('pending', 'unpaid', 'overdue') THEN penalty_amount ELSE 0 END), 0) AS pending_amount
+    FROM violations
+    WHERE LOWER(status) <> 'cancelled'
+      AND " . $overviewConditionFor('violation_date') . "
+") ?: [];
+
+$previousViolationTotal = $overviewPeriod === 'all' ? 0 : (int)scalar("
+    SELECT COUNT(*)
+    FROM violations
+    WHERE LOWER(status) <> 'cancelled'
+      AND " . $previousConditionFor('violation_date') . "
+", 0);
+
+$periodCollectedAmount = (float)scalar("
+    SELECT COALESCE(SUM(amount_paid), 0)
+    FROM payments
+    WHERE LOWER(payment_status) = 'completed'
+      AND " . $overviewConditionFor('DATE(payment_date)') . "
+", 0);
+
+$periodTopViolation = fetch_one("
+    SELECT violation_type AS label, COUNT(*) AS total
+    FROM violations
+    WHERE LOWER(status) <> 'cancelled'
+      AND " . $overviewConditionFor('violation_date') . "
+    GROUP BY violation_type
+    ORDER BY total DESC, violation_type ASC
+    LIMIT 1
+") ?: [];
+
+$periodTopLocation = fetch_one("
+    SELECT violation_location AS label, COUNT(*) AS total
+    FROM violations
+    WHERE LOWER(status) <> 'cancelled'
+      AND " . $overviewConditionFor('violation_date') . "
+    GROUP BY violation_location
+    ORDER BY total DESC, violation_location ASC
+    LIMIT 1
+") ?: [];
+
+$periodPeak = fetch_one("
+    SELECT DAYNAME(violation_date) AS peak_day, HOUR(violation_time) AS peak_hour, COUNT(*) AS total
+    FROM violations
+    WHERE LOWER(status) <> 'cancelled'
+      AND " . $overviewConditionFor('violation_date') . "
+    GROUP BY DAYNAME(violation_date), HOUR(violation_time)
+    ORDER BY total DESC, peak_hour ASC
+    LIMIT 1
+") ?: [];
+
+$trendLabels = [];
+$trendData = [];
+$collectionTrendData = [];
+$violationTrendRows = [];
+$collectionTrendRows = [];
+
+if ($chartPeriod === 'day') {
+    for ($hour = 0; $hour < 24; $hour++) {
+        $trendLabels[$hour] = date('g A', mktime($hour, 0));
+        $trendData[$hour] = 0;
+        $collectionTrendData[$hour] = 0.0;
+    }
+    $violationTrendRows = fetch_all("
+        SELECT HOUR(violation_time) AS bucket, COUNT(*) AS total
+        FROM violations
+        WHERE LOWER(status) <> 'cancelled' AND " . $chartConditionFor('violation_date') . "
+        GROUP BY HOUR(violation_time)
+    ");
+    $collectionTrendRows = fetch_all("
+        SELECT HOUR(payment_date) AS bucket, COALESCE(SUM(amount_paid), 0) AS total
+        FROM payments
+        WHERE LOWER(payment_status) = 'completed' AND " . $chartConditionFor('DATE(payment_date)') . "
+        GROUP BY HOUR(payment_date)
+    ");
+} elseif ($chartPeriod === 'month') {
+    $daysInMonth = (int)$selectedChartMonth->format('t');
+    for ($day = 1; $day <= $daysInMonth; $day++) {
+        $trendLabels[$day] = (string)$day;
+        $trendData[$day] = 0;
+        $collectionTrendData[$day] = 0.0;
+    }
+    $violationTrendRows = fetch_all("
+        SELECT DAY(violation_date) AS bucket, COUNT(*) AS total
+        FROM violations
+        WHERE LOWER(status) <> 'cancelled' AND " . $chartConditionFor('violation_date') . "
+        GROUP BY DAY(violation_date)
+    ");
+    $collectionTrendRows = fetch_all("
+        SELECT DAY(payment_date) AS bucket, COALESCE(SUM(amount_paid), 0) AS total
+        FROM payments
+        WHERE LOWER(payment_status) = 'completed' AND " . $chartConditionFor('DATE(payment_date)') . "
+        GROUP BY DAY(payment_date)
+    ");
+} elseif ($chartPeriod === 'year') {
+    $monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    foreach ($monthNames as $index => $monthName) {
+        $bucket = $index + 1;
+        $trendLabels[$bucket] = $monthName;
+        $trendData[$bucket] = 0;
+        $collectionTrendData[$bucket] = 0.0;
+    }
+    $violationTrendRows = fetch_all("
+        SELECT MONTH(violation_date) AS bucket, COUNT(*) AS total
+        FROM violations
+        WHERE LOWER(status) <> 'cancelled' AND " . $chartConditionFor('violation_date') . "
+        GROUP BY MONTH(violation_date)
+    ");
+    $collectionTrendRows = fetch_all("
+        SELECT MONTH(payment_date) AS bucket, COALESCE(SUM(amount_paid), 0) AS total
+        FROM payments
+        WHERE LOWER(payment_status) = 'completed' AND " . $chartConditionFor('DATE(payment_date)') . "
+        GROUP BY MONTH(payment_date)
+    ");
+} else {
+    $violationTrendRows = fetch_all("
+        SELECT YEAR(violation_date) AS bucket, COUNT(*) AS total
+        FROM violations
+        WHERE LOWER(status) <> 'cancelled'
+        GROUP BY YEAR(violation_date)
+    ");
+    $collectionTrendRows = fetch_all("
+        SELECT YEAR(payment_date) AS bucket, COALESCE(SUM(amount_paid), 0) AS total
+        FROM payments
+        WHERE LOWER(payment_status) = 'completed'
+        GROUP BY YEAR(payment_date)
+    ");
+    $availableYears = array_merge(
+        array_map(static fn(array $row): int => (int)$row['bucket'], $violationTrendRows),
+        array_map(static fn(array $row): int => (int)$row['bucket'], $collectionTrendRows)
+    );
+    if (!$availableYears) $availableYears[] = (int)date('Y');
+    for ($year = min($availableYears); $year <= max($availableYears); $year++) {
+        $trendLabels[$year] = (string)$year;
+        $trendData[$year] = 0;
+        $collectionTrendData[$year] = 0.0;
+    }
+}
+
+foreach ($violationTrendRows as $row) {
+    $bucket = (int)($row['bucket'] ?? 0);
+    if (array_key_exists($bucket, $trendData)) $trendData[$bucket] = (int)$row['total'];
+}
+foreach ($collectionTrendRows as $row) {
+    $bucket = (int)($row['bucket'] ?? 0);
+    if (array_key_exists($bucket, $collectionTrendData)) $collectionTrendData[$bucket] = (float)$row['total'];
+}
+
+$trendLabels = array_values($trendLabels);
+$trendData = array_values($trendData);
+$monthlyCollectionData = array_values($collectionTrendData);
+$trendPeriodDescription = $chartPeriod === 'day'
+    ? 'Hourly records · ' . $chartLabel
+    : ($chartPeriod === 'month'
+        ? 'Daily records · ' . $chartLabel
+        : ($chartPeriod === 'year' ? 'Monthly records · ' . $chartLabel : 'Yearly records · All Records'));
 
 $inboundToday = (int) ($todaySummary['inbound_total'] ?? 0);
 $outboundToday = (int) ($todaySummary['outbound_total'] ?? 0);
@@ -1203,6 +1494,66 @@ $completedPaymentsToday = (int) ($paymentSummary['completed_payments_today'] ?? 
 $alertsToday = (int) ($alertSummary['alerts_today'] ?? 0);
 $activeAlerts = (int) ($alertSummary['active_alerts'] ?? 0);
 
+$trafficPeriodTotal = (int)($trafficPeriodSummary['vehicle_total'] ?? 0);
+$trafficPeriodInbound = (int)($trafficPeriodSummary['inbound_total'] ?? 0);
+$trafficPeriodOutbound = (int)($trafficPeriodSummary['outbound_total'] ?? 0);
+$trafficDailyAverage = (float)($trafficPeriodSummary['daily_average'] ?? 0);
+$trafficRecordedDays = (int)($trafficPeriodSummary['recorded_days'] ?? 0);
+$trafficBusiestTotal = (int)($trafficBusiest['vehicle_total'] ?? 0);
+$trafficBusiestDate = trim((string)($trafficBusiest['recorded_date'] ?? ''));
+$trafficBusiestDateLabel = $trafficBusiestDate !== '' ? date('M j, Y', strtotime($trafficBusiestDate)) : 'No data';
+$trafficActivityLabel = $trafficPeriodTotal <= 0
+    ? 'No traffic record'
+    : ($trafficDailyAverage >= 100 ? 'High activity' : ($trafficDailyAverage >= 40 ? 'Moderate activity' : 'Light activity'));
+
+$periodViolationTotal = (int)($periodViolationSummary['violation_total'] ?? 0);
+$periodAssessedAmount = (float)($periodViolationSummary['assessed_amount'] ?? 0);
+$periodPendingAmount = (float)($periodViolationSummary['pending_amount'] ?? 0);
+$periodCollectionRate = $periodAssessedAmount > 0
+    ? min(100, ($periodCollectedAmount / $periodAssessedAmount) * 100)
+    : 0.0;
+$periodViolationChange = ($overviewPeriod !== 'all' && $previousViolationTotal > 0)
+    ? (($periodViolationTotal - $previousViolationTotal) / $previousViolationTotal) * 100
+    : 0.0;
+$periodChangeCopy = $overviewPeriod === 'all'
+    ? 'All-time total'
+    : ($previousViolationTotal > 0
+        ? sprintf('%+.1f%% vs previous period', $periodViolationChange)
+        : 'No previous-period baseline');
+
+if ($periodViolationTotal === 0) {
+    $periodStatusLabel = 'No records';
+    $periodStatusClass = 'monthly-state-good';
+    $periodStatusBadgeClass = 'text-bg-secondary';
+    $periodStatusIcon = 'bi-check-circle';
+} elseif ($periodViolationChange >= 25 || $periodCollectionRate < 50) {
+    $periodStatusLabel = 'Needs attention';
+    $periodStatusClass = 'monthly-state-critical';
+    $periodStatusBadgeClass = 'text-bg-danger';
+    $periodStatusIcon = 'bi-exclamation-triangle';
+} elseif ($periodViolationChange > 0 || $periodCollectionRate < 75) {
+    $periodStatusLabel = 'Monitor closely';
+    $periodStatusClass = 'monthly-state-warning';
+    $periodStatusBadgeClass = 'text-bg-warning';
+    $periodStatusIcon = 'bi-eye';
+} else {
+    $periodStatusLabel = 'Stable';
+    $periodStatusClass = 'monthly-state-good';
+    $periodStatusBadgeClass = 'text-bg-success';
+    $periodStatusIcon = 'bi-check-circle';
+}
+
+$periodTopViolationLabel = trim((string)($periodTopViolation['label'] ?? '')) ?: 'No data';
+$periodTopLocationLabel = trim((string)($periodTopLocation['label'] ?? '')) ?: 'No data';
+$periodPeakDay = trim((string)($periodPeak['peak_day'] ?? '')) ?: 'No data';
+$periodPeakHour = isset($periodPeak['peak_hour'])
+    ? date('g A', mktime((int)$periodPeak['peak_hour'], 0))
+    : '';
+$periodPeakLabel = $periodPeakHour !== '' ? $periodPeakDay . ' · ' . $periodPeakHour : $periodPeakDay;
+$periodNarrative = $periodViolationTotal > 0
+    ? "{$overviewLabel} recorded {$periodViolationTotal} non-cancelled violation(s). {$periodTopViolationLabel} was the most common offense, led by {$periodTopLocationLabel}."
+    : "No non-cancelled violations were recorded for {$overviewLabel}.";
+
 $currentVehicles = (int) ($latestMonitoring['vehicle_count'] ?? 0);
 $currentInbound = (int) ($latestMonitoring['inbound_count'] ?? 0);
 $currentOutbound = (int) ($latestMonitoring['outbound_count'] ?? 0);
@@ -1216,8 +1567,6 @@ $monitoringRecordedAtTimestamp = $monitoringRecordedAt !== '' ? strtotime($monit
 if ($monitoringRecordedAtTimestamp !== false) {
     $monitoringRecordedAtLabel = date('F j, Y, g:i A', $monitoringRecordedAtTimestamp);
 }
-$latestTrafficDate = (string)scalar("SELECT COALESCE(DATE(MAX(recorded_at)), CURDATE()) FROM camera_monitoring_logs", date('Y-m-d'));
-
 page_start('Dashboard', 'dashboard', 'Search violations, plates, locations...');
 ?>
 
@@ -1257,7 +1606,7 @@ page_start('Dashboard', 'dashboard', 'Search violations, plates, locations...');
   flex-wrap: wrap;
 }
 .overview-filter-form .dashboard-filter { min-width: 145px; }
-.overview-filter-form .overview-custom-date { min-width: 155px; }
+#dashboardPeriodValueField { min-width: 165px; }
 .overview-period-badge {
   display: inline-flex;
   align-items: center;
@@ -1318,6 +1667,102 @@ page_start('Dashboard', 'dashboard', 'Search violations, plates, locations...');
   border-radius: 10px !important;
   font-weight: 700;
 }
+.chart-filter-panel {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border: 1px solid rgba(16, 47, 73, .13);
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(255,255,255,.96), rgba(235,248,246,.88));
+  box-shadow: 0 8px 20px rgba(16, 47, 73, .055);
+}
+.chart-filter-copy { min-width: 0; }
+.chart-filter-copy strong { display: block; color: #102f49; font-size: .84rem; }
+.chart-filter-copy small { display: block; margin-top: 2px; color: #667a74; font-size: .68rem; }
+.chart-filter-form { display: flex; align-items: flex-end; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.chart-filter-form .dashboard-filter { min-width: 145px; }
+#chartPeriodValueField { min-width: 165px; }
+.top-violators-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+.top-violator-entry {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+  padding: 15px;
+  overflow: hidden;
+  border: 1px solid rgba(16, 47, 73, .13);
+  border-radius: 14px;
+  background: linear-gradient(145deg, #fff, #f5faf9);
+  color: #102f49;
+  text-decoration: none;
+  transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+}
+.top-violator-entry:hover {
+  transform: translateY(-2px);
+  border-color: rgba(8, 125, 120, .38);
+  color: #102f49;
+  box-shadow: 0 12px 24px rgba(16, 47, 73, .1);
+}
+.top-violator-entry-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.top-violator-rank {
+  display: grid;
+  place-items: center;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: #dff4f1;
+  color: #087d78;
+  font-size: .76rem;
+  font-weight: 900;
+}
+.top-violator-entry:nth-child(1) .top-violator-rank { background: #fff0bd; color: #8a6410; }
+.top-violator-entry:nth-child(2) .top-violator-rank { background: #e7edf1; color: #53656f; }
+.top-violator-entry:nth-child(3) .top-violator-rank { background: #f5dfcf; color: #92572f; }
+
+/* Compact Bootstrap-style context tooltip for hover and keyboard focus. */
+.dashboard-info-card {
+  cursor: help;
+}
+.dashboard-info-card:is(a, button) { cursor: pointer; }
+.dashboard-info-card:focus-visible {
+  outline: 3px solid rgba(8, 125, 120, .28);
+  outline-offset: 3px;
+}
+.dashboard-card-tooltip {
+  --bs-tooltip-max-width: 250px;
+  --bs-tooltip-bg: #102f49;
+  --bs-tooltip-color: #fff;
+  --bs-tooltip-opacity: .98;
+  --bs-tooltip-padding-x: .75rem;
+  --bs-tooltip-padding-y: .55rem;
+}
+.dashboard-card-tooltip .tooltip-inner {
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 8px;
+  box-shadow: 0 8px 22px rgba(16,47,73,.24);
+  font-size: .75rem;
+  font-weight: 500;
+  line-height: 1.45;
+  text-align: left;
+}
+.top-violator-person { min-width: 0; }
+.top-violator-person strong { display: block; overflow: hidden; color: #102f49; font-size: .82rem; font-weight: 800; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.top-violator-person small { display: block; overflow: hidden; margin-top: 2px; color: #50665f; font-size: .68rem; font-weight: 600; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.top-violator-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+.top-violator-metric { padding: 8px 9px; border: 1px solid rgba(8, 125, 120, .09); border-radius: 9px; background: #edf7f5; }
+.top-violator-metric:last-child { grid-column: 1 / -1; }
+body.municipal-portal .top-violator-person strong { color: #102f49 !important; }
+body.municipal-portal .top-violator-person small { color: #50665f !important; }
+body.municipal-portal .top-violator-metric > span { display: block; color: #4f6760 !important; font-size: .62rem; font-weight: 800; letter-spacing: .045em; text-transform: uppercase; }
+body.municipal-portal .top-violator-metric > strong { display: block; margin-top: 2px; color: #102f49 !important; font-size: .82rem; font-weight: 800; }
+@media (max-width: 1199.98px) { .top-violators-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 767.98px) {
   .dashboard-filter-row,
   .dashboard-filter { width: 100%; }
@@ -1326,6 +1771,10 @@ page_start('Dashboard', 'dashboard', 'Search violations, plates, locations...');
   .dashboard-overview-heading { align-items: stretch; flex-direction: column; }
   .overview-filter-form { justify-content: stretch; }
   .overview-filter-form .dashboard-filter { flex: 1 1 145px; width: auto; }
+  .chart-filter-panel { align-items: stretch; flex-direction: column; }
+  .chart-filter-form { justify-content: stretch; }
+  .chart-filter-form .dashboard-filter { flex: 1 1 145px; width: auto; }
+  .top-violators-grid { grid-template-columns: 1fr; }
 }
 </style>
 
@@ -1342,24 +1791,30 @@ page_start('Dashboard', 'dashboard', 'Search violations, plates, locations...');
   <span>Operational overview <span class="overview-period-badge"><i class="bi bi-funnel"></i><?= esc($overviewLabel) ?></span></span>
   <form class="overview-filter-form" method="get" action="">
     <div class="dashboard-filter">
-      <label for="overviewPeriod">Show records</label>
-      <select class="form-select" id="overviewPeriod" name="overview_period">
+      <label for="dashboardScope">Record period</label>
+      <select class="form-select" id="dashboardScope" name="dashboard_scope">
         <option value="all" <?= $overviewPeriod === 'all' ? 'selected' : '' ?>>All Records</option>
-        <option value="today" <?= $overviewPeriod === 'today' ? 'selected' : '' ?>>Today</option>
-        <option value="week" <?= $overviewPeriod === 'week' ? 'selected' : '' ?>>This Week</option>
-        <option value="month" <?= $overviewPeriod === 'month' ? 'selected' : '' ?>>This Month</option>
-        <option value="custom" <?= $overviewPeriod === 'custom' ? 'selected' : '' ?>>Custom Range</option>
+        <option value="day" <?= $overviewPeriod === 'day' ? 'selected' : '' ?>>Day</option>
+        <option value="month" <?= $overviewPeriod === 'month' ? 'selected' : '' ?>>Month</option>
+        <option value="year" <?= $overviewPeriod === 'year' ? 'selected' : '' ?>>Year</option>
       </select>
     </div>
-    <div class="dashboard-filter overview-custom-date" <?= $overviewPeriod === 'custom' ? '' : 'hidden' ?>>
-      <label for="overviewFrom">From</label>
-      <input class="form-control" type="date" id="overviewFrom" name="overview_from" value="<?= esc($overviewFrom) ?>" max="<?= esc(date('Y-m-d')) ?>">
+    <div class="dashboard-filter" id="dashboardPeriodValueField" <?= $overviewPeriod === 'all' ? 'hidden' : '' ?>>
+      <label for="dashboardPeriodValue" id="dashboardPeriodValueLabel"><?= esc($overviewInputLabel ?: 'Selected period') ?></label>
+      <input
+        class="form-control"
+        type="<?= esc($overviewInputType ?: 'date') ?>"
+        id="dashboardPeriodValue"
+        name="period_value"
+        value="<?= esc($overviewValue) ?>"
+        <?= $overviewPeriod === 'year' ? 'min="2000" max="' . esc((string)((int)date('Y') + 1)) . '" step="1"' : '' ?>
+        <?= $overviewPeriod === 'day' ? 'max="' . esc(date('Y-m-d')) . '"' : '' ?>
+        <?= $overviewPeriod === 'month' ? 'max="' . esc(date('Y-m')) . '"' : '' ?>
+      >
     </div>
-    <div class="dashboard-filter overview-custom-date" <?= $overviewPeriod === 'custom' ? '' : 'hidden' ?>>
-      <label for="overviewTo">To</label>
-      <input class="form-control" type="date" id="overviewTo" name="overview_to" value="<?= esc($overviewTo) ?>" max="<?= esc(date('Y-m-d')) ?>">
-    </div>
-    <button class="btn btn-primary dashboard-filter-action" type="submit"><i class="bi bi-funnel me-1"></i>Apply</button>
+    <input type="hidden" name="chart_scope" value="<?= esc($chartPeriod) ?>">
+    <?php if ($chartPeriod !== 'all'): ?><input type="hidden" name="chart_period_value" value="<?= esc($chartValue) ?>"><?php endif; ?>
+    <button class="btn btn-primary dashboard-filter-action" type="submit"><i class="bi bi-funnel me-1"></i>Apply to Dashboard</button>
   </form>
 </div>
 <div class="row g-3 mb-4">
@@ -1417,12 +1872,12 @@ page_start('Dashboard', 'dashboard', 'Search violations, plates, locations...');
 </style>
 <div class="dashboard-section-heading"><span>Historical analytics</span></div>
 <div class="section-card dated-traffic-card mb-4">
-  <div class="section-head"><div><span class="dashboard-eyebrow">HISTORICAL TRAFFIC</span><h5 class="mb-1">Vehicle Count by Date</h5><small class="text-muted">Select a recorded date to compare traffic volume and identify busier days.</small></div><div class="dashboard-filter-row"><div class="dashboard-filter"><label for="vehicleCountDate">Traffic date</label><input class="form-control" type="date" id="vehicleCountDate" value="<?= esc($latestTrafficDate) ?>" max="<?= esc(date('Y-m-d')) ?>"></div></div></div>
+  <div class="section-head"><div><span class="dashboard-eyebrow">HISTORICAL TRAFFIC</span><h5 class="mb-1">Vehicle Count — <?= esc($overviewLabel) ?></h5><small class="text-muted">Traffic volume follows the global dashboard period.</small></div><span class="overview-period-badge"><i class="bi bi-calendar3"></i><?= esc($overviewLabel) ?></span></div>
   <div class="dated-traffic-grid">
-    <div class="dated-traffic-main"><small id="vehicleDateLabel">Selected date</small><strong id="datedVehicleTotal">—</strong><span id="datedVehicleDirections">Loading vehicle counts…</span></div>
-    <div class="dated-traffic-metric"><span class="dated-traffic-icon"><i class="bi bi-bar-chart-line"></i></span><small>Compared with average</small><strong id="datedVehicleComparison">—</strong><span id="datedVehicleAverage">Daily average unavailable</span></div>
-    <div class="dated-traffic-metric"><span class="dated-traffic-icon"><i class="bi bi-trophy"></i></span><small>Busiest recorded date</small><strong id="busiestTrafficDate">—</strong><span id="busiestTrafficTotal">No recorded data</span></div>
-    <div class="dated-traffic-metric"><span class="dated-traffic-icon"><i class="bi bi-lightbulb"></i></span><small>Interpretation</small><strong id="datedTrafficLevel">—</strong><span id="datedTrafficNarrative">Select a date to review traffic.</span></div>
+    <div class="dated-traffic-main"><small><?= esc($overviewLabel) ?></small><strong><?= num($trafficPeriodTotal) ?></strong><span><?= num($trafficPeriodInbound) ?> inbound · <?= num($trafficPeriodOutbound) ?> outbound</span></div>
+    <div class="dated-traffic-metric"><span class="dated-traffic-icon"><i class="bi bi-bar-chart-line"></i></span><small>Daily average</small><strong><?= num(round($trafficDailyAverage)) ?></strong><span>Across <?= num($trafficRecordedDays) ?> recorded day<?= $trafficRecordedDays === 1 ? '' : 's' ?></span></div>
+    <div class="dated-traffic-metric"><span class="dated-traffic-icon"><i class="bi bi-trophy"></i></span><small>Busiest recorded date</small><strong><?= esc($trafficBusiestDateLabel) ?></strong><span><?= $trafficBusiestDate !== '' ? num($trafficBusiestTotal) . ' vehicles recorded' : 'No recorded data' ?></span></div>
+    <div class="dated-traffic-metric"><span class="dated-traffic-icon"><i class="bi bi-lightbulb"></i></span><small>Interpretation</small><strong><?= esc($trafficActivityLabel) ?></strong><span><?= $trafficPeriodTotal > 0 ? 'Based on saved monitoring data in the selected period.' : 'No monitoring data was saved in this period.' ?></span></div>
   </div>
 </div>
 
@@ -1450,30 +1905,24 @@ page_start('Dashboard', 'dashboard', 'Search violations, plates, locations...');
 #monthlyExecutiveSummary .monthly-kpi-offense { background: linear-gradient(145deg, #fff, #fff4dc) !important; border-color: #e7bc58 !important; }
 #monthlyExecutiveSummary .monthly-kpi-location { background: linear-gradient(145deg, #fff, #e9f7fa) !important; border-color: #6eb7c4 !important; }
 </style>
-<div class="section-card mb-4" id="monthlyExecutiveSummary">
+<div class="section-card mb-4 <?= esc($periodStatusClass) ?>" id="monthlyExecutiveSummary">
   <div class="section-head">
     <div>
-      <span class="dashboard-eyebrow">MONTHLY EXECUTIVE SUMMARY</span>
-      <h5 class="mb-1" id="monthlySummaryTitle"><?= esc(date('F Y')) ?></h5>
-      <small class="text-muted">Performance, collections, enforcement patterns, and month-over-month movement</small>
+      <span class="dashboard-eyebrow">PERIOD EXECUTIVE SUMMARY</span>
+      <h5 class="mb-1"><?= esc($overviewLabel) ?></h5>
+      <small class="text-muted">Performance, collections, and enforcement patterns for the global dashboard period</small>
     </div>
-    <div class="dashboard-filter-row">
-      <span class="tag" id="monthlySummaryStatus"><i class="bi bi-circle-fill me-1 monthly-state-icon"></i>Loading</span>
-      <div class="dashboard-filter">
-        <label for="monthlySummaryMonth">Summary month</label>
-        <input class="form-control" type="month" id="monthlySummaryMonth" value="<?= esc(date('Y-m')) ?>">
-      </div>
-    </div>
+    <span class="tag <?= esc($periodStatusBadgeClass) ?>"><i class="bi <?= esc($periodStatusIcon) ?> me-1 monthly-state-icon"></i><?= esc(strtoupper($periodStatusLabel)) ?></span>
   </div>
   <div class="row g-3 mt-1">
-    <div class="col-sm-6 col-xl-3"><div class="stat-card monthly-kpi monthly-kpi-violations h-100"><div class="stat-label"><i class="bi bi-graph-up-arrow me-1 text-primary"></i>Monthly Violations</div><div class="stat-value" id="monthlyViolationCount">—</div><small id="monthlyViolationChange" class="text-muted">Compared with last month</small></div></div>
-    <div class="col-sm-6 col-xl-3"><div class="stat-card monthly-kpi monthly-kpi-collected h-100"><div class="stat-label"><i class="bi bi-cash-stack me-1 text-success"></i>Collected</div><div class="stat-value" id="monthlyCollected">—</div><small id="monthlyCollectionRate" class="text-muted">Collection rate</small></div></div>
-    <div class="col-sm-6 col-xl-3"><div class="stat-card monthly-kpi monthly-kpi-offense h-100"><div class="stat-label"><i class="bi bi-cone-striped me-1 text-warning"></i>Leading Violation</div><div class="h5 mt-2 mb-1" id="monthlyTopViolation">—</div><small id="monthlyTopViolationCount" class="text-muted">No records</small></div></div>
-    <div class="col-sm-6 col-xl-3"><div class="stat-card monthly-kpi monthly-kpi-location h-100"><div class="stat-label"><i class="bi bi-geo-alt-fill me-1 text-info"></i>Highest Activity Area</div><div class="h5 mt-2 mb-1" id="monthlyTopLocation">—</div><small id="monthlyPeakPeriod" class="text-muted">Peak period unavailable</small></div></div>
+    <div class="col-sm-6 col-xl-3"><div class="stat-card monthly-kpi monthly-kpi-violations h-100"><div class="stat-label"><i class="bi bi-graph-up-arrow me-1 text-primary"></i>Period Violations</div><div class="stat-value"><?= num($periodViolationTotal) ?></div><small class="<?= $periodViolationChange > 0 ? 'text-danger' : ($periodViolationChange < 0 ? 'text-success' : 'text-muted') ?>"><?= esc($periodChangeCopy) ?></small></div></div>
+    <div class="col-sm-6 col-xl-3"><div class="stat-card monthly-kpi monthly-kpi-collected h-100"><div class="stat-label"><i class="bi bi-cash-stack me-1 text-success"></i>Collected</div><div class="stat-value"><?= short_money($periodCollectedAmount) ?></div><small class="text-muted"><?= number_format($periodCollectionRate, 1) ?>% collection rate · <?= short_money($periodPendingAmount) ?> pending</small></div></div>
+    <div class="col-sm-6 col-xl-3"><div class="stat-card monthly-kpi monthly-kpi-offense h-100"><div class="stat-label"><i class="bi bi-cone-striped me-1 text-warning"></i>Leading Violation</div><div class="h5 mt-2 mb-1"><?= esc($periodTopViolationLabel) ?></div><small class="text-muted"><?= num($periodTopViolation['total'] ?? 0) ?> recorded cases</small></div></div>
+    <div class="col-sm-6 col-xl-3"><div class="stat-card monthly-kpi monthly-kpi-location h-100"><div class="stat-label"><i class="bi bi-geo-alt-fill me-1 text-info"></i>Highest Activity Area</div><div class="h5 mt-2 mb-1"><?= esc($periodTopLocationLabel) ?></div><small class="text-muted">Peak: <?= esc($periodPeakLabel) ?></small></div></div>
   </div>
   <div class="alert alert-light border mt-3 mb-0" role="note">
     <strong><i class="bi bi-lightbulb me-1"></i>Management interpretation:</strong>
-    <span id="monthlySummaryNarrative">Loading monthly performance summary...</span>
+    <span><?= esc($periodNarrative) ?></span>
   </div>
 </div>
 
@@ -1669,15 +2118,86 @@ body.municipal-portal #aiDecisionCard .ai-preview-item:hover{transform:translate
   <?php endif; ?>
 </div>
 
+<div class="dashboard-section-heading"><span>Enforcement insights</span></div>
+<div class="section-card mb-4">
+  <div class="section-head">
+    <div>
+      <h6>Top 5 Violators</h6>
+      <small class="text-muted">Ranked within <?= esc($overviewLabel) ?> by non-cancelled records, then assessed fines.</small>
+    </div>
+    <a href="<?= esc(app_url('violations.php')) ?>" class="small fw-semibold text-decoration-none">Open violations</a>
+  </div>
+
+  <?php if (!$topViolators): ?>
+    <?php empty_state('No active violation records are available for ranking.'); ?>
+  <?php else: ?>
+    <div class="top-violators-grid">
+      <?php foreach ($topViolators as $rankIndex => $topViolator): ?>
+        <?php
+          $topName = trim((string)($topViolator['driver_name'] ?? '')) ?: 'Unknown driver';
+          $topLicense = trim((string)($topViolator['license_number'] ?? ''));
+        ?>
+        <a class="top-violator-entry" href="<?= esc(app_url('violations.php?search=' . rawurlencode($topName))) ?>">
+          <div class="top-violator-entry-head">
+            <span class="top-violator-rank">#<?= $rankIndex + 1 ?></span>
+            <span class="top-violator-person">
+              <strong><?= esc($topName) ?></strong>
+              <small><?= esc($topLicense !== '' ? $topLicense : 'No license recorded') ?></small>
+            </span>
+          </div>
+          <span class="top-violator-metrics">
+            <span class="top-violator-metric"><span>Records</span><strong><?= num($topViolator['record_count']) ?></strong></span>
+            <span class="top-violator-metric"><span>Unpaid</span><strong><?= num($topViolator['unpaid_count']) ?></strong></span>
+            <span class="top-violator-metric"><span>Total fines</span><strong><?= peso($topViolator['total_penalties']) ?></strong></span>
+          </span>
+        </a>
+      <?php endforeach; ?>
+    </div>
+  <?php endif; ?>
+</div>
+
 <!-- Treasurer-style violation and collection charts -->
 <div class="dashboard-section-heading"><span>Performance trends</span></div>
+<div class="chart-filter-panel mb-3">
+  <div class="chart-filter-copy">
+    <strong><i class="bi bi-bar-chart-line me-1"></i>Graph timeline</strong>
+    <small>One timeline controls both the violation and collection charts.</small>
+  </div>
+  <form class="chart-filter-form" method="get" action="">
+    <input type="hidden" name="dashboard_scope" value="<?= esc($overviewPeriod) ?>">
+    <?php if ($overviewPeriod !== 'all'): ?><input type="hidden" name="period_value" value="<?= esc($overviewValue) ?>"><?php endif; ?>
+    <div class="dashboard-filter">
+      <label for="chartScope">Chart interval</label>
+      <select class="form-select" id="chartScope" name="chart_scope">
+        <option value="day" <?= $chartPeriod === 'day' ? 'selected' : '' ?>>Day · Hourly</option>
+        <option value="month" <?= $chartPeriod === 'month' ? 'selected' : '' ?>>Month · Daily</option>
+        <option value="year" <?= $chartPeriod === 'year' ? 'selected' : '' ?>>Year · Monthly</option>
+        <option value="all" <?= $chartPeriod === 'all' ? 'selected' : '' ?>>All Records · Yearly</option>
+      </select>
+    </div>
+    <div class="dashboard-filter" id="chartPeriodValueField" <?= $chartPeriod === 'all' ? 'hidden' : '' ?>>
+      <label for="chartPeriodValue" id="chartPeriodValueLabel"><?= esc($chartInputLabel ?: 'Selected period') ?></label>
+      <input
+        class="form-control"
+        type="<?= esc($chartInputType ?: 'date') ?>"
+        id="chartPeriodValue"
+        name="chart_period_value"
+        value="<?= esc($chartValue) ?>"
+        <?= $chartPeriod === 'year' ? 'min="2000" max="' . esc((string)((int)date('Y') + 1)) . '" step="1"' : '' ?>
+        <?= $chartPeriod === 'day' ? 'max="' . esc(date('Y-m-d')) . '"' : '' ?>
+        <?= $chartPeriod === 'month' ? 'max="' . esc(date('Y-m')) . '"' : '' ?>
+      >
+    </div>
+    <button class="btn btn-primary dashboard-filter-action" type="submit"><i class="bi bi-arrow-repeat me-1"></i>Update Graphs</button>
+  </form>
+</div>
 <div class="row g-3 mb-4">
   <div class="col-lg-6">
     <div class="section-card h-100">
       <div class="section-head">
         <div>
           <h6>Violation Records</h6>
-          <small class="text-muted">Monthly records · <?= esc(date('Y')) ?></small>
+          <small class="text-muted"><?= esc($trendPeriodDescription) ?></small>
         </div>
       </div>
       <div style="height:240px"><canvas id="trendChart"></canvas></div>
@@ -1688,8 +2208,8 @@ body.municipal-portal #aiDecisionCard .ai-preview-item:hover{transform:translate
     <div class="section-card h-100">
       <div class="section-head">
         <div>
-          <h6>Monthly Collection</h6>
-          <small class="text-muted">Completed payments · <?= esc(date('Y')) ?></small>
+          <h6>Collection Records</h6>
+          <small class="text-muted"><?= esc($trendPeriodDescription) ?> · Completed payments</small>
         </div>
       </div>
       <div style="height:240px"><canvas id="monthlyCollectionChart"></canvas></div>
@@ -1755,26 +2275,168 @@ body.municipal-portal #aiDecisionCard .ai-preview-item:hover{transform:translate
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>
-const overviewPeriodSelect = document.getElementById('overviewPeriod');
-const overviewCustomDateFields = document.querySelectorAll('.overview-custom-date');
-const syncOverviewCustomDates = () => {
-  const showCustomDates = overviewPeriodSelect?.value === 'custom';
-  overviewCustomDateFields.forEach((field) => {
-    field.hidden = !showCustomDates;
+// Give every compact dashboard card a useful explanation on hover and focus.
+(function addDashboardCardDetails() {
+  const cards = document.querySelectorAll([
+    '.dashboard-kpi',
+    '.dated-traffic-main',
+    '.dated-traffic-metric',
+    '.monthly-kpi',
+    '.ai-preview-item',
+    '.compact-metric',
+    '#currentMonitoringCard .mini-metric',
+    '.top-violator-entry'
+  ].join(','));
+
+  const descriptions = [
+    ['dashboard-kpi-vehicles', 'Total vehicles recorded for the selected period, split into inbound and outbound traffic.'],
+    ['dashboard-kpi-violations', 'All non-cancelled violations in the selected period, including their paid and unpaid status.'],
+    ['dashboard-kpi-collections', 'Payments successfully collected during the selected dashboard period.'],
+    ['dashboard-kpi-alerts', 'Alerts that remain active, plus alerts generated within the selected period.'],
+    ['monthly-kpi-violations', 'Compares the selected period\'s violation count with the immediately preceding equivalent period.'],
+    ['monthly-kpi-collected', 'Shows collected revenue, collection rate, and the amount still pending.'],
+    ['monthly-kpi-offense', 'The violation type recorded most often during the selected period.'],
+    ['monthly-kpi-location', 'The area with the highest recorded enforcement or traffic activity.'],
+    ['ai-preview-risk', 'The AI model\'s forecast risk level for the upcoming reporting period.'],
+    ['ai-preview-confidence-card', 'How certain the AI model is about its current forecast.'],
+    ['ai-preview-location', 'The location the forecast identifies as the highest operational priority.'],
+    ['ai-preview-action', 'The recommended next action based on the current forecast and hotspot data.']
+  ];
+
+  cards.forEach((card) => {
+    let detail = card.dataset.hoverInfo || '';
+    if (!detail) {
+      const match = descriptions.find(([className]) => card.classList.contains(className));
+      detail = match ? match[1] : '';
+    }
+    if (!detail && card.classList.contains('dated-traffic-main')) {
+      detail = 'Total saved vehicle observations and their direction for the selected dashboard period.';
+    }
+    if (!detail && card.classList.contains('dated-traffic-metric')) {
+      const label = card.querySelector('small')?.textContent.trim().toLowerCase() || 'traffic metric';
+      detail = `Explains the ${label} calculated from saved monitoring data in the selected period.`;
+    }
+    if (!detail && card.classList.contains('compact-metric')) {
+      const label = card.querySelector('small')?.textContent.trim() || 'operational metric';
+      detail = `Current dashboard summary for ${label.toLowerCase()}.`;
+    }
+    if (!detail && card.classList.contains('mini-metric')) {
+      const label = card.querySelector('small')?.textContent.trim() || 'live metric';
+      detail = `Latest live Computer Vision reading for ${label.toLowerCase()}.`;
+    }
+    if (!detail && card.classList.contains('top-violator-entry')) {
+      detail = 'Open this person\'s violation records and enforcement history.';
+    }
+    if (!detail) return;
+
+    card.classList.add('dashboard-info-card');
+    card.setAttribute('title', detail);
+    card.setAttribute('data-bs-toggle', 'tooltip');
+    card.setAttribute('data-bs-placement', 'top');
+    card.setAttribute('data-bs-custom-class', 'dashboard-card-tooltip');
+    if (!card.matches('a, button, [tabindex]')) card.tabIndex = 0;
   });
-};
-overviewPeriodSelect?.addEventListener('change', syncOverviewCustomDates);
-syncOverviewCustomDates();
+
+  document.addEventListener('DOMContentLoaded', () => {
+    if (!window.bootstrap?.Tooltip) return;
+    document.querySelectorAll('[data-bs-toggle="tooltip"].dashboard-info-card').forEach((card) => {
+      bootstrap.Tooltip.getOrCreateInstance(card, {
+        container: 'body',
+        boundary: 'viewport',
+        offset: [0, 10],
+        trigger: 'hover focus',
+        delay: { show: 220, hide: 80 }
+      });
+    });
+  });
+})();
+
+const dashboardScope = document.getElementById('dashboardScope');
+const dashboardPeriodField = document.getElementById('dashboardPeriodValueField');
+const dashboardPeriodInput = document.getElementById('dashboardPeriodValue');
+const dashboardPeriodLabel = document.getElementById('dashboardPeriodValueLabel');
+const dashboardToday = <?= json_encode(date('Y-m-d')) ?>;
+const dashboardCurrentMonth = <?= json_encode(date('Y-m')) ?>;
+const dashboardCurrentYear = <?= json_encode(date('Y')) ?>;
+
+function syncDashboardPeriodInput(resetValue = false) {
+  if (!dashboardScope || !dashboardPeriodField || !dashboardPeriodInput || !dashboardPeriodLabel) return;
+  const scope = dashboardScope.value;
+  dashboardPeriodField.hidden = scope === 'all';
+  dashboardPeriodInput.disabled = scope === 'all';
+  dashboardPeriodInput.removeAttribute('min');
+  dashboardPeriodInput.removeAttribute('max');
+  dashboardPeriodInput.removeAttribute('step');
+
+  if (scope === 'day') {
+    dashboardPeriodLabel.textContent = 'Selected day';
+    dashboardPeriodInput.type = 'date';
+    dashboardPeriodInput.max = dashboardToday;
+    if (resetValue || !/^\d{4}-\d{2}-\d{2}$/.test(dashboardPeriodInput.value)) dashboardPeriodInput.value = dashboardToday;
+  } else if (scope === 'month') {
+    dashboardPeriodLabel.textContent = 'Selected month';
+    dashboardPeriodInput.type = 'month';
+    dashboardPeriodInput.max = dashboardCurrentMonth;
+    if (resetValue || !/^\d{4}-\d{2}$/.test(dashboardPeriodInput.value)) dashboardPeriodInput.value = dashboardCurrentMonth;
+  } else if (scope === 'year') {
+    dashboardPeriodLabel.textContent = 'Selected year';
+    dashboardPeriodInput.type = 'number';
+    dashboardPeriodInput.min = '2000';
+    dashboardPeriodInput.max = String(Number(dashboardCurrentYear) + 1);
+    dashboardPeriodInput.step = '1';
+    if (resetValue || !/^\d{4}$/.test(dashboardPeriodInput.value)) dashboardPeriodInput.value = dashboardCurrentYear;
+  }
+}
+
+dashboardScope?.addEventListener('change', () => syncDashboardPeriodInput(true));
+syncDashboardPeriodInput(false);
+
+const chartScope = document.getElementById('chartScope');
+const chartPeriodField = document.getElementById('chartPeriodValueField');
+const chartPeriodInput = document.getElementById('chartPeriodValue');
+const chartPeriodLabel = document.getElementById('chartPeriodValueLabel');
+
+function syncChartPeriodInput(resetValue = false) {
+  if (!chartScope || !chartPeriodField || !chartPeriodInput || !chartPeriodLabel) return;
+  const scope = chartScope.value;
+  chartPeriodField.hidden = scope === 'all';
+  chartPeriodInput.disabled = scope === 'all';
+  chartPeriodInput.removeAttribute('min');
+  chartPeriodInput.removeAttribute('max');
+  chartPeriodInput.removeAttribute('step');
+
+  if (scope === 'day') {
+    chartPeriodLabel.textContent = 'Selected day';
+    chartPeriodInput.type = 'date';
+    chartPeriodInput.max = dashboardToday;
+    if (resetValue || !/^\d{4}-\d{2}-\d{2}$/.test(chartPeriodInput.value)) chartPeriodInput.value = dashboardToday;
+  } else if (scope === 'month') {
+    chartPeriodLabel.textContent = 'Selected month';
+    chartPeriodInput.type = 'month';
+    chartPeriodInput.max = dashboardCurrentMonth;
+    if (resetValue || !/^\d{4}-\d{2}$/.test(chartPeriodInput.value)) chartPeriodInput.value = dashboardCurrentMonth;
+  } else if (scope === 'year') {
+    chartPeriodLabel.textContent = 'Selected year';
+    chartPeriodInput.type = 'number';
+    chartPeriodInput.min = '2000';
+    chartPeriodInput.max = String(Number(dashboardCurrentYear) + 1);
+    chartPeriodInput.step = '1';
+    if (resetValue || !/^\d{4}$/.test(chartPeriodInput.value)) chartPeriodInput.value = dashboardCurrentYear;
+  }
+}
+
+chartScope?.addEventListener('change', () => syncChartPeriodInput(true));
+syncChartPeriodInput(false);
 
 const MONTHLY_PREDICTION_ENDPOINT = '../api/predict_monthly.php';
-const MONTHLY_SUMMARY_ENDPOINT = '../../api/get_monthly_summary.php';
 const HOTSPOT_ENDPOINT = '../api/predict_hotspot.php';
 
-const months = <?= json_encode(month_labels()) ?>;
+const trendLabels = <?= json_encode($trendLabels) ?>;
 const trendData = <?= json_encode($trendData) ?>;
 const monthlyCollectionData = <?= json_encode($monthlyCollectionData) ?>;
-const adminChartGrid = 'rgba(148, 163, 184, .16)';
-const adminChartTicks = '#c9d8ea';
+const adminChartGrid = 'rgba(71, 85, 105, .16)';
+const adminChartTicks = '#52616b';
+const adminChartAxisBorder = 'rgba(71, 85, 105, .28)';
 
 function normalizeRisk(value) {
   return String(value || '').trim().toLowerCase().replace(' risk', '');
@@ -1795,62 +2457,6 @@ function applyRiskStyle(element, riskLevel) {
     element.classList.add('ai-risk-medium');
   } else {
     element.classList.add('ai-risk-low');
-  }
-}
-
-function formatMonthlyMoney(value) {
-  return new Intl.NumberFormat('en-PH', {
-    style: 'currency',
-    currency: 'PHP',
-    maximumFractionDigits: 0
-  }).format(Number(value || 0));
-}
-
-async function loadMonthlySummary() {
-  const selectedMonth = document.getElementById('monthlySummaryMonth')?.value || '';
-  const endpoint = selectedMonth
-    ? `${MONTHLY_SUMMARY_ENDPOINT}?month=${encodeURIComponent(selectedMonth)}`
-    : MONTHLY_SUMMARY_ENDPOINT;
-
-  try {
-    const response = await fetch(endpoint, { cache: 'no-store', credentials: 'same-origin' });
-    const payload = await response.json();
-    if (!response.ok || !payload.success) throw new Error(payload.message || 'Unable to load monthly summary.');
-
-    const summary = payload.data;
-    const change = Number(summary.change_percent || 0);
-    const status = String(summary.status || 'Stable');
-    const statusElement = document.getElementById('monthlySummaryStatus');
-    const summaryCard = document.getElementById('monthlyExecutiveSummary');
-    const stateClass = status === 'Critical' ? 'monthly-state-critical' : status === 'Needs Attention' ? 'monthly-state-warning' : 'monthly-state-good';
-    const badgeClass = status === 'Critical' ? 'text-bg-danger' : status === 'Needs Attention' ? 'text-bg-warning' : 'text-bg-success';
-    const iconClass = status === 'Critical' ? 'bi-exclamation-octagon-fill' : status === 'Needs Attention' ? 'bi-exclamation-triangle-fill' : 'bi-check-circle-fill';
-    summaryCard.classList.remove('monthly-state-critical', 'monthly-state-warning', 'monthly-state-good');
-    summaryCard.classList.add(stateClass);
-    statusElement.innerHTML = `<i class="bi ${iconClass} me-1"></i>${status.toUpperCase()}`;
-    statusElement.className = `tag ${badgeClass}`;
-
-    document.getElementById('monthlySummaryTitle').textContent = summary.month_label;
-    document.getElementById('monthlyViolationCount').textContent = Number(summary.violations || 0).toLocaleString();
-    document.getElementById('monthlyViolationChange').textContent = `${change > 0 ? '▲' : change < 0 ? '▼' : '•'} ${Math.abs(change)}% vs previous month`;
-    document.getElementById('monthlyViolationChange').className = change > 0 ? 'text-danger' : change < 0 ? 'text-success' : 'text-muted';
-    document.getElementById('monthlyCollected').textContent = formatMonthlyMoney(summary.collected_amount);
-    const collectedAmount = Number(summary.collected_amount || 0);
-    const pendingAmount = Number(summary.pending_amount || 0);
-    const collectionMessage = pendingAmount > 0
-      ? `${formatMonthlyMoney(pendingAmount)} still unpaid`
-      : collectedAmount > 0
-        ? 'No unpaid balance'
-        : 'No payments recorded';
-    document.getElementById('monthlyCollectionRate').textContent = collectionMessage;
-    document.getElementById('monthlyTopViolation').textContent = summary.top_violation?.label || 'No data';
-    document.getElementById('monthlyTopViolationCount').textContent = `${Number(summary.top_violation?.total || 0).toLocaleString()} recorded cases`;
-    document.getElementById('monthlyTopLocation').textContent = summary.top_location?.label || 'No data';
-    document.getElementById('monthlyPeakPeriod').textContent = `Peak: ${summary.peak_day}, ${summary.peak_hour}`;
-    document.getElementById('monthlySummaryNarrative').textContent = summary.summary;
-  } catch (error) {
-    document.getElementById('monthlySummaryStatus').textContent = 'UNAVAILABLE';
-    document.getElementById('monthlySummaryNarrative').textContent = error.message || 'Monthly summary is temporarily unavailable.';
   }
 }
 
@@ -1967,9 +2573,6 @@ async function loadMonthlyPrediction() {
   }
 }
 
-document.getElementById('monthlySummaryMonth')?.addEventListener('change', loadMonthlySummary);
-
-loadMonthlySummary();
 loadMonthlyPrediction();
 
 Chart.defaults.font.family = "'Poppins', sans-serif";
@@ -1996,11 +2599,16 @@ function violationChartOptions() {
       }
     },
     scales: {
-      x: { grid: { display: false }, ticks: { color: adminChartTicks } },
+      x: {
+        grid: { display: false },
+        border: { color: adminChartAxisBorder },
+        ticks: { color: adminChartTicks, font: { size: 11, weight: '600' }, padding: 7 }
+      },
       y: {
         beginAtZero: true,
         grid: { color: adminChartGrid },
-        ticks: { precision: 0, color: adminChartTicks }
+        border: { color: adminChartAxisBorder },
+        ticks: { precision: 0, color: adminChartTicks, font: { size: 11, weight: '600' }, padding: 7 }
       }
     }
   };
@@ -2024,12 +2632,19 @@ function collectionChartOptions() {
       }
     },
     scales: {
-      x: { grid: { display: false }, ticks: { color: adminChartTicks } },
+      x: {
+        grid: { display: false },
+        border: { color: adminChartAxisBorder },
+        ticks: { color: adminChartTicks, font: { size: 11, weight: '600' }, padding: 7 }
+      },
       y: {
         beginAtZero: true,
         grid: { color: adminChartGrid },
+        border: { color: adminChartAxisBorder },
         ticks: {
           color: adminChartTicks,
+          font: { size: 11, weight: '600' },
+          padding: 7,
           callback: value => `₱${Number(value).toLocaleString()}`
         }
       }
@@ -2045,7 +2660,7 @@ violationGradient.addColorStop(1, 'rgba(8, 125, 120, 0)');
 new Chart(violationContext, {
   type: 'line',
   data: {
-    labels: months,
+    labels: trendLabels,
     datasets: [{
       label: 'Violation Records',
       data: trendData,
@@ -2072,9 +2687,9 @@ collectionGradient.addColorStop(1, '#eb941f');
 new Chart(collectionContext, {
   type: 'bar',
   data: {
-    labels: months,
+    labels: trendLabels,
     datasets: [{
-      label: 'Monthly Collection',
+      label: 'Collection Records',
       data: monthlyCollectionData,
       backgroundColor: collectionGradient,
       borderRadius: 6,
@@ -2083,44 +2698,6 @@ new Chart(collectionContext, {
   },
   options: collectionChartOptions()
 });
-</script>
-
-<script>
-(() => {
-  const picker = document.getElementById('vehicleCountDate');
-  if (!picker) return;
-  const loadVehicleDate = async () => {
-    const total = document.getElementById('datedVehicleTotal');
-    total.textContent = '…';
-    try {
-      const response = await fetch(`../api/vehicle_count_by_date.php?date=${encodeURIComponent(picker.value)}`, {cache:'no-store',credentials:'same-origin'});
-      const payload = await response.json();
-      if (!response.ok || !payload.success) throw new Error(payload.message || 'Unable to load vehicle counts.');
-      const data = payload.data;
-      const difference = Number(data.difference_percent || 0);
-      const comparisonText = Math.abs(difference) < 1
-        ? 'Near average'
-        : difference > 100
-          ? `About ${(1 + (difference / 100)).toFixed(1)} times the average`
-          : `${Math.abs(difference).toFixed(1)}% ${difference > 0 ? 'higher' : 'lower'}`;
-      document.getElementById('vehicleDateLabel').textContent = data.date_label;
-      total.textContent = Number(data.vehicle_total).toLocaleString();
-      document.getElementById('datedVehicleDirections').textContent = `${Number(data.inbound_total).toLocaleString()} inbound · ${Number(data.outbound_total).toLocaleString()} outbound`;
-      document.getElementById('datedVehicleComparison').textContent = comparisonText;
-      document.getElementById('datedVehicleAverage').textContent = `${Number(data.daily_average).toLocaleString()} vehicles daily average`;
-      document.getElementById('busiestTrafficDate').textContent = data.busiest_date || 'No data';
-      document.getElementById('busiestTrafficTotal').textContent = data.busiest_date ? `${Number(data.busiest_total).toLocaleString()} vehicles recorded` : 'No recorded data';
-      const level = difference >= 20 ? 'Busier than usual' : difference <= -20 ? 'Quieter than usual' : 'Typical traffic volume';
-      document.getElementById('datedTrafficLevel').textContent = data.vehicle_total > 0 ? level : 'No traffic record';
-      document.getElementById('datedTrafficNarrative').textContent = data.vehicle_total > 0 ? `Based on ${Number(data.recorded_days).toLocaleString()} recorded days.` : 'No monitoring data was saved on this date.';
-    } catch (error) {
-      total.textContent = 'Unavailable';
-      document.getElementById('datedTrafficNarrative').textContent = error.message;
-    }
-  };
-  picker.addEventListener('change', loadVehicleDate);
-  loadVehicleDate();
-})();
 </script>
 
 <?php page_end(false); ?>

@@ -69,7 +69,7 @@ export default function DecisionSupportScreen(){
       <View style={s.card}>{title('Interpretation','Plain-language explanation of the combined results')}<Text style={s.interpretation}>{interpretation}</Text></View>
       <View style={s.card}>{title('Recommendations','Suggested operational actions')}{[...new Set(actions)].map((item,index)=><View style={s.action} key={`${item}-${index}`}><Ionicons name="checkmark-circle" size={18} color={C.teal}/><Text style={s.actionText}>{item}</Text></View>)}</View>
       <View style={s.card}>{title('Action Plan','Summary for TMO operational planning')}{[['Monthly risk',prediction.risk_level||'Unavailable'],['Intervention',guide.intervention],['Primary focus',focus],['Evaluation cycle',guide.monitoring]].map(([label,value])=><View style={s.planRow} key={label}><Text style={s.planLabel}>{label}</Text><Text style={s.planValue}>{value}</Text></View>)}</View>
-      <Text style={s.disclaimer}>This monthly forecast is based on violation records only. Live monitoring and field reports are separate operational inputs.</Text>
+      <Text style={s.disclaimer}>This monthly forecast is based on violation records only. Web command-center monitoring remains a separate operational input.</Text>
     </>}
   </ScrollView>;
 }

@@ -17,12 +17,6 @@ const BASE_URL = ensureTrailingSlash(configuredApiUrl || `http://${appHost}/TRAV
 console.log("TRAVIS API URL:", BASE_URL);
 
 export const APP_ROOT_URL = BASE_URL.replace(/api\/$/i, "");
-const APP_HOST = `http://${appHost}`;
-export const CV_STREAM_URL = `${APP_HOST}:5000/`;
-export const MOBILE_STREAM_URL = `${APP_ROOT_URL}Web_app/api/video_feed.php?client=mobile`;
-export const MOBILE_SNAPSHOT_URL = `${APP_ROOT_URL}Web_app/api/video_snapshot.php?client=mobile`;
-export const MOBILE_CANVAS_STREAM_URL = `${APP_ROOT_URL}Web_app/api/mobile_stream_view.php`;
-
 // The prediction proxies live under Web_app/api and forward requests to the
 // local Flask machine-learning service. Derive the URL from the same app root
 // so both APIs keep working when EXPO_PUBLIC_API_URL is changed.

@@ -52,6 +52,8 @@ $licenseConfiscated = (bool)($input['license_confiscated'] ?? false);
 $licenseRemarks = trim((string)($input['license_remarks'] ?? ''));
 $vehicleOwner = trim((string)($input['vehicle_owner'] ?? ''));
 $vehicleRegistration = strtoupper(trim((string)($input['vehicle_registration_number'] ?? '')));
+$registrationNotApplicable = (bool)($input['registration_not_applicable'] ?? false);
+if ($registrationNotApplicable) $vehicleRegistration = 'NOT APPLICABLE';
 $vehicleColor = trim((string)($input['vehicle_color'] ?? ''));
 $insurancePolicy = trim((string)($input['insurance_policy_number'] ?? ''));
 $isPampasadaTricycle = $vehicle === 'Tricycle';
@@ -61,6 +63,21 @@ $offenseNumber = isset($input['offense_number']) && $input['offense_number'] !==
 $ticketRemarks = trim((string)($input['ticket_remarks'] ?? ''));
 $officerName = trim((string)($input['apprehending_officer_name'] ?? ''));
 $officerPosition = trim((string)($input['apprehending_officer_position'] ?? ''));
+$officerAgency = strtolower(trim((string)($input['apprehending_officer_agency'] ?? 'police')));
+$tmoOfficerId = (int)($input['tmo_officer_id'] ?? 0);
+if (!in_array($officerAgency, ['police', 'tmo'], true)) {
+    http_response_code(422); echo json_encode(['success' => false, 'error' => 'Select a valid apprehending officer agency']); exit;
+}
+if ($officerAgency === 'tmo') {
+    $officerStatement = $pdo->prepare("SELECT first_name, last_name, rank FROM officers WHERE officer_id = ? AND status = 'active' LIMIT 1");
+    $officerStatement->execute([$tmoOfficerId]);
+    $selectedOfficer = $officerStatement->fetch(PDO::FETCH_ASSOC);
+    if (!$selectedOfficer) {
+        http_response_code(422); echo json_encode(['success' => false, 'error' => 'Select an active TMO officer']); exit;
+    }
+    $officerName = trim((string)$selectedOfficer['first_name'] . ' ' . (string)$selectedOfficer['last_name']);
+    $officerPosition = trim((string)($selectedOfficer['rank'] ?? '')) ?: 'TMO Officer';
+}
 $apprehensionDatetime = trim((string)($input['apprehension_datetime'] ?? ''));
 $violationDate = trim((string)($input['violation_date'] ?? date('Y-m-d')));
 $violationTime = trim((string)($input['violation_time'] ?? date('H:i:s')));
@@ -119,6 +136,9 @@ if (!in_array($vehicle, travis_vehicle_types(), true)) {
     http_response_code(422);
     echo json_encode(['success' => false, 'error' => 'Select a valid vehicle type']);
     exit;
+}
+if ($officerName === '') {
+    http_response_code(422); echo json_encode(['success' => false, 'error' => 'Apprehending officer is required']); exit;
 }
 if ($requestedTicket !== '' && mb_strlen($requestedTicket) > 80) {
     http_response_code(422); echo json_encode(['success' => false, 'error' => 'Physical ticket number is too long']); exit;

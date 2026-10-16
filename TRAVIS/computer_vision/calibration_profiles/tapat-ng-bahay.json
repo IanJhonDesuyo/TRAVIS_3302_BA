@@ -1,0 +1,63 @@
+{
+    "profile_name": "tapat ng bahay",
+    "road_roi": [
+        [
+            0,
+            0
+        ],
+        [
+            1,
+            0
+        ],
+        [
+            1,
+            1
+        ],
+        [
+            0,
+            1
+        ]
+    ],
+    "inbound_line": [
+        [
+            0.03393266486815226,
+            0.7286130778842149
+        ],
+        [
+            0.40220188064309886,
+            0.32522560044425936
+        ]
+    ],
+    "outbound_line": [
+        [
+            0.2095841065385875,
+            0.9809523809523809
+        ],
+        [
+            0.7355404119949476,
+            0.21860335971123143
+        ]
+    ],
+    "officer_zone": [],
+    "officer": {
+        "enabled": false,
+        "presence_frames": 3,
+        "absence_frames": 15
+    },
+    "collision": {
+        "enabled": true,
+        "ttc_warning_seconds": 2.5,
+        "maximum_pair_distance": 2.6,
+        "contact_iou": 0.08,
+        "confirmation_iou": 0.04,
+        "possible_frames": 3,
+        "confirmed_frames": 4,
+        "risk_memory_seconds": 4,
+        "minimum_track_confidence": 0.45,
+        "minimum_motorcycle_confidence": 0.25,
+        "occlusion_confirmation_frames": 3,
+        "occlusion_window_seconds": 2,
+        "occlusion_max_distance": 1.5,
+        "cooldown_seconds": 30
+    }
+}

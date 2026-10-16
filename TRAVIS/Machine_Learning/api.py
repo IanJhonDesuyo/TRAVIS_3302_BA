@@ -45,6 +45,7 @@ if Path(sys.executable).name.lower() == "pythonw.exe":
 MONTHLY_MODEL_PATH = MODEL_DIR / "monthly_risk_model.pkl"
 HOTSPOT_MODEL_PATH = MODEL_DIR / "hotspot_clustering_model.pkl"
 HOTSPOT_RESULTS_PATH = RESULTS_DIR / "hotspot_clusters.csv"
+MONTHLY_RESULTS_PATH = RESULTS_DIR / "monthly_data_with_risk.csv"
 
 
 app = Flask(__name__)
@@ -370,6 +371,28 @@ def predict_monthly_risk(
         ]
 
     month_name = calendar.month_name[month]
+    historical_record_count = None
+    historical_violation_total = None
+    selected_month_historical_total = None
+    selected_month_historical_count = None
+    if MONTHLY_RESULTS_PATH.exists():
+        try:
+            monthly_history = pd.read_csv(MONTHLY_RESULTS_PATH)
+            historical_record_count = int(len(monthly_history))
+            if "Count of Violation" in monthly_history.columns:
+                historical_violation_total = int(
+                    pd.to_numeric(monthly_history["Count of Violation"], errors="coerce").fillna(0).sum()
+                )
+            if {"Month", "Count of Violation"}.issubset(monthly_history.columns):
+                matching_months = monthly_history[
+                    pd.to_numeric(monthly_history["Month"], errors="coerce") == month
+                ]
+                selected_month_historical_count = int(len(matching_months))
+                selected_month_historical_total = int(
+                    pd.to_numeric(matching_months["Count of Violation"], errors="coerce").fillna(0).sum()
+                )
+        except Exception:
+            logger.warning("Unable to count monthly training records.", exc_info=True)
 
     return {
         "year": year,
@@ -378,6 +401,14 @@ def predict_monthly_risk(
         "risk_level": predicted_risk,
         "confidence": confidence,
         "probabilities": probabilities_result,
+        "historical_record_count": historical_record_count,
+        "historical_violation_total": historical_violation_total,
+        "selected_month_historical_total": selected_month_historical_total,
+        "selected_month_historical_count": selected_month_historical_count,
+        "risk_thresholds": {
+            "low_max": round(float(monthly_model_bundle.get("low_threshold", 0)), 2),
+            "medium_max": round(float(monthly_model_bundle.get("high_threshold", 0)), 2),
+        },
         "recommendations": recommendations_for_risk(
             predicted_risk
         ),
@@ -654,6 +685,7 @@ def all_hotspots():
                 "source": "trained_hotspot_clustering_results",
                 "algorithm": hotspot_model_bundle.get("algorithm", "K-Means Clustering") if hotspot_model_bundle else "K-Means Clustering",
                 "model_version": hotspot_model_bundle.get("model_version") if hotspot_model_bundle else None,
+                "risk_thresholds": hotspot_model_bundle.get("risk_thresholds", {}) if hotspot_model_bundle else {},
             },
             message="Hotspot locations retrieved successfully.",
         )

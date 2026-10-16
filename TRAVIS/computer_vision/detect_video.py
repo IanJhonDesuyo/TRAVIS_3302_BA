@@ -91,6 +91,14 @@ last_logged_collision_status = None
 last_logged_officer_status = None
 
 
+def detection_threshold_for_class(class_id):
+    if class_id == config.MOTORCYCLE_CLASS:
+        return min(config.CONFIDENCE_THRESHOLD, config.MOTORCYCLE_CONFIDENCE_THRESHOLD)
+    if class_id in config.VEHICLE_CLASSES:
+        return min(config.CONFIDENCE_THRESHOLD, config.VEHICLE_CONFIDENCE_THRESHOLD)
+    return config.CONFIDENCE_THRESHOLD
+
+
 def write_local_analysis_status(state, message, source_type):
     """Keep the laptop dashboard in sync with the detector process."""
     status_path = Path(__file__).resolve().parent.parent / "Web_app" / "api" / "analysis_status.json"
@@ -129,6 +137,32 @@ def report_startup_error(message):
     write_local_analysis_status("Error", message, source_type)
 
 
+def report_reconnecting(message, retry_count):
+    """Report a recoverable camera interruption without ending the worker."""
+    source_type = selected_source.source_type or f"{config.VIDEO_SOURCE}_camera"
+    payload = {
+        "vehicle_count": 0,
+        "inbound_count": 0,
+        "outbound_count": 0,
+        "congestion_level": "Unknown",
+        "officer_presence": "Unknown",
+        "potential_collision": "None",
+        "alert_status": "NORMAL",
+        "ai_status": "Reconnecting",
+        "analysis_status": "Reconnecting",
+        "message": message,
+        "source_type": source_type,
+        "reconnect_count": retry_count,
+    }
+    send_status_update_now(config.STATUS_API_URL, payload)
+    write_local_analysis_status("Reconnecting", message, source_type)
+
+
+def reconnect_delay(retry_count):
+    """Back off quickly at first, then retry steadily without exiting."""
+    return min(15, 2 ** min(max(retry_count - 1, 0), 4))
+
+
 # ============================
 # Debug
 # ============================
@@ -156,16 +190,30 @@ camera = CameraSource()
 alert_engine = AlertEngine()
 alert_engine.cooldown = ALERT_COOLDOWN_SECONDS
 
-try:
-    cap = camera.open()
-except Exception as error:
-    failure_message = (
-        str(error) or "The Tapo RTSP stream could not be opened."
-        if config.VIDEO_SOURCE == "tapo"
-        else str(error)
-    )
-    report_startup_error(failure_message)
-    raise
+startup_retry_count = 0
+while True:
+    try:
+        cap = camera.open()
+        break
+    except Exception as error:
+        failure_message = (
+            str(error) or "The Tapo RTSP stream could not be opened."
+            if config.VIDEO_SOURCE == "tapo"
+            else str(error)
+        )
+        if not is_live_source:
+            report_startup_error(failure_message)
+            raise
+
+        startup_retry_count += 1
+        delay_seconds = reconnect_delay(startup_retry_count)
+        reconnect_message = (
+            f"Camera unavailable. Retrying automatically in {delay_seconds} seconds. "
+            f"Last error: {failure_message}"
+        )
+        print(reconnect_message)
+        report_reconnecting(reconnect_message, startup_retry_count)
+        time.sleep(delay_seconds)
 
 if not cap.isOpened():
     print("Cannot open video.")
@@ -272,25 +320,29 @@ while True:
     if not ret:
         if is_live_source:
             live_reconnect_cycles += 1
-            if live_reconnect_cycles > 3:
-                capture_error = str(camera.metrics().get("capture_error", "")).strip()
-                live_connection_error = (
-                    capture_error or
-                    "The Tapo camera stopped delivering usable RTSP frames after three reconnect attempts. "
-                    "Check Wi-Fi stability, Camera Account/RTSP settings, and restart the camera."
-                    if config.VIDEO_SOURCE == "tapo"
-                    else "The live camera stopped delivering usable frames."
-                )
-                report_startup_error(live_connection_error)
-                print(live_connection_error)
-                break
-            cap = camera.reconnect(attempts=1, delay=1)
+            delay_seconds = reconnect_delay(live_reconnect_cycles)
+            capture_error = str(camera.metrics().get("capture_error", "")).strip()
+            live_connection_error = capture_error or (
+                "The Tapo camera temporarily stopped delivering RTSP frames."
+                if config.VIDEO_SOURCE == "tapo"
+                else "The live camera temporarily stopped delivering frames."
+            )
+            reconnect_message = (
+                f"{live_connection_error} Retrying automatically in {delay_seconds} seconds."
+            )
+            print(reconnect_message)
+            report_reconnecting(reconnect_message, live_reconnect_cycles)
+            time.sleep(delay_seconds)
+
+            cap = camera.reconnect(attempts=1, delay=0)
             if cap is not None:
                 live_frame_version = -1
+                live_source_type = selected_source.source_type or f"{config.VIDEO_SOURCE}_camera"
+                restored_message = "Camera connection restored. AI monitoring resumed automatically."
+                print(restored_message)
+                write_local_analysis_status("Running", restored_message, live_source_type)
                 continue
-            live_connection_error = "Live camera connection lost and could not be restored."
-            report_startup_error(live_connection_error)
-            print(live_connection_error)
+            continue
         break
 
     live_reconnect_cycles = 0
@@ -404,21 +456,52 @@ while True:
     )
 
     for result in results:
-        boxes = result.boxes
+        boxes = list(result.boxes)
 
-        for box in boxes:
+        # COCO can describe one tricycle with overlapping car/motorcycle
+        # boxes. Ultralytics NMS is class-aware, so suppress contained vehicle
+        # boxes across vehicle classes before counting or tracking them here.
+        vehicle_indices = [
+            index for index, candidate in enumerate(boxes)
+            if int(candidate.cls[0]) in config.VEHICLE_CLASSES
+            and float(candidate.conf[0]) >= detection_threshold_for_class(int(candidate.cls[0]))
+        ]
+        vehicle_indices.sort(
+            key=lambda index: (
+                1 if boxes[index].id is not None else 0,
+                float(boxes[index].conf[0]),
+                int(boxes[index].xyxy[0][2] - boxes[index].xyxy[0][0])
+                * int(boxes[index].xyxy[0][3] - boxes[index].xyxy[0][1])
+            ),
+            reverse=True,
+        )
+        accepted_vehicle_indices = []
+        for candidate_index in vehicle_indices:
+            candidate_box = tuple(map(float, boxes[candidate_index].xyxy[0]))
+            candidate_area = max(1.0, (candidate_box[2] - candidate_box[0]) * (candidate_box[3] - candidate_box[1]))
+            duplicate = False
+            for accepted_index in accepted_vehicle_indices:
+                accepted_box = tuple(map(float, boxes[accepted_index].xyxy[0]))
+                intersection_width = max(0.0, min(candidate_box[2], accepted_box[2]) - max(candidate_box[0], accepted_box[0]))
+                intersection_height = max(0.0, min(candidate_box[3], accepted_box[3]) - max(candidate_box[1], accepted_box[1]))
+                intersection = intersection_width * intersection_height
+                accepted_area = max(1.0, (accepted_box[2] - accepted_box[0]) * (accepted_box[3] - accepted_box[1]))
+                if intersection / min(candidate_area, accepted_area) >= 0.65:
+                    duplicate = True
+                    break
+            if not duplicate:
+                accepted_vehicle_indices.append(candidate_index)
+
+        accepted_vehicle_indices = set(accepted_vehicle_indices)
+
+        for box_index, box in enumerate(boxes):
             cls = int(box.cls[0])
             conf = float(box.conf[0])
 
-            detection_threshold = (
-                min(config.CONFIDENCE_THRESHOLD, config.MOTORCYCLE_CONFIDENCE_THRESHOLD)
-                if cls == config.MOTORCYCLE_CLASS
-                else (
-                    min(config.CONFIDENCE_THRESHOLD, config.VEHICLE_CONFIDENCE_THRESHOLD)
-                    if cls in config.VEHICLE_CLASSES
-                    else config.CONFIDENCE_THRESHOLD
-                )
-            )
+            if cls in config.VEHICLE_CLASSES and box_index not in accepted_vehicle_indices:
+                continue
+
+            detection_threshold = detection_threshold_for_class(cls)
             if conf < detection_threshold:
                 continue
 
@@ -538,6 +621,7 @@ while True:
             progress_percent = min(100, round((current_frame / total_frames) * 100, 2))
 
         payload = {
+            "camera_id": config.CAMERA_ID,
             "vehicle_count": visible_vehicle_count,
             "inbound_count": inbound_count,
             "outbound_count": outbound_count,

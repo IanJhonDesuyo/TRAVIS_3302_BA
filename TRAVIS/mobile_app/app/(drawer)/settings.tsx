@@ -269,7 +269,7 @@ export default function SettingsScreen() {
           <View style={styles.helperRow}>
             <Ionicons name="hardware-chip-outline" size={13} color={COLORS.textTertiary} style={{ marginRight: 6 }} />
             <Text style={styles.helperText}>
-              Detection changes apply the next time analysis starts. Camera source remains in Live Monitoring.
+              Detection changes apply the next time analysis starts from the web command-center dashboard.
             </Text>
           </View>
         </SectionCard>

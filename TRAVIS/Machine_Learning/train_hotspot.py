@@ -581,13 +581,33 @@ def train_hotspot_model() -> None:
     )
     results_df["Cluster"] = cluster_labels.astype(int)
 
-    risk_mapping, cluster_profiles = build_risk_mapping(
-        results_df,
-        total_column,
-    )
+    # Risk tiers must remain monotonic and easy to defend: a location with
+    # more total records cannot receive a lower risk tier than one with fewer
+    # records. K-Means still describes similarity in violation patterns, while
+    # these data-derived tertiles determine the operational risk label.
+    low_threshold = float(results_df[total_column].quantile(1 / 3))
+    high_threshold = float(results_df[total_column].quantile(2 / 3))
 
-    results_df["Risk Level"] = results_df["Cluster"].map(
-        risk_mapping
+    def record_risk(total: float) -> str:
+        if total <= low_threshold:
+            return "Low Risk"
+        if total <= high_threshold:
+            return "Medium Risk"
+        return "High Risk"
+
+    results_df["Risk Level"] = results_df[total_column].apply(record_risk)
+
+    cluster_profiles = (
+        results_df.groupby("Cluster")
+        .agg(
+            Location_Count=("Location", "count"),
+            Mean_Total_Violations=(total_column, "mean"),
+            Median_Total_Violations=(total_column, "median"),
+            Min_Total_Violations=(total_column, "min"),
+            Max_Total_Violations=(total_column, "max"),
+            Sum_Total_Violations=(total_column, "sum"),
+        )
+        .reset_index()
     )
 
     results_df["Recommendation"] = results_df[
@@ -647,7 +667,10 @@ def train_hotspot_model() -> None:
         "feature_columns": feature_columns,
         "location_column": "Location",
         "total_column": total_column,
-        "risk_mapping": risk_mapping,
+        "risk_thresholds": {
+            "low_max": low_threshold,
+            "medium_max": high_threshold,
+        },
         "cluster_profiles": cluster_profiles.to_dict(
             orient="records"
         ),
@@ -682,18 +705,19 @@ def train_hotspot_model() -> None:
             best_evaluation_row["inertia"]
         ),
         "silhouette_score": final_silhouette,
-        "risk_mapping": {
-            str(cluster_id): risk_level
-            for cluster_id, risk_level in risk_mapping.items()
+        "risk_thresholds": {
+            "low_max": low_threshold,
+            "medium_max": high_threshold,
         },
         "cluster_profiles": cluster_profiles.to_dict(
             orient="records"
         ),
         "interpretation": (
             "Locations are grouped according to similar historical "
-            "traffic violation patterns. Risk labels are assigned "
-            "by ordering clusters according to their mean total "
-            "historical violations."
+            "traffic violation patterns. Operational risk labels are "
+            "assigned separately from each location's total historical "
+            "records using dataset tertile thresholds, which keeps the "
+            "risk order consistent with record volume."
         ),
         "limitation": (
             "The clusters reflect historical patterns from the "

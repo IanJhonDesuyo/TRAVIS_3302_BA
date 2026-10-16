@@ -32,9 +32,9 @@ export default function Index() {
           </View>
           <View style={s.badge}><Ionicons name="sparkles" size={13} color="#17234F" /><Text style={s.badgeText}>AI SMART TRAFFIC COMMAND CENTER</Text></View>
           <Text style={s.title}>TRAVIS</Text>
-          <Text style={s.subtitle}>An AI, Computer Vision, and IoT-Based Traffic Monitoring and Decision Support System</Text>
-          <Text style={s.description}>An intelligent traffic platform that helps monitor violations, congestion, collisions, and road conditions across Nasugbu.</Text>
-          <View style={s.stats}><Stat value="Live" label="Active cameras" icon="videocam-outline" /><Stat value="AI" label="Monitoring" icon="hardware-chip-outline" /><Stat value="24/7" label="Decision support" icon="git-network-outline" /></View>
+          <Text style={s.subtitle}>A Computer Vision, IoT-Based Traffic Monitoring and Decision Support System</Text>
+          <Text style={s.description}>The official TRAVIS mobile application for OCR-assisted enforcement, violation management, alerts, collections, and field decision support in Nasugbu.</Text>
+          <View style={s.stats}><Stat value="OCR" label="Plate scanning" icon="scan-outline" /><Stat value="Field" label="Enforcement" icon="shield-checkmark-outline" /><Stat value="24/7" label="Decision support" icon="git-network-outline" /></View>
           <TouchableOpacity style={s.loginButton} onPress={() => router.push('/(auth)/login' as Href)}>
             <Ionicons name="log-in-outline" size={19} color="#fff" />
             <Text style={s.loginText}>Personnel Login</Text>

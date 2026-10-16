@@ -54,6 +54,9 @@
     let webrtcStartupTimer = null;
     let streamConnectionRequested = false;
     let streamHasFrame = false;
+    let automaticStreamRestoreAttempted = false;
+    let cameraWallSnapshotLoading = false;
+    let cameraWallSnapshotLastRequestedAt = 0;
     let snapshotStreamGeneration = 0;
     let currentAnalysisStatus = 'idle';
     let currentSharedSourceType = '';
@@ -70,9 +73,7 @@
     let cvStartRequestedAt = 0;
     let startAnalysisRequestPending = false;
     const START_ANALYSIS_GRACE_MS = 180000;
-    // TEMPORARY DIAGNOSTIC SWITCH: keep the detector alive while testing the
-    // Tapo stream. Change this back to true after the continuous-run test.
-    const STOP_ANALYSIS_ENABLED = false;
+    const STOP_ANALYSIS_ENABLED = true;
     let uploadInProgress = false;
     let uploadedFootageReady = uploadVideoForm?.dataset.footageReady === 'true';
 
@@ -164,10 +165,120 @@
     const SNAPSHOT_URL = canUseDirectMonitoringStream
       ? DIRECT_SNAPSHOT_URL
       : `${API_BASE}video_snapshot.php?client=web`;
-    // Hosted browsers receive the laptop's latest relayed JPEG. Roughly 6-7
-    // frames per second is visibly smoother than the old 4 FPS preview while
-    // remaining conservative enough for shared-hosting request limits.
-    const SNAPSHOT_REFRESH_MS = canUseDirectMonitoringStream ? 100 : 150;
+    const JOINED_CAMERA_STORAGE_KEY = 'travis.monitoring.joinedCameraId';
+    const CAMERA_WALL_SNAPSHOT_REFRESH_MS = 1000;
+
+    function selectedCameraId() {
+      return String(cameraStage?.dataset.cameraId ?? '').trim();
+    }
+
+    function storedJoinedCameraId() {
+      try {
+        return window.sessionStorage.getItem(JOINED_CAMERA_STORAGE_KEY) ?? '';
+      } catch (_) {
+        return '';
+      }
+    }
+
+    function rememberJoinedCamera() {
+      const cameraId = selectedCameraId();
+      if (!cameraId || cameraId === '0') return;
+      try {
+        window.sessionStorage.setItem(JOINED_CAMERA_STORAGE_KEY, cameraId);
+      } catch (_) {
+        // Private browsing or a strict storage policy must not block monitoring.
+      }
+    }
+
+    function forgetJoinedCamera() {
+      try {
+        window.sessionStorage.removeItem(JOINED_CAMERA_STORAGE_KEY);
+      } catch (_) {
+        // The stream can still be closed even when browser storage is blocked.
+      }
+    }
+
+    function shouldRestoreJoinedCamera() {
+      const cameraId = selectedCameraId();
+      return cameraId !== '' && cameraId !== '0' && storedJoinedCameraId() === cameraId;
+    }
+
+    function updateCameraJoinButtons() {
+      document.querySelectorAll('.camera-join-btn').forEach(button => {
+        const card = button.closest('.camera-registry-card');
+        const isCurrentViewer = Boolean(
+          streamConnectionRequested
+          && card?.classList.contains('is-selected')
+          && String(button.dataset.cameraId ?? '') === selectedCameraId()
+        );
+        const label = button.querySelector('span');
+        const icon = button.querySelector('i');
+        button.classList.toggle('is-viewing', isCurrentViewer);
+        button.setAttribute('aria-pressed', isCurrentViewer ? 'true' : 'false');
+        if (label) label.textContent = isCurrentViewer ? 'Viewing' : 'Join';
+        if (icon) icon.className = isCurrentViewer ? 'bi bi-eye-fill' : 'bi bi-broadcast';
+      });
+    }
+
+    function drawCameraWallFrame(preview, source) {
+      try {
+        const width = source.naturalWidth || source.videoWidth || source.width;
+        const height = source.naturalHeight || source.videoHeight || source.height;
+        if (!width || !height) return false;
+        preview.width = width;
+        preview.height = height;
+        preview.getContext('2d').drawImage(source, 0, 0, width, height);
+        preview.hidden = false;
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    function refreshCameraWallPreview() {
+      const preview = document.querySelector('.camera-registry-card.is-selected .camera-wall-preview');
+      if (!(preview instanceof HTMLCanvasElement)) return;
+      if (!streamConnectionRequested) {
+        preview.hidden = true;
+        return;
+      }
+
+      let source = null;
+      if (snapshotCanvas && snapshotCanvas.style.display !== 'none' && snapshotCanvas.width > 1) {
+        source = snapshotCanvas;
+      } else if (aiLiveStream && aiLiveStream.style.display !== 'none' && aiLiveStream.naturalWidth > 1) {
+        source = aiLiveStream;
+      }
+
+      if (source && drawCameraWallFrame(preview, source)) return;
+
+      // A cross-origin WebRTC iframe cannot be copied directly to a canvas.
+      // Use one lightweight processed snapshot per second for the camera wall;
+      // the large monitor remains the smooth low-latency WebRTC player.
+      const now = Date.now();
+      if (cameraWallSnapshotLoading
+          || now - cameraWallSnapshotLastRequestedAt < CAMERA_WALL_SNAPSHOT_REFRESH_MS) {
+        return;
+      }
+
+      cameraWallSnapshotLoading = true;
+      cameraWallSnapshotLastRequestedAt = now;
+      const frame = new Image();
+      frame.onload = () => {
+        cameraWallSnapshotLoading = false;
+        if (streamConnectionRequested && preview.isConnected) {
+          drawCameraWallFrame(preview, frame);
+        }
+      };
+      frame.onerror = () => {
+        cameraWallSnapshotLoading = false;
+      };
+      frame.src = `${SNAPSHOT_URL}${SNAPSHOT_URL.includes('?') ? '&' : '?'}preview=1&t=${now}`;
+    }
+    // Keep hosted polling aligned with the edge relay's 10 FPS cadence. The
+    // request loop schedules the next fetch only after the current JPEG loads,
+    // so slow links cannot build a queue of stale frames.
+    const SNAPSHOT_REFRESH_MS = 100;
     const configuredWebrtcUrl = String(cameraStage?.dataset.webrtcUrl ?? '').trim();
     const canUseConfiguredWebrtc = configuredWebrtcUrl !== ''
       && (!window.isSecureContext || configuredWebrtcUrl.startsWith('https://'));
@@ -250,19 +361,23 @@
     function updateSourceFields() {
       const isTapo = monitoringSource?.value === 'tapo_camera';
       const isLiveCamera = isTapo;
-      tapoCameraFields?.classList.toggle('d-none', !isTapo);
+      // Camera connection details are managed only through the registry modal.
+      // Keep these legacy transport inputs hidden because startAnalysis still
+      // reads their values when it dispatches a job to the edge laptop.
+      tapoCameraFields?.classList.add('d-none');
       uploadVideoForm?.classList.toggle('d-none', isLiveCamera);
+      uploadSourceCard?.classList.toggle('camera-source-hidden', isTapo);
 
       if (sourceActionTitle) {
         sourceActionTitle.textContent = isTapo
-          ? 'Tapo Camera Controls'
+          ? 'Camera Session'
           : 'Upload CCTV Video';
       }
 
       const currentStartLabel = document.getElementById('startAnalysisLabel');
       if (currentStartLabel) {
         currentStartLabel.textContent = isTapo
-          ? 'Start Tapo Camera'
+          ? 'Join / Start Feed'
           : 'Start Analysis';
       }
     }
@@ -577,10 +692,15 @@
         }
         updateDeleteCalibrationButton();
         closeCalibrationEditor();
+        calibrationSelectionTouched = true;
         if (analysisMessage) {
           analysisMessage.textContent = response.message;
           analysisMessage.className = 'small mt-2 text-success';
         }
+        // A newly saved profile becomes the selected profile. Trigger the
+        // normal assignment/restart flow instead of leaving the active worker
+        // on the previous configuration.
+        calibrationProfile?.dispatchEvent(new Event('change', { bubbles: true }));
       } catch (error) {
         saveCalibrationBtn.disabled = false;
         if (calibrationInstruction) calibrationInstruction.textContent = error.message;
@@ -799,6 +919,8 @@
           ? 'small mt-2 text-danger'
           : 'small mt-2 text-muted';
       }
+
+      updateCameraJoinButtons();
     }
 
     function setAnalysisSource(data) {
@@ -1015,6 +1137,18 @@
         setAnalysisSource(data);
         setProgress(awaitingNewStart ? { ...data, analysis_status: 'Starting' } : data);
 
+        // Page navigation destroys only the browser player. The edge worker and
+        // shared AI session continue running, so restore this tab's viewer as
+        // soon as the status endpoint confirms that the session is active.
+        if (liveAnalysis
+            && shouldRestoreJoinedCamera()
+            && !streamConnectionRequested
+            && !automaticStreamRestoreAttempted) {
+          automaticStreamRestoreAttempted = true;
+          connectStreamWithRetry();
+          setAnalysisControls(analysisStatus, 'Rejoined the active monitoring feed automatically.');
+        }
+
         if (cvProcessMode === 'start') {
           if (currentAnalysisStatus === 'running') {
             completeCvProcess('Computer Vision is running and the live monitoring stream is ready.');
@@ -1036,6 +1170,7 @@
 
         if (!liveAnalysis) {
           snapshotStreamGeneration += 1;
+          closeWebrtcStream();
           if (aiLiveStream) {
             aiLiveStream.src = '';
             aiLiveStream.style.display = 'none';
@@ -1043,6 +1178,8 @@
           if (snapshotCanvas) snapshotCanvas.style.display = 'none';
           if (streamFallback) streamFallback.style.display = 'flex';
           streamConnectionRequested = false;
+          streamHasFrame = false;
+          updateCameraJoinButtons();
         }
 
       if (sourceStatus && String(analysisStatus).toLowerCase() === 'running') {
@@ -1084,6 +1221,8 @@
       if (!snapshotCanvas && !aiLiveStream && !webrtcLiveStream) return;
       streamConnectionRequested = true;
       streamHasFrame = false;
+      rememberJoinedCamera();
+      updateCameraJoinButtons();
       const generation = ++snapshotStreamGeneration;
 
       if (streamRetryTimer) {
@@ -1246,9 +1385,12 @@
       else startSnapshotFallback();
     }
 
-    function hideStream() {
+    function hideStream({ forgetViewer = true } = {}) {
       streamConnectionRequested = false;
       streamHasFrame = false;
+      automaticStreamRestoreAttempted = true;
+      if (forgetViewer) forgetJoinedCamera();
+      updateCameraJoinButtons();
       snapshotStreamGeneration += 1;
       if (streamRetryTimer) window.clearTimeout(streamRetryTimer);
       streamRetryTimer = null;
@@ -1286,6 +1428,15 @@
     async function startAnalysis() {
       showWaitingStreamState();
       if (['running', 'starting'].includes(currentAnalysisStatus)) {
+        automaticStreamRestoreAttempted = true;
+        rememberJoinedCamera();
+        showCvProcess({
+          mode: 'start',
+          title: 'Joining Live Feed',
+          detail: 'Connecting this device to the active shared monitoring session.',
+          stage: 'Loading the latest processed frame...',
+          icon: 'bi-broadcast'
+        });
         connectStreamWithRetry();
         setAnalysisControls(currentAnalysisStatus, 'Joining the active shared monitoring session...');
         return;
@@ -1319,7 +1470,11 @@
 
       try {
         const sourceType = monitoringSource?.value ?? 'uploaded_video';
-        const requestBody = { source_type: sourceType, client: 'web' };
+        const requestBody = {
+          source_type: sourceType,
+          client: 'web',
+          camera_id: Number(cameraStage?.dataset.cameraId || 0)
+        };
         requestBody.calibration_profile = calibrationProfile?.value ?? '';
 
         if (sourceType === 'tapo_camera') {
@@ -1339,6 +1494,16 @@
           throw new Error(response.message ?? 'Unable to start AI analysis.');
         }
 
+        // A hosted Tapo request can only run after the gate laptop claims the
+        // queued job. Stop the blocking progress modal promptly when that
+        // worker is offline instead of appearing to connect indefinitely.
+        if (response.pending === true && monitoringSource?.value === 'tapo_camera') {
+          throw new Error(response.message ?? 'The gate laptop worker is offline. Start it, then press Join Feed again.');
+        }
+
+        automaticStreamRestoreAttempted = true;
+        rememberJoinedCamera();
+
         setAnalysisControls(
           response.analysis_status ?? 'Starting',
           response.message ?? 'Starting AI analysis...'
@@ -1355,6 +1520,7 @@
 
         setAnalysisControls('Error', message);
         failCvProcess(message);
+        forgetJoinedCamera();
 
       } finally {
         startAnalysisRequestPending = false;
@@ -1460,6 +1626,8 @@
           // Disconnect the Flask stream
           aiLiveStream.src = "";
           streamConnectionRequested = false;
+          forgetJoinedCamera();
+          updateCameraJoinButtons();
           snapshotStreamGeneration += 1;
           if (snapshotCanvas) snapshotCanvas.style.display = 'none';
 
@@ -1511,6 +1679,9 @@
         window.open(PROXIED_STREAM_URL, '_blank');
       });
     }
+    // Camera cards must be able to join an already-running shared feed even
+    // while the hidden Start button is disabled by the current session state.
+    window.travisJoinMonitoringFeed = startAnalysis;
     if (startAnalysisBtn) startAnalysisBtn.addEventListener('click', startAnalysis);
     if (stopAnalysisBtn && STOP_ANALYSIS_ENABLED) {
       stopAnalysisBtn.addEventListener('click', stopSharedAnalysis);
@@ -1520,6 +1691,27 @@
       calibrationSelectionTouched = true;
       updateDeleteCalibrationButton();
       const selectedName = calibrationProfile.options[calibrationProfile.selectedIndex]?.text ?? 'Selected configuration';
+      const selectedCameraId = Number(cameraStage?.dataset.cameraId || 0);
+      if (selectedCameraId > 0) {
+        try {
+          await fetchJson(apiUrl('cameras.php'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              csrf_token: calibrationCsrf?.value ?? '',
+              action: 'assign_calibration',
+              camera_id: selectedCameraId,
+              calibration_profile: calibrationProfile.value
+            })
+          });
+        } catch (error) {
+          if (analysisMessage) {
+            analysisMessage.textContent = error.message;
+            analysisMessage.className = 'small mt-2 text-danger';
+          }
+          return;
+        }
+      }
       if (!['running', 'starting'].includes(currentAnalysisStatus)) {
         if (analysisMessage) {
           analysisMessage.textContent = `${selectedName} selected. It will be used when analysis starts.`;
@@ -1614,3 +1806,4 @@
     setInterval(() => {
       if (!uploadInProgress) refreshMonitoringLogs();
     }, 10000);
+    setInterval(refreshCameraWallPreview, 750);

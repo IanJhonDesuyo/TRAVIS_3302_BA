@@ -1,0 +1,39 @@
+{$TRAVIS_SITE_ADDRESS} {
+    encode zstd gzip
+
+    header {
+        -Server
+        X-Content-Type-Options nosniff
+        Referrer-Policy strict-origin-when-cross-origin
+        X-Frame-Options SAMEORIGIN
+    }
+
+    @root path /
+    redir @root /Web_app/auth/ 302
+
+    handle /webrtc/* {
+        forward_auth app:80 {
+            uri /Web_app/api/stream_auth.php
+        }
+        reverse_proxy mediamtx:8889
+    }
+
+    reverse_proxy app:80
+}
+
+public.travis-nasugbu.tech {
+    encode zstd gzip
+
+    header {
+        -Server
+        X-Content-Type-Options nosniff
+        Referrer-Policy strict-origin-when-cross-origin
+        X-Frame-Options SAMEORIGIN
+    }
+
+    @root path /
+    rewrite @root /Web_app/public/index.php
+
+    reverse_proxy app:80
+}
+

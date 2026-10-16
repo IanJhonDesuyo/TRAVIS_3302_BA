@@ -37,5 +37,16 @@ if (file_put_contents($temporary, $jpeg, LOCK_EX) === false || !rename($temporar
     echo json_encode(['success' => false, 'message' => 'Unable to store the snapshot.']);
     exit;
 }
+$statusPath = dirname(__DIR__) . '/Web_app/api/analysis_status.json';
+$status = is_file($statusPath) ? json_decode((string)file_get_contents($statusPath), true) : [];
+$status = is_array($status) ? $status : [];
+$status['analysis_status'] = 'Running';
+$status['ai_status'] = 'Running';
+$status['message'] = 'Live processed frames are being received from the edge laptop.';
+$status['source_type'] = $status['source_type'] ?? 'tapo_camera';
+$status['stream_owner'] = 'shared';
+$status['updated_at'] = date('Y-m-d H:i:s');
+$status['updated_at_epoch'] = time();
+file_put_contents($statusPath, json_encode($status, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), LOCK_EX);
 echo json_encode(['success' => true, 'bytes' => strlen($jpeg)]);
 

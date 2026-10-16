@@ -38,6 +38,11 @@ function public_type_icon(string $type): string {
     };
 }
 
+function public_phone_numbers(string $value): array {
+    $numbers = preg_split('/\s*(?:\/|,|;|\||\bor\b)\s*/i', trim($value)) ?: [];
+    return array_values(array_filter(array_map('trim', $numbers)));
+}
+
 $allowedTypes = ['traffic advisory', 'tmo activity', 'public notice', 'event', 'road closure', 'emergency notice'];
 $search = trim((string)($_GET['search'] ?? ''));
 $type = strtolower(trim((string)($_GET['type'] ?? '')));
@@ -346,17 +351,23 @@ $trafficStatusUrl = public_project_base_url() . 'Web_app/api/public_traffic_stat
     /* ============================================================
        EMERGENCY CONTACTS
        ============================================================ */
-    .emergency-section{padding:76px 0;background:var(--paper);border-top:1px solid var(--line)}
-    .emergency-grid{display:grid;grid-template-columns:1.1fr .9fr;gap:22px;margin-top:24px}
-    .emergency-card{display:flex;align-items:flex-start;gap:18px;padding:26px;border:1px solid var(--line);border-radius:var(--radius-md);background:#fff;box-shadow:0 10px 30px rgba(16,42,67,.06)}
-    .emergency-card.primary{background:var(--navy);color:#fff;border-color:var(--navy)}
-    .emergency-icon{display:grid;place-items:center;flex:0 0 48px;width:48px;height:48px;border-radius:13px;background:var(--teal-light);color:var(--teal);font-size:1.2rem}
-    .emergency-card.primary .emergency-icon{background:rgba(255,255,255,.12);color:#fff}
-    .emergency-card h3{margin:0 0 6px;font-size:1.1rem}
-    .emergency-card p{margin:0;color:var(--muted);font-size:.88rem;line-height:1.6}
-    .emergency-card.primary p{color:#c9d8d3}
-    .emergency-number{display:inline-flex;margin-top:15px;color:inherit;font-size:1.45rem;font-weight:800;text-decoration:none;letter-spacing:.03em}
-    .emergency-note{margin-top:18px;color:var(--muted);font-size:.78rem}
+    .emergency-section{padding:68px 0;background:linear-gradient(180deg,#fff 0%,#f8faf7 100%);border-top:1px solid var(--line)}
+    .emergency-section .section-heading{margin-bottom:0}
+    .emergency-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:56px;row-gap:0;margin-top:28px;border-top:1px solid var(--line)}
+    .emergency-card{position:relative;display:grid;grid-template-columns:46px minmax(0,1fr);align-items:start;gap:16px;min-width:0;padding:24px 0;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;box-shadow:none}
+    .emergency-card.primary{background:transparent;color:var(--ink);border-color:var(--line)}
+    .emergency-icon{display:grid;place-items:center;width:46px;height:46px;border-radius:50%;background:var(--teal-light);color:var(--teal);font-size:1rem;box-shadow:0 0 0 6px rgba(18,116,106,.045)}
+    .emergency-card.primary .emergency-icon{background:var(--navy);color:#fff;box-shadow:0 0 0 6px rgba(16,42,67,.07)}
+    .emergency-content{min-width:0}
+    .emergency-card h3{margin:0 0 5px;color:var(--navy);font-size:1rem;line-height:1.35;letter-spacing:-.01em}
+    .emergency-card p,.emergency-card.primary p{margin:0;color:var(--muted);font-size:.8rem;line-height:1.55}
+    .emergency-hours,.emergency-card.primary .emergency-hours{display:flex;align-items:center;gap:5px;margin-top:7px;color:#788780;font-size:.68rem;line-height:1.3}
+    .emergency-numbers{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:12px}
+    .emergency-number,.emergency-card.primary .emergency-number{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:0 0 3px;border:0;border-bottom:1px solid rgba(18,116,106,.28);border-radius:0;background:transparent;color:var(--teal);font-size:.78rem;font-weight:800;line-height:1.3;text-decoration:none;overflow-wrap:anywhere;transition:color .18s ease,border-color .18s ease,transform .18s ease}
+    .emergency-number i{font-size:.72rem}
+    .emergency-number:hover,.emergency-card.primary .emergency-number:hover{border-color:var(--orange);color:var(--navy);transform:translateY(-1px)}
+    .emergency-note{display:flex;align-items:flex-start;gap:7px;margin:20px 0 0;padding-top:2px;color:var(--muted);font-size:.76rem}
+    .emergency-note i{color:var(--teal);margin-top:2px}
 
     /* ============================================================
        FOOTER
@@ -388,7 +399,7 @@ $trafficStatusUrl = public_project_base_url() . 'Web_app/api/public_traffic_stat
       .traffic-shell{grid-template-columns:1fr}
       .route-panel{border-right:0;border-bottom:1px solid var(--line)}
       .map-wrap,.map-setup{min-height:420px}
-      .emergency-grid{grid-template-columns:1fr}
+      .emergency-grid{column-gap:32px}
     }
     @media(max-width:560px){
       .congestion-card{grid-template-columns:1fr;padding:25px}.congestion-place{grid-column:auto}
@@ -403,6 +414,10 @@ $trafficStatusUrl = public_project_base_url() . 'Web_app/api/public_traffic_stat
       .featured-copy{padding:24px}
       .traffic-section{padding:52px 0}
       .traffic-shell{margin:0 -8px;border-radius:0;border-left:0;border-right:0}
+      .emergency-grid{grid-template-columns:1fr}
+      .emergency-section{padding:48px 0}
+      .emergency-card{grid-template-columns:42px minmax(0,1fr);gap:14px;padding:21px 0}
+      .emergency-icon{width:42px;height:42px}
       .map-wrap,.map-setup{min-height:340px}
       .footer-inner{flex-direction:column;align-items:flex-start}
       .hero-actions{align-items:stretch;flex-direction:column}.hero-actions .button{width:100%}
@@ -431,7 +446,63 @@ $trafficStatusUrl = public_project_base_url() . 'Web_app/api/public_traffic_stat
     <?php endif; ?>
   </main>
 
-  <section class="emergency-section" id="emergency"><div class="container"><span class="eyebrow">Help when it matters</span><div class="section-heading"><div><h2>Emergency contacts</h2><p>Use emergency services only for urgent incidents requiring immediate assistance.</p></div></div><div class="emergency-grid"><?php if ($publicContacts): ?><?php foreach ($publicContacts as $contact): $tel = preg_replace('/[^0-9+]/', '', (string)$contact['phone_number']); ?><article class="emergency-card <?= $contact['category'] === 'emergency' ? 'primary' : '' ?>"><span class="emergency-icon"><i class="bi <?= $contact['category'] === 'emergency' ? 'bi-telephone-fill' : 'bi-building' ?>"></i></span><div><h3><?= public_escape($contact['office_name']) ?></h3><p><?= public_escape($contact['description']) ?><?php if ($contact['office_hours'] !== ''): ?><br><small><i class="bi bi-clock"></i> <?= public_escape($contact['office_hours']) ?></small><?php endif; ?></p><a class="emergency-number" href="tel:<?= public_escape($tel) ?>"><?= public_escape($contact['phone_number']) ?></a></div></article><?php endforeach; ?><?php else: ?><article class="emergency-card primary"><span class="emergency-icon"><i class="bi bi-telephone-fill"></i></span><div><h3>Unified National Emergency Hotline</h3><p>For police, fire, medical, rescue, disaster response, and serious road emergencies anywhere in the Philippines.</p><a class="emergency-number" href="tel:911">Call 911</a></div></article><article class="emergency-card"><span class="emergency-icon"><i class="bi bi-building"></i></span><div><h3>Nasugbu Traffic Management Office</h3><p>For non-emergency traffic concerns, coordinate with the Traffic Management Office during official service hours.</p><a class="emergency-number" href="#announcements">View TMO advisories</a></div></article><?php endif; ?></div><p class="emergency-note"><i class="bi bi-info-circle"></i> Do not use emergency hotlines for route inquiries, general questions, or test calls.</p></div></section>
+  <section class="emergency-section" id="emergency">
+    <div class="container">
+      <span class="eyebrow">Help when it matters</span>
+      <div class="section-heading">
+        <div>
+          <h2>Emergency contacts</h2>
+          <p>Use emergency services only for urgent incidents requiring immediate assistance.</p>
+        </div>
+      </div>
+
+      <div class="emergency-grid">
+        <?php if ($publicContacts): ?>
+          <?php foreach ($publicContacts as $contact): ?>
+            <?php $phoneNumbers = public_phone_numbers((string)$contact['phone_number']); ?>
+            <article class="emergency-card <?= $contact['category'] === 'emergency' ? 'primary' : '' ?>">
+              <span class="emergency-icon" aria-hidden="true">
+                <i class="bi <?= $contact['category'] === 'emergency' ? 'bi-telephone-fill' : 'bi-building' ?>"></i>
+              </span>
+              <div class="emergency-content">
+                <h3><?= public_escape($contact['office_name']) ?></h3>
+                <p><?= public_escape($contact['description']) ?></p>
+                <?php if ($contact['office_hours'] !== ''): ?>
+                  <span class="emergency-hours"><i class="bi bi-clock"></i><?= public_escape($contact['office_hours']) ?></span>
+                <?php endif; ?>
+                <div class="emergency-numbers">
+                  <?php foreach ($phoneNumbers as $phoneNumber): ?>
+                    <?php $tel = preg_replace('/[^0-9+]/', '', $phoneNumber); ?>
+                    <a class="emergency-number" href="tel:<?= public_escape($tel) ?>" aria-label="Call <?= public_escape($contact['office_name']) ?> at <?= public_escape($phoneNumber) ?>">
+                      <i class="bi bi-telephone"></i><?= public_escape($phoneNumber) ?>
+                    </a>
+                  <?php endforeach; ?>
+                </div>
+              </div>
+            </article>
+          <?php endforeach; ?>
+        <?php else: ?>
+          <article class="emergency-card primary">
+            <span class="emergency-icon"><i class="bi bi-telephone-fill"></i></span>
+            <div class="emergency-content">
+              <h3>Unified National Emergency Hotline</h3>
+              <p>For police, fire, medical, rescue, disaster response, and serious road emergencies anywhere in the Philippines.</p>
+              <div class="emergency-numbers"><a class="emergency-number" href="tel:911"><i class="bi bi-telephone"></i>Call 911</a></div>
+            </div>
+          </article>
+          <article class="emergency-card">
+            <span class="emergency-icon"><i class="bi bi-building"></i></span>
+            <div class="emergency-content">
+              <h3>Nasugbu Traffic Management Office</h3>
+              <p>For non-emergency traffic concerns, coordinate with the Traffic Management Office during official service hours.</p>
+              <div class="emergency-numbers"><a class="emergency-number" href="#announcements">View TMO advisories</a></div>
+            </div>
+          </article>
+        <?php endif; ?>
+      </div>
+      <p class="emergency-note"><i class="bi bi-info-circle"></i> Do not use emergency hotlines for route inquiries, general questions, or test calls.</p>
+    </div>
+  </section>
 
   <footer id="contact"><div class="container footer-inner"><div><strong>TRAVIS · Traffic Management Office</strong><p>Providing reliable public traffic information for a safer community.</p></div><span class="footer-status"><i class="bi bi-shield-check"></i> Official information portal</span></div></footer>
   <script>

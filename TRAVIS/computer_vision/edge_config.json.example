@@ -1,3 +1,4 @@
 {
-  "web_base_url": "https://travis-nasugbu.site/TRAVIS"
+  "web_base_url": "https://travis-nasugbu.tech",
+  "webrtc_publish_url": "rtsp://YOUR_VPS_IP:8554/webrtc/travis"
 }

@@ -4,6 +4,7 @@ header("Content-Type: application/json");
 
 require_once __DIR__ . '/../Admin/db_connect.php';
 require_once __DIR__ . '/hybrid_bridge.php';
+require_once __DIR__ . '/camera_credentials.php';
 
 $projectRoot = realpath(__DIR__ . "/../..");
 $pythonExe = $projectRoot . "\\.venv\\Scripts\\python.exe";
@@ -12,10 +13,11 @@ $detectScript = $cvDir . "\\detect_video.py";
 $detectorLauncher = $cvDir . "\\start_detector.ps1";
 $videoPath = $cvDir . "\\uploads\\videos\\test.mp4";
 $cameraConfigPath = $cvDir . "\\camera_config.json";
+$cameraCredentialsPath = $cvDir . "\\camera_credentials.json";
 $phoneCameraConfigPath = $cvDir . "\\phone_camera_config.json";
 $calibrationDir = $cvDir . "\\calibration_profiles";
 
-$statusFile = __DIR__ . "\\analysis_status.json";
+$statusFile = __DIR__ . DIRECTORY_SEPARATOR . "analysis_status.json";
 $logDir = $projectRoot . "\\Web_app\\uploads\\logs";
 $logFile = $logDir . "\\analysis_latest.log";
 
@@ -69,6 +71,30 @@ $payload = is_array($payload) ? $payload : [];
 
 if (!travis_is_edge_host()) {
     $hostedSourceType = (string)($payload['source_type'] ?? 'uploaded_video');
+    $hostedCameraId = max(0, (int)($payload['camera_id'] ?? 0));
+    if ($hostedSourceType === 'tapo_camera' && $hostedCameraId > 0) {
+        camera_ensure_password_column($conn);
+        $cameraStmt = $conn->prepare('SELECT ip_address, camera_username, camera_password_encrypted, stream_quality FROM cameras WHERE camera_id=? AND is_enabled=1 LIMIT 1');
+        $cameraStmt->bind_param('i', $hostedCameraId);
+        $cameraStmt->execute();
+        $registeredCamera = $cameraStmt->get_result()->fetch_assoc();
+        $cameraStmt->close();
+        if (!$registeredCamera) {
+            http_response_code(404);
+            echo json_encode(['success' => false, 'message' => 'The selected camera is unavailable or disabled.']);
+            exit;
+        }
+        $savedPassword = camera_decrypt_password($registeredCamera['camera_password_encrypted'] ?? null);
+        if ($savedPassword === '') {
+            http_response_code(422);
+            echo json_encode(['success' => false, 'message' => 'Open Camera Settings and save the camera password once.']);
+            exit;
+        }
+        $payload['tapo_host'] = (string)$registeredCamera['ip_address'];
+        $payload['tapo_username'] = (string)$registeredCamera['camera_username'];
+        $payload['tapo_password'] = $savedPassword;
+        $payload['tapo_stream'] = (string)$registeredCamera['stream_quality'];
+    }
     if (!in_array($hostedSourceType, ['uploaded_video', 'tapo_camera', 'phone_camera'], true)) {
         $hostedSourceType = 'uploaded_video';
     }
@@ -102,6 +128,7 @@ if (!travis_is_edge_host()) {
             ? 'Connecting to the Tapo camera through the monitoring laptop...'
             : 'Starting Computer Vision on the monitoring laptop...',
         'source_type' => $hostedSourceType,
+        'camera_id' => $hostedCameraId,
         'stream_owner' => 'shared',
         'started_by' => strtolower((string)($payload['client'] ?? 'web')),
         'updated_at' => date('Y-m-d H:i:s'),
@@ -110,7 +137,11 @@ if (!travis_is_edge_host()) {
     file_put_contents($statusFile, json_encode($hostedStartingStatus, JSON_PRETTY_PRINT), LOCK_EX);
 
     try {
-        $result = travis_dispatch_edge_job($conn, 'cv_start', $payload, 45);
+        // A live camera worker normally claims a job within a few seconds.
+        // Do not leave the hosted UI spinning for almost a minute when the
+        // gate laptop is offline; uploaded footage retains the longer window.
+        $edgeWaitSeconds = $hostedSourceType === 'tapo_camera' ? 10 : 45;
+        $result = travis_dispatch_edge_job($conn, 'cv_start', $payload, $edgeWaitSeconds);
         if (!empty($result['pending'])) {
             // The worker may still be downloading a large uploaded video.
             // Keep the UI in Starting state instead of reporting a false
@@ -118,7 +149,9 @@ if (!travis_is_edge_host()) {
             http_response_code(202);
             $result['success'] = true;
             $result['analysis_status'] = 'Starting';
-            $result['message'] = 'The laptop worker is preparing the footage. Analysis will appear automatically when ready.';
+            $result['message'] = $hostedSourceType === 'tapo_camera'
+                ? 'The gate laptop worker is offline or not connected. Start the TRAVIS edge worker at the gate, then press Join Feed again.'
+                : 'The laptop worker is preparing the footage. Analysis will appear automatically when ready.';
             $hostedStartingStatus['analysis_status'] = 'Starting';
             $hostedStartingStatus['ai_status'] = 'Starting';
             $hostedStartingStatus['message'] = $result['message'];
@@ -147,6 +180,7 @@ if (!travis_is_edge_host()) {
 
 $sourceType = is_array($payload) ? ($payload["source_type"] ?? "uploaded_video") : "uploaded_video";
 $streamOwner = is_array($payload) ? strtolower((string)($payload["client"] ?? "web")) : "web";
+$cameraId = max(0, (int)($payload["camera_id"] ?? 0));
 $calibrationFile = basename((string)($payload["calibration_profile"] ?? ""));
 $calibrationArg = "";
 
@@ -168,9 +202,21 @@ if (is_file($statusFile)) {
     // Flask processes.
     $isStarting = $existingState === "starting" && $existingUpdated > 0 && time() - $existingUpdated <= 180;
     if ($hasLiveFrames || $isStarting) {
+        $activeCameraId = max(0, (int)($existingStatus["camera_id"] ?? $latestStatus["camera_id"] ?? 0));
+        if ($cameraId > 0 && $activeCameraId > 0 && $cameraId !== $activeCameraId) {
+            http_response_code(409);
+            echo json_encode([
+                "success" => false,
+                "analysis_status" => $hasLiveFrames ? "Running" : "Starting",
+                "camera_id" => $activeCameraId,
+                "message" => "Another registered camera is using this edge laptop. Stop its session before starting this camera."
+            ]);
+            exit;
+        }
         echo json_encode([
             "success" => true,
             "analysis_status" => $hasLiveFrames ? "Running" : "Starting",
+            "camera_id" => $activeCameraId ?: $cameraId,
             "stream_owner" => "shared",
             "joined_existing" => true,
             "message" => $hasLiveFrames
@@ -228,17 +274,28 @@ if ($sourceType === "tapo_camera") {
         if (is_array($decodedCameraConfig)) $savedCameraConfig = $decodedCameraConfig;
     }
 
+    $cameraCredentials = [];
+    if (is_file($cameraCredentialsPath)) {
+        $decodedCredentials = json_decode((string)file_get_contents($cameraCredentialsPath), true);
+        if (is_array($decodedCredentials)) $cameraCredentials = $decodedCredentials;
+    }
+    $cameraKey = $cameraId > 0 ? (string)$cameraId : '';
+    $savedCredential = $cameraKey !== '' && isset($cameraCredentials[$cameraKey])
+        && is_array($cameraCredentials[$cameraKey])
+        ? $cameraCredentials[$cameraKey]
+        : $savedCameraConfig;
+
     $submittedHost = trim((string)($payload["tapo_host"] ?? ""));
     $submittedUsername = trim((string)($payload["tapo_username"] ?? ""));
-    $host = $submittedHost !== "" ? $submittedHost : trim((string)($savedCameraConfig["host"] ?? ""));
-    $username = $submittedUsername !== "" ? $submittedUsername : trim((string)($savedCameraConfig["username"] ?? ""));
+    $host = $submittedHost !== "" ? $submittedHost : trim((string)($savedCredential["host"] ?? ""));
+    $username = $submittedUsername !== "" ? $submittedUsername : trim((string)($savedCredential["username"] ?? ""));
     $password = (string) ($payload["tapo_password"] ?? "");
     // A camera commonly receives a new DHCP address while retaining the same
     // local camera account. Reuse its saved password when the username matches.
-    if ($password === "" && $username === ($savedCameraConfig["username"] ?? null)) {
-        $password = (string)($savedCameraConfig["password"] ?? "");
+    if ($password === "" && $username === ($savedCredential["username"] ?? null)) {
+        $password = (string)($savedCredential["password"] ?? "");
     }
-    $streamValue = $payload["tapo_stream"] ?? $savedCameraConfig["stream"] ?? "stream2";
+    $streamValue = $payload["tapo_stream"] ?? $savedCredential["stream"] ?? "stream2";
     $stream = $streamValue === "stream1" ? "stream1" : "stream2";
 
     if (!filter_var($host, FILTER_VALIDATE_IP) || $username === "" || $password === "") {
@@ -255,17 +312,28 @@ if ($sourceType === "tapo_camera") {
     }
     fclose($rtspSocket);
 
-    $cameraConfig = json_encode([
+    $activeCameraConfig = [
+        "camera_id" => $cameraId > 0 ? $cameraId : max(1, (int)($savedCameraConfig["camera_id"] ?? 1)),
         "host" => $host,
         "username" => $username,
         "password" => $password,
         "stream" => $stream
-    ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+    ];
+    $cameraConfig = json_encode($activeCameraConfig, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
 
     if (file_put_contents($cameraConfigPath, $cameraConfig, LOCK_EX) === false) {
         http_response_code(500);
         echo json_encode(["success" => false, "message" => "Could not save the local camera configuration."]);
         exit;
+    }
+    if ($cameraKey !== '') {
+        $cameraCredentials[$cameraKey] = $activeCameraConfig;
+        $credentialsJson = json_encode($cameraCredentials, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        if ($credentialsJson === false || file_put_contents($cameraCredentialsPath, $credentialsJson, LOCK_EX) === false) {
+            http_response_code(500);
+            echo json_encode(["success" => false, "message" => "Could not save the camera credential on the edge laptop."]);
+            exit;
+        }
     }
 }
 
@@ -361,6 +429,7 @@ file_put_contents($statusFile, json_encode([
     "ai_status" => "Starting",
     "message" => "Starting AI analysis...",
     "source_type" => $sourceType,
+    "camera_id" => $cameraId,
     "stream_owner" => "shared",
     "started_by" => $streamOwner,
     "updated_at" => date("Y-m-d H:i:s"),
@@ -387,6 +456,7 @@ if ($launcherExitCode !== 0) {
         "ai_status" => "Error",
         "message" => "Computer Vision could not be launched as a background process.",
         "source_type" => $sourceType,
+        "camera_id" => $cameraId,
         "updated_at" => date("Y-m-d H:i:s"),
         "updated_at_epoch" => time()
     ], JSON_PRETTY_PRINT), LOCK_EX);
@@ -402,6 +472,7 @@ if ($launcherExitCode !== 0) {
 echo json_encode([
     "success" => true,
     "analysis_status" => "Starting",
+    "camera_id" => $cameraId,
     "stream_owner" => "shared",
     "message" => $sourceType === "tapo_camera"
         ? "Tapo camera analysis is starting."

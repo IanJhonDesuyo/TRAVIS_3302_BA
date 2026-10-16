@@ -54,8 +54,12 @@ function travis_reject_service_request(string $reason): void
 function travis_enforce_service_rate_limit(int $maximumPerMinute = 120): void
 {
     $address = (string)($_SERVER['REMOTE_ADDR'] ?? 'unknown');
+    // Snapshot uploads are intentionally frequent. Keep each service endpoint
+    // in its own bucket so video fallback traffic cannot block the critical
+    // worker job queue (cv_start/cv_stop).
+    $endpoint = (string)(parse_url((string)($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH) ?: 'unknown');
     $bucket = intdiv(time(), 60);
-    $key = hash('sha256', $address . '|' . $bucket);
+    $key = hash('sha256', $address . '|' . $endpoint . '|' . $bucket);
     $path = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'travis-service-' . $key . '.limit';
     $handle = @fopen($path, 'c+');
     if ($handle === false) {

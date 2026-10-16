@@ -49,13 +49,13 @@ function MajorFunctionBar() {
 
   return (
     <View style={styles.majorFunctionBar}>
-      <TouchableOpacity style={styles.majorFunctionItem} onPress={() => router.push({ pathname: '/(drawer)/violations', params: { open: 'ocr', nonce: String(Date.now()) } })} activeOpacity={0.7} accessibilityLabel="Open OCR ticket scanner">
+      <TouchableOpacity style={styles.majorFunctionItem} onPress={() => router.push({ pathname: '/(drawer)/violations', params: { open: 'ocr' } })} activeOpacity={0.7} accessibilityLabel="Open OCR ticket scanner">
         <Ionicons name="scan-outline" size={20} color={COLORS.primary} />
         <Text style={styles.majorFunctionLabel}>OCR Scan</Text>
       </TouchableOpacity>
-      <TouchableOpacity style={styles.majorFunctionItem} onPress={() => router.push('/(drawer)/monitoring')} activeOpacity={0.7} accessibilityLabel="Open live monitoring">
-        <Ionicons name="videocam-outline" size={20} color={itemColor('/monitoring')} />
-        <Text style={[styles.majorFunctionLabel, isActive('/monitoring') && styles.majorFunctionLabelActive]}>Monitoring</Text>
+      <TouchableOpacity style={styles.majorFunctionItem} onPress={() => router.push('/(drawer)/alerts')} activeOpacity={0.7} accessibilityLabel="Open operational alerts">
+        <Ionicons name="notifications-outline" size={20} color={itemColor('/alerts')} />
+        <Text style={[styles.majorFunctionLabel, isActive('/alerts') && styles.majorFunctionLabelActive]}>Alerts</Text>
       </TouchableOpacity>
       <TouchableOpacity style={styles.majorFunctionItem} onPress={() => router.push('/(drawer)/violations')} activeOpacity={0.7} accessibilityLabel="Open violation records">
         <Ionicons name="alert-circle-outline" size={20} color={itemColor('/violations')} />
@@ -69,54 +69,48 @@ function MajorFunctionBar() {
   );
 }
 
-// ========== CUSTOM DRAWER CONTENT ==========
-function CustomDrawerContent(props: any & { user: TravisUser }) {
+function DrawerItemWithIcon({
+  label,
+  icon,
+  route,
+}: {
+  label: string;
+  icon: string;
+  route: string;
+}) {
   const router = useRouter();
   const pathname = usePathname();
-  const [logoutModalVisible, setLogoutModalVisible] = useState(false);
+  const active = pathname === route || pathname.startsWith(route + '/');
 
-  const isActive = (route: string) => {
-    return pathname === route || pathname.startsWith(route + '/');
-  };
+  return (
+    <DrawerItem
+      label={label}
+      icon={({ size }) => (
+        <Ionicons
+          name={icon as any}
+          size={18}
+          color={active ? '#FFD18C' : '#8BC9C2'}
+        />
+      )}
+      onPress={() => router.push(route as Href)}
+      style={[styles.drawerItem, active && styles.activeDrawerItem]}
+      labelStyle={[styles.drawerLabel, active && styles.activeDrawerLabel]}
+    />
+  );
+}
 
-  const DrawerItemWithIcon = ({
-    label,
-    icon,
-    route,
-  }: {
-    label: string;
-    icon: string;
-    route: string;
-  }) => {
-    const active = isActive(route);
-    return (
-      <DrawerItem
-        label={label}
-        icon={({ size }) => (
-          <Ionicons
-            name={icon as any}
-            size={18}
-            color={active ? '#FFD18C' : '#8BC9C2'}
-          />
-        )}
-        onPress={() => router.push(route as Href)}
-        style={[
-          styles.drawerItem,
-          active && styles.activeDrawerItem,
-        ]}
-        labelStyle={[
-          styles.drawerLabel,
-          active && styles.activeDrawerLabel,
-        ]}
-      />
-    );
-  };
-
-  const SectionHeader = ({ title }: { title: string }) => (
+function SectionHeader({ title }: { title: string }) {
+  return (
     <View style={styles.sectionHeaderContainer}>
       <Text style={styles.sectionHeader}>{title}</Text>
     </View>
   );
+}
+
+// ========== CUSTOM DRAWER CONTENT ==========
+function CustomDrawerContent(props: any & { user: TravisUser }) {
+  const router = useRouter();
+  const [logoutModalVisible, setLogoutModalVisible] = useState(false);
 
   // ===== UPDATED LOGOUT =====
   const handleLogout = async () => {
@@ -159,8 +153,6 @@ function CustomDrawerContent(props: any & { user: TravisUser }) {
           icon="grid-outline"
           route="/dashboard"
         />
-        <DrawerItemWithIcon label="Live Monitoring" icon="videocam-outline" route="/monitoring" />
-
         <SectionHeader title="INTELLIGENCE" />
         <DrawerItemWithIcon label="Decision Support" icon="bulb-outline" route="/decision-support" />
 
@@ -184,11 +176,6 @@ function CustomDrawerContent(props: any & { user: TravisUser }) {
 
         {/* ===== ADMINISTRATION ===== */}
         <SectionHeader title="ADMINISTRATION" />
-        <DrawerItemWithIcon
-          label="Reports"
-          icon="bar-chart-outline"
-          route="/reports"
-        />
         <DrawerItemWithIcon
           label="User Management"
           icon="people-outline"
@@ -304,7 +291,6 @@ export default function DrawerLayout() {
           title: 'Dashboard',
         }}
       />
-      <Drawer.Screen name="monitoring" options={{ title: 'Live Monitoring' }} />
       <Drawer.Screen name="decision-support" options={{ title: 'Decision Support' }} />
 
       {/* ENFORCEMENT */}
@@ -328,12 +314,6 @@ export default function DrawerLayout() {
       />
 
       {/* ADMINISTRATION */}
-      <Drawer.Screen
-        name="reports"
-        options={{
-          title: 'Reports',
-        }}
-      />
       <Drawer.Screen
         name="users"
         options={{

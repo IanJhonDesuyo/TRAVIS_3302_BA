@@ -1,0 +1,23 @@
+logLevel: info
+
+rtsp: true
+rtspAddress: :8554
+rtspTransports: [tcp]
+rtmp: false
+hls: false
+srt: false
+playback: false
+api: false
+metrics: false
+pprof: false
+
+webrtc: true
+webrtcAddress: :8889
+webrtcAllowOrigins: ['https://travis-nasugbu.tech']
+webrtcLocalUDPAddress: :8189
+webrtcLocalTCPAddress: :8189
+webrtcAdditionalHosts: [travis-nasugbu.tech, 179.197.240.227]
+
+paths:
+  webrtc/travis:
+    source: publisher

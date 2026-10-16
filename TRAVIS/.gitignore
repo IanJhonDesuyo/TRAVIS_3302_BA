@@ -18,6 +18,7 @@ computer_vision/uploads/
 computer_vision/venv/
 computer_vision/.venv/
 computer_vision/camera_config.json
+computer_vision/camera_credentials.json
 computer_vision/phone_camera_config.json
 computer_vision/edge_config.json
 
@@ -48,9 +49,13 @@ storage/mediamtx-test.yml
 storage/mediamtx-test.log
 storage/mediamtx-test-error.log
 tools/mediamtx/
+storage/cache/
+storage/*.log
+storage/*.env
 
 # Generated deployment packages
 deploy/build/
+deploy/build-vps/
 deploy/*.zip
 deploy/hostinger-config/
 
@@ -73,7 +78,11 @@ Thumbs.db
 
 # Expo
 .expo/
+Mobile_App/.expo-export-check/
 node_modules/
+
+# Local database snapshots
+travis-local.sql
 
 # Logs
 npm-debug.*

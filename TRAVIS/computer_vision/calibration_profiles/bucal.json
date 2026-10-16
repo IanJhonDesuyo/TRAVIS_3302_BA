@@ -1,0 +1,39 @@
+{
+    "profile_name": "bucal",
+    "road_roi": [
+        [0, 0],
+        [1, 0],
+        [1, 1],
+        [0, 1]
+    ],
+    "inbound_line": [
+        [0.10678809237918506, 0.6930723309732056],
+        [0.36327911800021834, 0.43184784117728725]
+    ],
+    "outbound_line": [
+        [0.557892931214621, 0.1439677911981119],
+        [0.9910334180610352, 0.13330556712480912]
+    ],
+    "officer_zone": [],
+    "officer": {
+        "enabled": false,
+        "presence_frames": 3,
+        "absence_frames": 15
+    },
+    "collision": {
+        "enabled": true,
+        "ttc_warning_seconds": 2.5,
+        "maximum_pair_distance": 2.6,
+        "contact_iou": 0.08,
+        "confirmation_iou": 0.04,
+        "possible_frames": 3,
+        "confirmed_frames": 4,
+        "risk_memory_seconds": 4,
+        "minimum_track_confidence": 0.45,
+        "minimum_motorcycle_confidence": 0.25,
+        "occlusion_confirmation_frames": 3,
+        "occlusion_window_seconds": 2,
+        "occlusion_max_distance": 1.5,
+        "cooldown_seconds": 30
+    }
+}

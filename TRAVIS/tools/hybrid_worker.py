@@ -18,11 +18,12 @@ import requests
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_BASE_URL = "https://travis-nasugbu.site/TRAVIS"
+DEFAULT_BASE_URL = "https://travis-nasugbu.tech"
 DEFAULT_KEY_FILE = PROJECT_ROOT / "storage" / "service_api.key"
 LOCAL_WEB_BASE = "http://127.0.0.1/TRAVIS/Web_app/api"
 ML_BASE = "http://127.0.0.1:5001"
 LOG_PATH = PROJECT_ROOT / "storage" / "hybrid-worker.log"
+_instance_guard: socket.socket | None = None
 
 logger = logging.getLogger("travis_hybrid_worker")
 logger.setLevel(logging.INFO)
@@ -34,6 +35,19 @@ if sys.stdout is not None:
     _stream_handler = logging.StreamHandler(sys.stdout)
     _stream_handler.setFormatter(logging.Formatter("%(message)s"))
     logger.addHandler(_stream_handler)
+
+
+def acquire_single_instance(port: int) -> None:
+    """Prevent duplicate workers of the same role from flooding the queue."""
+    global _instance_guard
+    guard = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        guard.bind(("127.0.0.1", port))
+        guard.listen(1)
+    except OSError as error:
+        guard.close()
+        raise SystemExit("TRAVIS Edge Agent is already running on this laptop.") from error
+    _instance_guard = guard
 
 
 class WorkerClient:
@@ -249,6 +263,12 @@ def main() -> None:
     supported = [item.strip() for item in args.types.split(",") if item.strip() in allowed]
     if not supported:
         raise SystemExit("At least one valid worker job type is required.")
+    has_cv = any(item.startswith("cv_") for item in supported)
+    has_ml = any(item.startswith("ml_") for item in supported)
+    # ML and CV are intentionally separate scheduled workers. They need
+    # separate guards so one role cannot prevent the other from starting.
+    instance_port = 47823 if has_cv and has_ml else (47821 if has_cv else 47822)
+    acquire_single_instance(instance_port)
     run(WorkerClient(args.base_url, secret, args.worker_id), max(0.5, args.interval), supported)
 
 
