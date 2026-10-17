@@ -699,8 +699,22 @@ a:hover{color:#fff}
 #addViolationModal .license-status-row .form-check-label{line-height:1.25;}
 #addViolationModal .vehicle-status-row{grid-template-columns:1fr;}
 #addViolationModal .violation-item-row{padding:10px 4px;border:1px solid rgba(16,47,73,.1);border-radius:11px;background:rgba(255,255,255,.35);}
-#addViolationModal #tmoOfficerField{--tmo-menu-clearance:80px;}
-#addViolationModal #tmoOfficerField.tmo-menu-open{margin-bottom:var(--tmo-menu-clearance);}
+#addViolationModal .tmo-native-select{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important;opacity:0!important;pointer-events:none!important;}
+#addViolationModal .tmo-officer-trigger{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:43px;padding:9px 13px;border:1px solid rgba(16,47,73,.18);border-radius:10px;color:#102f49;background:#fff;font-size:.82rem;text-align:left;}
+#addViolationModal .tmo-officer-trigger:hover,#addViolationModal .tmo-officer-trigger:focus{border-color:#087d78;box-shadow:0 0 0 .2rem rgba(8,125,120,.12);outline:0;}
+#addViolationModal .tmo-officer-trigger.is-invalid{border-color:#dc3545;box-shadow:0 0 0 .2rem rgba(220,53,69,.1);}
+#addViolationModal .tmo-officer-trigger span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#addViolationModal .tmo-officer-trigger i{flex:0 0 auto;transition:transform .16s ease;}
+#addViolationModal .tmo-officer-trigger[aria-expanded="true"] i{transform:rotate(180deg);}
+#addViolationModal .tmo-officer-menu{display:grid;margin-top:6px;overflow:hidden;border:1px solid rgba(16,47,73,.14);border-radius:11px;background:#fff;box-shadow:0 12px 26px rgba(16,47,73,.13);}
+#addViolationModal .tmo-officer-menu[hidden]{display:none!important;}
+#addViolationModal .tmo-officer-option{display:grid;gap:2px;width:100%;padding:10px 13px;border:0;border-bottom:1px solid rgba(16,47,73,.08);color:#102f49;background:#fff;text-align:left;}
+#addViolationModal .tmo-officer-option:last-child{border-bottom:0;}
+#addViolationModal .tmo-officer-option:hover,#addViolationModal .tmo-officer-option:focus,#addViolationModal .tmo-officer-option.active{color:#fff;background:#087d78;outline:0;}
+#addViolationModal .tmo-officer-option strong{font-size:.78rem;line-height:1.3;}
+#addViolationModal .tmo-officer-option small{color:#667a74;font-size:.65rem;line-height:1.35;}
+#addViolationModal .tmo-officer-option:hover small,#addViolationModal .tmo-officer-option:focus small,#addViolationModal .tmo-officer-option.active small{color:rgba(255,255,255,.82)!important;}
+#addViolationModal .tmo-officer-empty{padding:11px 13px;color:#7a8a86;font-size:.72rem;}
 @media(max-width:575.98px){
     #addViolationModal .modal-dialog{height:calc(100dvh - 1rem);margin:.5rem;}
     #addViolationModal .license-status-row{grid-template-columns:1fr;}
@@ -1198,13 +1212,30 @@ div[style*="border-radius: 999px"]:not(.tag){
               <div class="col-md-6"><label class="form-label">Position</label><input type="text" name="apprehending_officer_position" class="form-control" maxlength="120"></div>
             </div></div>
             <div class="col-12 d-none" id="tmoOfficerField">
-              <label class="form-label" for="tmoOfficerSelect">TMO Officer</label>
-              <select class="form-select" name="tmo_officer_id" id="tmoOfficerSelect">
+              <label class="form-label" for="tmoOfficerTrigger">TMO Officer</label>
+              <select class="form-select tmo-native-select" name="tmo_officer_id" id="tmoOfficerSelect" tabindex="-1" aria-hidden="true">
                 <option value="">Select TMO officer</option>
                 <?php foreach ($tmoOfficers as $officer): ?>
-                  <option value="<?= (int)$officer['officer_id'] ?>"><?= esc(trim((string)$officer['last_name'] . ', ' . (string)$officer['first_name'])) ?><?= !empty($officer['badge_number']) ? ' · ' . esc($officer['badge_number']) : '' ?><?= !empty($officer['rank']) ? ' · ' . esc($officer['rank']) : '' ?><?= !empty($officer['zone_name']) ? ' · ' . esc($officer['zone_name']) : ' · Unassigned' ?></option>
+                  <option value="<?= (int)$officer['officer_id'] ?>" data-short-label="<?= esc(trim((string)$officer['last_name'] . ', ' . (string)$officer['first_name'])) ?>"><?= esc(trim((string)$officer['last_name'] . ', ' . (string)$officer['first_name'])) ?><?= !empty($officer['badge_number']) ? ' · ' . esc($officer['badge_number']) : '' ?><?= !empty($officer['rank']) ? ' · ' . esc($officer['rank']) : '' ?><?= !empty($officer['zone_name']) ? ' · ' . esc($officer['zone_name']) : ' · Unassigned' ?></option>
                 <?php endforeach; ?>
               </select>
+              <div class="tmo-officer-picker">
+                <button class="tmo-officer-trigger" id="tmoOfficerTrigger" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="tmoOfficerMenu">
+                  <span id="tmoOfficerTriggerLabel">Select TMO officer</span><i class="bi bi-chevron-down" aria-hidden="true"></i>
+                </button>
+                <div class="tmo-officer-menu" id="tmoOfficerMenu" role="listbox" aria-label="Active TMO officers" hidden>
+                  <?php if ($tmoOfficers): ?>
+                    <?php foreach ($tmoOfficers as $officer): ?>
+                      <button class="tmo-officer-option" type="button" role="option" data-officer-id="<?= (int)$officer['officer_id'] ?>" aria-selected="false">
+                        <strong><?= esc(trim((string)$officer['last_name'] . ', ' . (string)$officer['first_name'])) ?></strong>
+                        <small><?= esc((string)($officer['badge_number'] ?: 'No badge number')) ?> · <?= esc((string)($officer['rank'] ?: 'TMO Officer')) ?> · <?= esc((string)($officer['zone_name'] ?: 'Unassigned')) ?></small>
+                      </button>
+                    <?php endforeach; ?>
+                  <?php else: ?>
+                    <div class="tmo-officer-empty">No active TMO officers are available.</div>
+                  <?php endif; ?>
+                </div>
+              </div>
               <?php if (!$tmoOfficers): ?><small class="text-danger">No active TMO enforcers are available. Add or activate an employee in Traffic Enforcer Management.</small><?php else: ?><small class="text-muted">Managed from Traffic Enforcer Management; active personnel only.</small><?php endif; ?>
             </div>
             <div class="col-md-6"><label class="form-label">Apprehension Date</label><input type="date" name="apprehension_date" class="form-control" value="<?= date('Y-m-d') ?>"></div>
@@ -1259,14 +1290,32 @@ const offenseNumberLabel = document.getElementById('offenseNumberLabel');
 const policeOfficerFields = document.getElementById('policeOfficerFields');
 const tmoOfficerField = document.getElementById('tmoOfficerField');
 const tmoOfficerSelect = document.getElementById('tmoOfficerSelect');
+const tmoOfficerTrigger = document.getElementById('tmoOfficerTrigger');
+const tmoOfficerTriggerLabel = document.getElementById('tmoOfficerTriggerLabel');
+const tmoOfficerMenu = document.getElementById('tmoOfficerMenu');
+const tmoOfficerOptions = Array.from(document.querySelectorAll('.tmo-officer-option'));
 let driverAnalysisTimer = null;
 let automaticOffenseFloor = 1;
 
-function setTmoMenuOpen(isOpen) {
-  if (!tmoOfficerField || !tmoOfficerSelect) return;
-  const visibleRows = Math.min(Math.max(tmoOfficerSelect.options.length, 2), 6);
-  tmoOfficerField.style.setProperty('--tmo-menu-clearance', `${visibleRows * 36 + 8}px`);
-  tmoOfficerField.classList.toggle('tmo-menu-open', isOpen);
+function setTmoDropdownOpen(isOpen) {
+  if (!tmoOfficerMenu || !tmoOfficerTrigger) return;
+  tmoOfficerMenu.hidden = !isOpen;
+  tmoOfficerTrigger.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+}
+
+function syncTmoOfficerPicker() {
+  if (!tmoOfficerSelect || !tmoOfficerTriggerLabel) return;
+  const selectedOption = tmoOfficerSelect.options[tmoOfficerSelect.selectedIndex];
+  const selectedValue = tmoOfficerSelect.value;
+  tmoOfficerTriggerLabel.textContent = selectedValue && selectedOption
+    ? (selectedOption.dataset.shortLabel || selectedOption.textContent.trim())
+    : 'Select TMO officer';
+  tmoOfficerTrigger?.classList.remove('is-invalid');
+  tmoOfficerOptions.forEach((option) => {
+    const isSelected = option.dataset.officerId === selectedValue;
+    option.classList.toggle('active', isSelected);
+    option.setAttribute('aria-selected', isSelected ? 'true' : 'false');
+  });
 }
 
 function syncDriverName() {
@@ -1339,9 +1388,10 @@ function syncOfficerFields() {
   if (policePosition) policePosition.disabled = isTmo;
   if (tmoOfficerSelect) {
     tmoOfficerSelect.disabled = !isTmo;
-    tmoOfficerSelect.required = isTmo;
+    tmoOfficerSelect.required = false;
   }
-  if (!isTmo) setTmoMenuOpen(false);
+  if (tmoOfficerTrigger) tmoOfficerTrigger.disabled = !isTmo || tmoOfficerOptions.length === 0;
+  if (!isTmo) setTmoDropdownOpen(false);
 }
 
 function updateAutomaticOffenseNumber() {
@@ -1528,12 +1578,37 @@ insurancePolicyNotSpecifiedCheck?.addEventListener('change', syncOptionalVehicle
 document.querySelectorAll('input[name="apprehending_officer_agency"]').forEach(function (input) {
   input.addEventListener('change', syncOfficerFields);
 });
-tmoOfficerSelect?.addEventListener('pointerdown', () => setTmoMenuOpen(true));
-tmoOfficerSelect?.addEventListener('keydown', (event) => {
-  if (['Enter', ' ', 'ArrowDown', 'ArrowUp'].includes(event.key)) setTmoMenuOpen(true);
+tmoOfficerTrigger?.addEventListener('click', function () {
+  setTmoDropdownOpen(this.getAttribute('aria-expanded') !== 'true');
 });
-tmoOfficerSelect?.addEventListener('change', () => window.setTimeout(() => setTmoMenuOpen(false), 0));
-tmoOfficerSelect?.addEventListener('blur', () => setTmoMenuOpen(false));
+tmoOfficerOptions.forEach((option) => {
+  option.addEventListener('click', function () {
+    if (!tmoOfficerSelect) return;
+    tmoOfficerSelect.value = this.dataset.officerId || '';
+    tmoOfficerSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    setTmoDropdownOpen(false);
+    tmoOfficerTrigger?.focus();
+  });
+});
+tmoOfficerSelect?.addEventListener('change', syncTmoOfficerPicker);
+tmoOfficerMenu?.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape') return;
+  setTmoDropdownOpen(false);
+  tmoOfficerTrigger?.focus();
+});
+document.addEventListener('click', (event) => {
+  if (tmoOfficerField?.contains(event.target)) return;
+  setTmoDropdownOpen(false);
+});
+ticketForm?.addEventListener('submit', (event) => {
+  const isTmo = document.querySelector('input[name="apprehending_officer_agency"]:checked')?.value === 'tmo';
+  if (!isTmo || tmoOfficerSelect?.value) return;
+  event.preventDefault();
+  tmoOfficerTrigger?.classList.add('is-invalid');
+  setTmoDropdownOpen(true);
+  tmoOfficerTrigger?.focus();
+});
+syncTmoOfficerPicker();
 
 noPlateCheck?.addEventListener('change', function () {
   plateNumberInput.disabled = this.checked;
