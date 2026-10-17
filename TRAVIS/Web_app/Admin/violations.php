@@ -811,6 +811,17 @@ div[style*="border-radius: 999px"]:not(.tag){
 .violations-top-card:nth-child(3) .violations-top-rank{background:rgba(251,146,60,.14)!important;color:#fb923c!important}
 .violations-top-person{min-width:0}.violations-top-person strong{display:block;overflow:hidden;color:#fff!important;font-size:.78rem;text-overflow:ellipsis;white-space:nowrap}.violations-top-person small{display:block;overflow:hidden;color:var(--text-soft)!important;font-size:.61rem;text-overflow:ellipsis;white-space:nowrap}
 .violations-top-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.violations-top-metric{padding:8px;border-radius:9px;background:rgba(255,255,255,.045)!important}.violations-top-metric:last-child{grid-column:1/-1}.violations-top-metric span{display:block;color:var(--text-soft)!important;font-size:.55rem;font-weight:800;letter-spacing:.045em;text-transform:uppercase}.violations-top-metric strong{display:block;margin-top:2px;color:#fff!important;font-size:.75rem}
+body.municipal-portal .content .violations-top-card{border-color:#bfe3ed!important;background:linear-gradient(145deg,#f7fcfd,#fff)!important;color:#102f49!important;box-shadow:0 6px 16px rgba(16,47,73,.045)!important}
+body.municipal-portal .content .violations-top-card:hover{border-color:#63bdd1!important;color:#102f49!important;box-shadow:0 12px 24px rgba(16,47,73,.1)!important}
+body.municipal-portal .content .violations-top-rank{background:#ddf4fa!important;color:#168eb2!important}
+body.municipal-portal .content .violations-top-card:nth-child(1) .violations-top-rank{background:#fff0bd!important;color:#9b6b00!important}
+body.municipal-portal .content .violations-top-card:nth-child(2) .violations-top-rank{background:#e8eef2!important;color:#526771!important}
+body.municipal-portal .content .violations-top-card:nth-child(3) .violations-top-rank{background:#fbe8d9!important;color:#a45520!important}
+body.municipal-portal .content .violations-top-person strong{color:#102f49!important}
+body.municipal-portal .content .violations-top-person small{color:#50665f!important;font-weight:600}
+body.municipal-portal .content .violations-top-metric{border:1px solid #d9e9ec;background:#edf7f5!important}
+body.municipal-portal .content .violations-top-metric span{color:#4f6760!important;font-size:.58rem}
+body.municipal-portal .content .violations-top-metric strong{color:#102f49!important;font-size:.78rem}
 @media(max-width:1199.98px){.violations-top-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:767.98px){.violator-record-overview{align-items:flex-start;flex-direction:column}.violator-record-totals{width:100%;justify-content:stretch}.violator-record-total{flex:1 1 90px}.violator-record-summary{grid-template-columns:1fr}}
 @media(max-width:767.98px){.violations-top-grid{grid-template-columns:1fr}}
