@@ -1688,6 +1688,9 @@ page_start('Dashboard', 'dashboard', 'Search violations, plates, locations...');
 .chart-filter-copy { min-width: 0; }
 .chart-filter-copy strong { display: block; color: #102f49; font-size: .84rem; }
 .chart-filter-copy small { display: block; margin-top: 2px; color: #667a74; font-size: .68rem; }
+.chart-filter-panel.is-loading { opacity: .72; pointer-events: none; }
+.chart-filter-error { display: block; margin-top: 4px; color: #b42318 !important; font-size: .65rem !important; }
+.chart-filter-error:empty { display: none; }
 .chart-filter-form { display: flex; align-items: flex-end; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
 .chart-scope-switch {
   display: grid;
@@ -2215,10 +2218,11 @@ body.municipal-portal #aiDecisionCard .ai-preview-item:hover{transform:translate
 
 <!-- Treasurer-style violation and collection charts -->
 <div class="dashboard-section-heading"><span>Performance trends</span></div>
-<div class="chart-filter-panel mb-3">
+<div class="chart-filter-panel mb-3" id="chartFilterPanel">
   <div class="chart-filter-copy">
     <strong><i class="bi bi-bar-chart-line me-1"></i>Graph timeline</strong>
     <small>Choose a timeline for both charts.</small>
+    <small class="chart-filter-error" id="chartFilterError" role="alert"></small>
   </div>
   <form class="chart-filter-form" id="chartFilterForm" method="get" action="">
     <input type="hidden" name="dashboard_scope" value="<?= esc($overviewPeriod) ?>">
@@ -2254,7 +2258,7 @@ body.municipal-portal #aiDecisionCard .ai-preview-item:hover{transform:translate
       <div class="section-head">
         <div>
           <h6>Violation Records</h6>
-          <small class="text-muted"><?= esc($trendPeriodDescription) ?></small>
+          <small class="text-muted" id="violationTrendDescription"><?= esc($trendPeriodDescription) ?></small>
         </div>
       </div>
       <div style="height:240px"><canvas id="trendChart"></canvas></div>
@@ -2266,7 +2270,7 @@ body.municipal-portal #aiDecisionCard .ai-preview-item:hover{transform:translate
       <div class="section-head">
         <div>
           <h6>Collection Records</h6>
-          <small class="text-muted"><?= esc($trendPeriodDescription) ?> · Completed payments</small>
+          <small class="text-muted" id="collectionTrendDescription"><?= esc($trendPeriodDescription) ?> · Completed payments</small>
         </div>
       </div>
       <div style="height:240px"><canvas id="monthlyCollectionChart"></canvas></div>
@@ -2454,6 +2458,12 @@ const chartScopeOptions = document.querySelectorAll('[data-chart-scope]');
 const chartPeriodPicker = document.getElementById('chartPeriodPicker');
 const chartPeriodInput = document.getElementById('chartPeriodValue');
 const chartPeriodLabel = document.getElementById('chartPeriodLabel');
+const chartFilterPanel = document.getElementById('chartFilterPanel');
+const chartFilterError = document.getElementById('chartFilterError');
+const violationTrendDescription = document.getElementById('violationTrendDescription');
+const collectionTrendDescription = document.getElementById('collectionTrendDescription');
+let violationChart = null;
+let collectionChart = null;
 
 function selectChartScope(scope, submitImmediate = false) {
   if (!chartFilterForm || !chartScopeValue || !chartPeriodPicker || !chartPeriodInput || !chartPeriodLabel) return;
@@ -2502,6 +2512,63 @@ chartScopeOptions.forEach((button) => {
     const scope = button.dataset.chartScope || 'all';
     selectChartScope(scope, true);
   });
+});
+
+async function refreshDashboardCharts() {
+  if (!chartFilterForm || !chartScopeValue || !violationChart || !collectionChart) return;
+
+  chartFilterError.textContent = '';
+  chartFilterPanel?.classList.add('is-loading');
+  chartFilterPanel?.setAttribute('aria-busy', 'true');
+
+  try {
+    const parameters = new URLSearchParams();
+    parameters.set('chart_scope', chartScopeValue.value);
+    if (!chartPeriodInput.disabled && chartPeriodInput.value) {
+      parameters.set('chart_period_value', chartPeriodInput.value);
+    }
+
+    const response = await fetch(`../api/dashboard_chart_data.php?${parameters.toString()}`, {
+      headers: { Accept: 'application/json' },
+      credentials: 'same-origin',
+      cache: 'no-store'
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || !payload?.success) {
+      throw new Error(payload?.message || 'Unable to update the charts.');
+    }
+
+    violationChart.data.labels = payload.labels;
+    violationChart.data.datasets[0].data = payload.violations;
+    collectionChart.data.labels = payload.labels;
+    collectionChart.data.datasets[0].data = payload.collections;
+    violationChart.update();
+    collectionChart.update();
+
+    if (violationTrendDescription) violationTrendDescription.textContent = payload.description;
+    if (collectionTrendDescription) collectionTrendDescription.textContent = `${payload.description} · Completed payments`;
+    chartScopeValue.value = payload.scope;
+    if ((payload.scope === 'month' || payload.scope === 'year') && payload.value) {
+      chartPeriodInput.value = payload.value;
+    }
+
+    const pageUrl = new URL(window.location.href);
+    pageUrl.searchParams.set('chart_scope', payload.scope);
+    if (payload.value) pageUrl.searchParams.set('chart_period_value', payload.value);
+    else pageUrl.searchParams.delete('chart_period_value');
+    window.history.replaceState({}, '', pageUrl);
+  } catch (error) {
+    chartFilterError.textContent = error instanceof Error ? error.message : 'Unable to update the charts.';
+  } finally {
+    chartFilterPanel?.classList.remove('is-loading');
+    chartFilterPanel?.removeAttribute('aria-busy');
+  }
+}
+
+chartFilterForm?.addEventListener('submit', (event) => {
+  event.preventDefault();
+  if (!chartFilterForm.reportValidity()) return;
+  refreshDashboardCharts();
 });
 
 const MONTHLY_PREDICTION_ENDPOINT = '../api/predict_monthly.php';
@@ -2733,7 +2800,7 @@ const violationGradient = violationContext.createLinearGradient(0, 0, 0, 240);
 violationGradient.addColorStop(0, 'rgba(8, 125, 120, .34)');
 violationGradient.addColorStop(1, 'rgba(8, 125, 120, 0)');
 
-new Chart(violationContext, {
+violationChart = new Chart(violationContext, {
   type: 'line',
   data: {
     labels: trendLabels,
@@ -2760,7 +2827,7 @@ const collectionGradient = collectionContext.createLinearGradient(0, 0, 0, 240);
 collectionGradient.addColorStop(0, '#087d78');
 collectionGradient.addColorStop(1, '#eb941f');
 
-new Chart(collectionContext, {
+collectionChart = new Chart(collectionContext, {
   type: 'bar',
   data: {
     labels: trendLabels,
