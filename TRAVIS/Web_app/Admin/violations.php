@@ -45,10 +45,11 @@ function generateTicketNumber(mysqli $conn): string
 $tmoOfficers = [];
 try {
     $tmoOfficers = fetch_all("
-        SELECT officer_id, first_name, last_name, badge_number, rank
-        FROM officers
-        WHERE status = 'active'
-        ORDER BY last_name, first_name
+        SELECT o.officer_id, o.first_name, o.last_name, o.badge_number, o.rank, z.zone_name
+        FROM officers o
+        LEFT JOIN officer_zones z ON z.zone_id = o.zone_id
+        WHERE o.status = 'active'
+        ORDER BY o.last_name, o.first_name
     ");
 } catch (Throwable $exception) {
     error_log('Unable to load TMO officers: ' . $exception->getMessage());
@@ -1199,10 +1200,10 @@ div[style*="border-radius: 999px"]:not(.tag){
               <select class="form-select" name="tmo_officer_id" id="tmoOfficerSelect">
                 <option value="">Select TMO officer</option>
                 <?php foreach ($tmoOfficers as $officer): ?>
-                  <option value="<?= (int)$officer['officer_id'] ?>"><?= esc(trim((string)$officer['last_name'] . ', ' . (string)$officer['first_name'])) ?><?= !empty($officer['badge_number']) ? ' · ' . esc($officer['badge_number']) : '' ?><?= !empty($officer['rank']) ? ' · ' . esc($officer['rank']) : '' ?></option>
+                  <option value="<?= (int)$officer['officer_id'] ?>"><?= esc(trim((string)$officer['last_name'] . ', ' . (string)$officer['first_name'])) ?><?= !empty($officer['badge_number']) ? ' · ' . esc($officer['badge_number']) : '' ?><?= !empty($officer['rank']) ? ' · ' . esc($officer['rank']) : '' ?><?= !empty($officer['zone_name']) ? ' · ' . esc($officer['zone_name']) : ' · Unassigned' ?></option>
                 <?php endforeach; ?>
               </select>
-              <?php if (!$tmoOfficers): ?><small class="text-danger">No active TMO officers are available in the officers table.</small><?php endif; ?>
+              <?php if (!$tmoOfficers): ?><small class="text-danger">No active TMO enforcers are available. Add or activate an employee in Traffic Enforcer Management.</small><?php else: ?><small class="text-muted">Managed from Traffic Enforcer Management; active personnel only.</small><?php endif; ?>
             </div>
             <div class="col-md-6"><label class="form-label">Apprehension Date</label><input type="date" name="apprehension_date" class="form-control" value="<?= date('Y-m-d') ?>"></div>
             <div class="col-md-6"><label class="form-label">Apprehension Time</label><input type="time" name="apprehension_time" class="form-control" value="<?= date('H:i') ?>"></div>

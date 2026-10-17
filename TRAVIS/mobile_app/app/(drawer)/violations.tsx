@@ -87,7 +87,7 @@ interface Violator {
 type StatusFilter = '' | 'pending' | 'overdue' | 'paid' | 'cancelled';
 type OffenseAnalysis = { previous_offenses: number; suggested_offense: number; maximum_offense: number; at_maximum: boolean; matched_by: string | null; last_violation_date: string | null; last_ticket_number: string | null; suggested_penalty: number; penalty_schedule: number[] };
 type SelectedViolation = { violation_type: string; penalty_amount: string; ocr_confidence?: number; penalty_overridden?: boolean; auto_added?: boolean };
-type TmoOfficer = { officer_id: number; first_name: string; last_name: string; badge_number?: string; rank?: string };
+type TmoOfficer = { officer_id: number; first_name: string; last_name: string; badge_number?: string; rank?: string; zone_name?: string };
 
 const FormSection = ({ number, title, subtitle, icon }: { number: string; title: string; subtitle: string; icon: keyof typeof Ionicons.glyphMap }) => (
   <View style={styles.formSectionHeader}>
@@ -1072,7 +1072,7 @@ export default function ViolationsScreen() {
                 <View style={styles.officerList}>
                   {tmoOfficers.length ? tmoOfficers.map(officer => {
                     const selected = selectedTmoOfficerId === Number(officer.officer_id);
-                    const details = [officer.badge_number, officer.rank].filter(Boolean).join(' · ');
+                    const details = [officer.badge_number, officer.rank, officer.zone_name || 'Unassigned'].filter(Boolean).join(' · ');
                     return <TouchableOpacity key={officer.officer_id} style={[styles.officerOption, selected && styles.officerOptionSelected]} onPress={() => setSelectedTmoOfficerId(Number(officer.officer_id))}>
                       <Ionicons name={selected ? 'radio-button-on' : 'radio-button-off'} size={20} color={selected ? COLORS.primary : COLORS.textTertiary} />
                       <View style={{ flex: 1 }}><Text style={styles.officerName}>{officer.last_name}, {officer.first_name}</Text>{!!details && <Text style={styles.officerMeta}>{details}</Text>}</View>

@@ -13,6 +13,7 @@ function sidebar(string $active = ''): void {
         ],
         'Enforcement' => [
             ['violations.php','Violations','bi-cone-striped','violations'],
+            ['traffic_enforcers.php','Traffic Enforcers','bi-person-badge','traffic-enforcers'],
             ['payments.php','Payments','bi-cash-coin','payments'],
             ['alerts.php','Alerts','bi-bell','alerts'],
         ],

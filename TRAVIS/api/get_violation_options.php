@@ -12,7 +12,7 @@ require_once __DIR__ . '/violation_rules.php';
 $officers = [];
 try {
     require_once __DIR__ . '/../Web_app/db_connect.php';
-    $statement = $pdo->query("SELECT officer_id, first_name, last_name, badge_number, rank FROM officers WHERE status = 'active' ORDER BY last_name, first_name");
+    $statement = $pdo->query("SELECT o.officer_id, o.first_name, o.last_name, o.badge_number, o.rank, z.zone_name FROM officers o LEFT JOIN officer_zones z ON z.zone_id = o.zone_id WHERE o.status = 'active' ORDER BY o.last_name, o.first_name");
     $officers = $statement ? $statement->fetchAll(PDO::FETCH_ASSOC) : [];
 } catch (Throwable $exception) {
     error_log('Unable to load mobile TMO officer options: ' . $exception->getMessage());
