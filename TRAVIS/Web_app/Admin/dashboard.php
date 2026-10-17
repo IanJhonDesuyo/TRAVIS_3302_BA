@@ -1741,7 +1741,6 @@ page_start('Dashboard', 'dashboard', 'Search violations, plates, locations...');
   text-transform: uppercase;
 }
 .chart-period-control .form-control { min-height: 44px; border-radius: 10px; font-size: .78rem; }
-.chart-period-apply { min-height: 44px !important; }
 .top-violators-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -2248,7 +2247,6 @@ body.municipal-portal #aiDecisionCard .ai-preview-item:hover{transform:translate
           <?= in_array($chartPeriod, ['month', 'year'], true) ? 'required' : 'disabled' ?>
         >
       </div>
-      <button class="btn btn-primary chart-period-apply" type="submit"><i class="bi bi-check2"></i>Apply</button>
     </div>
   </form>
 </div>
@@ -2464,6 +2462,7 @@ const violationTrendDescription = document.getElementById('violationTrendDescrip
 const collectionTrendDescription = document.getElementById('collectionTrendDescription');
 let violationChart = null;
 let collectionChart = null;
+let chartPeriodRefreshTimer = null;
 
 function selectChartScope(scope, submitImmediate = false) {
   if (!chartFilterForm || !chartScopeValue || !chartPeriodPicker || !chartPeriodInput || !chartPeriodLabel) return;
@@ -2504,7 +2503,9 @@ function selectChartScope(scope, submitImmediate = false) {
     window.setTimeout(() => chartPeriodInput.focus(), 0);
   }
 
-  if (submitImmediate && !needsPicker) chartFilterForm.requestSubmit();
+  if (submitImmediate && (!needsPicker || chartPeriodInput.checkValidity())) {
+    chartFilterForm.requestSubmit();
+  }
 }
 
 chartScopeOptions.forEach((button) => {
@@ -2513,6 +2514,25 @@ chartScopeOptions.forEach((button) => {
     selectChartScope(scope, true);
   });
 });
+
+function scheduleChartPeriodRefresh() {
+  if (!chartFilterForm || !chartPeriodInput || chartPeriodInput.disabled) return;
+
+  const scope = chartScopeValue?.value || '';
+  const hasValidFormat = scope === 'month'
+    ? /^\d{4}-\d{2}$/.test(chartPeriodInput.value)
+    : /^\d{4}$/.test(chartPeriodInput.value);
+
+  if (!hasValidFormat || !chartPeriodInput.checkValidity()) return;
+
+  window.clearTimeout(chartPeriodRefreshTimer);
+  chartPeriodRefreshTimer = window.setTimeout(() => {
+    chartFilterForm.requestSubmit();
+  }, 250);
+}
+
+chartPeriodInput?.addEventListener('input', scheduleChartPeriodRefresh);
+chartPeriodInput?.addEventListener('change', scheduleChartPeriodRefresh);
 
 async function refreshDashboardCharts() {
   if (!chartFilterForm || !chartScopeValue || !violationChart || !collectionChart) return;
