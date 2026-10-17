@@ -1341,7 +1341,7 @@ body.municipal-portal .content .ds-deployment-note i {
 <div id="dsContent" class="d-none">
   <div class="row g-3">
     <div class="col-lg-7">
-      <div class="section-card ds-equal-card">
+      <div class="section-card ds-equal-card" id="dsPredictionCard">
         <div class="section-head">
           <div>
             <h6>Monthly Violation-Risk Prediction</h6>
@@ -2181,14 +2181,28 @@ function dsRenderRecommendations(actions, groups) {
   });
 }
 
-async function loadDecisionSupport() {
+let decisionSupportLoadSequence = 0;
+
+async function loadDecisionSupport(options = {}) {
   const loading = document.getElementById('dsLoading');
   const errorBox = document.getElementById('dsError');
   const content = document.getElementById('dsContent');
+  const predictionCard = document.getElementById('dsPredictionCard');
+  const predictButton = document.getElementById('dsPredictBtn');
+  const showFullLoading = options.initial === true || content.classList.contains('d-none');
+  const requestSequence = ++decisionSupportLoadSequence;
 
-  loading.classList.remove('d-none');
   errorBox.classList.add('d-none');
-  content.classList.add('d-none');
+  if (showFullLoading) {
+    loading.classList.remove('d-none');
+    content.classList.add('d-none');
+  } else {
+    predictionCard?.setAttribute('aria-busy', 'true');
+    if (predictButton) {
+      predictButton.disabled = true;
+      predictButton.innerHTML = '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Updating';
+    }
+  }
 
   try {
     const selectedPeriod = document.getElementById('dsPredictionMonth')?.value || '';
@@ -2210,6 +2224,8 @@ async function loadDecisionSupport() {
 
     const monthlyPayload = await monthlyResponse.json();
     const hotspotPayload = await hotspotResponse.json();
+
+    if (requestSequence !== decisionSupportLoadSequence) return;
 
     if (!monthlyResponse.ok || !monthlyPayload.success) {
       throw new Error(
@@ -2324,13 +2340,25 @@ async function loadDecisionSupport() {
           : 'Routine monitoring plan';
     }
 
-    loading.classList.add('d-none');
-    content.classList.remove('d-none');
+    if (showFullLoading) {
+      loading.classList.add('d-none');
+      content.classList.remove('d-none');
+    }
   } catch (error) {
-    loading.classList.add('d-none');
-    errorBox.textContent =
-      `${error.message} Make sure Apache and the Flask API on port 5001 are running.`;
-    errorBox.classList.remove('d-none');
+    if (requestSequence === decisionSupportLoadSequence) {
+      loading.classList.add('d-none');
+      errorBox.textContent =
+        `${error.message} Make sure Apache and the Flask API on port 5001 are running.`;
+      errorBox.classList.remove('d-none');
+    }
+  } finally {
+    if (requestSequence === decisionSupportLoadSequence) {
+      predictionCard?.removeAttribute('aria-busy');
+      if (predictButton) {
+        predictButton.disabled = false;
+        predictButton.innerHTML = '<i class="bi bi-stars me-1"></i>Predict';
+      }
+    }
   }
 }
 
@@ -2445,10 +2473,10 @@ dsCollectionChart = new Chart(dsCollectionContext, {
   options: dsCollectionChartOptions()
 });
 
-loadDecisionSupport();
-document.getElementById('dsPredictBtn')?.addEventListener('click', loadDecisionSupport);
-document.getElementById('dsPredictionMonth')?.addEventListener('change', loadDecisionSupport);
-setInterval(loadDecisionSupport, 60000);
+loadDecisionSupport({ initial: true });
+document.getElementById('dsPredictBtn')?.addEventListener('click', () => loadDecisionSupport());
+document.getElementById('dsPredictionMonth')?.addEventListener('change', () => loadDecisionSupport());
+setInterval(() => loadDecisionSupport({ silent: true }), 60000);
 </script>
 
 <?php page_end(false); ?>
