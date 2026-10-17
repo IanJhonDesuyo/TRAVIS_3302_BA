@@ -386,31 +386,6 @@ try {
     $messageType = 'danger';
 }
 
-if ($action === 'csv' && $reportTitle !== '') {
-    $filename = report_filename($reportTitle, $dateFrom, $dateTo, 'csv');
-    header('Content-Type: text/csv; charset=utf-8');
-    header('Content-Disposition: attachment; filename="' . $filename . '"');
-
-    $output = fopen('php://output', 'w');
-    fwrite($output, "\xEF\xBB\xBF");
-    fputcsv($output, array_values($previewColumns));
-
-    foreach ($previewRows as $row) {
-        $line = [];
-        foreach (array_keys($previewColumns) as $key) {
-            $value = $row[$key] ?? '';
-            if (in_array($key, ['penalty_amount', 'amount_paid'], true)) {
-                $value = number_format((float)$value, 2, '.', '');
-            }
-            $line[] = $value;
-        }
-        fputcsv($output, $line);
-    }
-
-    fclose($output);
-    exit;
-}
-
 if ($action === 'excel' && $reportTitle !== '') {
     $filename = report_filename($reportTitle, $dateFrom, $dateTo, 'xls');
     header('Content-Type: application/vnd.ms-excel; charset=utf-8');
@@ -1021,7 +996,6 @@ div[style*="border-radius: 999px"]:not(.tag){
       </div>
 
       <div class="d-flex flex-wrap gap-2 no-print">
-        <a class="btn btn-success btn-sm" href="<?= esc(app_url('reports.php?' . http_build_query(array_merge($queryBase, ['action' => 'csv'])))) ?>"><i class="bi bi-filetype-csv me-1"></i>Download CSV</a>
         <a class="btn btn-primary btn-sm" href="<?= esc(app_url('reports.php?' . http_build_query(array_merge($queryBase, ['action' => 'excel'])))) ?>"><i class="bi bi-file-earmark-excel me-1"></i>Download Excel</a>
         <a class="btn btn-danger btn-sm" href="<?= esc(app_url('reports.php?' . http_build_query(array_merge($queryBase, ['action' => 'pdf'])))) ?>"><i class="bi bi-file-earmark-pdf me-1"></i>Download PDF</a>
       </div>
