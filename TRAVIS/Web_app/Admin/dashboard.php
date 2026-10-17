@@ -1084,15 +1084,18 @@ $previousConditionFor = static function (string $column) use ($previousDateCondi
         : $previousDateCondition;
 };
 
-// Charts use a compact current-period timeline independent from the rest of
-// the dashboard. Week/month/year always mean the current calendar period.
+// Charts use a compact timeline independent from the rest of the dashboard.
+// Week means the current week, while month and year can be selected.
 $chartPeriod = strtolower(trim((string)($_GET['chart_scope'] ?? 'year')));
 $allowedChartPeriods = ['all', 'week', 'month', 'year'];
 if (!in_array($chartPeriod, $allowedChartPeriods, true)) $chartPeriod = 'year';
 
+$chartValue = trim((string)($_GET['chart_period_value'] ?? ''));
 $chartDateCondition = '1=1';
 $chartLabel = 'Overall';
 $chartToday = new DateTimeImmutable('today');
+$chartPickerType = 'month';
+$chartPickerLabel = 'Choose month';
 
 if ($chartPeriod === 'week') {
     $selectedChartWeekStart = $chartToday->modify('monday this week');
@@ -1102,14 +1105,25 @@ if ($chartPeriod === 'week') {
     $chartDateCondition = "%s BETWEEN '{$chartWeekStartValue}' AND '{$chartWeekEndValue}'";
     $chartLabel = $selectedChartWeekStart->format('M j') . ' – ' . $selectedChartWeekEnd->format('M j, Y');
 } elseif ($chartPeriod === 'month') {
-    $selectedChartMonth = $chartToday->modify('first day of this month');
+    $currentChartMonth = $chartToday->format('Y-m');
+    if (!preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $chartValue) || $chartValue > $currentChartMonth) {
+        $chartValue = $chartToday->format('Y-m');
+    }
+    $selectedChartMonth = new DateTimeImmutable($chartValue . '-01');
     $chartMonthValue = $selectedChartMonth->format('Y-m');
     $chartDateCondition = "DATE_FORMAT(%s, '%%Y-%%m') = '{$chartMonthValue}'";
     $chartLabel = $selectedChartMonth->format('F Y');
+    $chartPickerType = 'month';
+    $chartPickerLabel = 'Choose month';
 } elseif ($chartPeriod === 'year') {
-    $selectedChartYear = (int)$chartToday->format('Y');
+    $currentChartYear = (int)$chartToday->format('Y');
+    $selectedChartYear = preg_match('/^\d{4}$/', $chartValue) ? (int)$chartValue : $currentChartYear;
+    $selectedChartYear = max(2000, min($currentChartYear, $selectedChartYear));
+    $chartValue = (string)$selectedChartYear;
     $chartDateCondition = "YEAR(%s) = {$selectedChartYear}";
     $chartLabel = (string)$selectedChartYear;
+    $chartPickerType = 'number';
+    $chartPickerLabel = 'Choose year';
 }
 
 $chartConditionFor = static function (string $column) use ($chartDateCondition): string {
@@ -1674,7 +1688,7 @@ page_start('Dashboard', 'dashboard', 'Search violations, plates, locations...');
 .chart-filter-copy { min-width: 0; }
 .chart-filter-copy strong { display: block; color: #102f49; font-size: .84rem; }
 .chart-filter-copy small { display: block; margin-top: 2px; color: #667a74; font-size: .68rem; }
-.chart-filter-form { display: flex; align-items: center; justify-content: flex-end; }
+.chart-filter-form { display: flex; align-items: flex-end; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
 .chart-scope-switch {
   display: grid;
   grid-template-columns: repeat(4, minmax(92px, 1fr));
@@ -1707,6 +1721,24 @@ page_start('Dashboard', 'dashboard', 'Search violations, plates, locations...');
   background: linear-gradient(135deg,#087d78,#16a37f);
   box-shadow: 0 6px 14px rgba(8,125,120,.2);
 }
+.chart-period-picker {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+.chart-period-picker[hidden] { display: none !important; }
+.chart-period-control { min-width: 155px; }
+.chart-period-control label {
+  display: block;
+  margin-bottom: 4px;
+  color: #526b64;
+  font-size: .62rem;
+  font-weight: 800;
+  letter-spacing: .045em;
+  text-transform: uppercase;
+}
+.chart-period-control .form-control { min-height: 44px; border-radius: 10px; font-size: .78rem; }
+.chart-period-apply { min-height: 44px !important; }
 .top-violators-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -1797,6 +1829,8 @@ body.municipal-portal .top-violator-metric > strong { display: block; margin-top
   .chart-filter-panel { align-items: stretch; flex-direction: column; }
   .chart-filter-form { justify-content: stretch; }
   .chart-scope-switch { width: 100%; grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .chart-period-picker { width: 100%; }
+  .chart-period-control { flex: 1 1 auto; min-width: 0; }
   .top-violators-grid { grid-template-columns: 1fr; }
 }
 </style>
@@ -1836,6 +1870,7 @@ body.municipal-portal .top-violator-metric > strong { display: block; margin-top
       >
     </div>
     <input type="hidden" name="chart_scope" value="<?= esc($chartPeriod) ?>">
+    <?php if (in_array($chartPeriod, ['month', 'year'], true)): ?><input type="hidden" name="chart_period_value" value="<?= esc($chartValue) ?>"><?php endif; ?>
     <button class="btn btn-primary dashboard-filter-action" type="submit"><i class="bi bi-funnel me-1"></i>Apply to Dashboard</button>
   </form>
 </div>
@@ -2183,16 +2218,33 @@ body.municipal-portal #aiDecisionCard .ai-preview-item:hover{transform:translate
 <div class="chart-filter-panel mb-3">
   <div class="chart-filter-copy">
     <strong><i class="bi bi-bar-chart-line me-1"></i>Graph timeline</strong>
-    <small>Choose one current-period view for both charts.</small>
+    <small>Choose a timeline for both charts.</small>
   </div>
-  <form class="chart-filter-form" method="get" action="">
+  <form class="chart-filter-form" id="chartFilterForm" method="get" action="">
     <input type="hidden" name="dashboard_scope" value="<?= esc($overviewPeriod) ?>">
     <?php if ($overviewPeriod !== 'all'): ?><input type="hidden" name="period_value" value="<?= esc($overviewValue) ?>"><?php endif; ?>
+    <input type="hidden" id="chartScopeValue" name="chart_scope" value="<?= esc($chartPeriod) ?>">
     <div class="chart-scope-switch" role="group" aria-label="Graph period">
-      <button class="chart-scope-option <?= $chartPeriod === 'all' ? 'active' : '' ?>" type="submit" name="chart_scope" value="all" aria-pressed="<?= $chartPeriod === 'all' ? 'true' : 'false' ?>"><i class="bi bi-infinity"></i>Overall</button>
-      <button class="chart-scope-option <?= $chartPeriod === 'week' ? 'active' : '' ?>" type="submit" name="chart_scope" value="week" aria-pressed="<?= $chartPeriod === 'week' ? 'true' : 'false' ?>"><i class="bi bi-calendar-week"></i>Week</button>
-      <button class="chart-scope-option <?= $chartPeriod === 'month' ? 'active' : '' ?>" type="submit" name="chart_scope" value="month" aria-pressed="<?= $chartPeriod === 'month' ? 'true' : 'false' ?>"><i class="bi bi-calendar3"></i>Month</button>
-      <button class="chart-scope-option <?= $chartPeriod === 'year' ? 'active' : '' ?>" type="submit" name="chart_scope" value="year" aria-pressed="<?= $chartPeriod === 'year' ? 'true' : 'false' ?>"><i class="bi bi-calendar-range"></i>Year</button>
+      <button class="chart-scope-option <?= $chartPeriod === 'all' ? 'active' : '' ?>" type="button" data-chart-scope="all" aria-pressed="<?= $chartPeriod === 'all' ? 'true' : 'false' ?>"><i class="bi bi-infinity"></i>Overall</button>
+      <button class="chart-scope-option <?= $chartPeriod === 'week' ? 'active' : '' ?>" type="button" data-chart-scope="week" aria-pressed="<?= $chartPeriod === 'week' ? 'true' : 'false' ?>"><i class="bi bi-calendar-week"></i>Week</button>
+      <button class="chart-scope-option <?= $chartPeriod === 'month' ? 'active' : '' ?>" type="button" data-chart-scope="month" aria-pressed="<?= $chartPeriod === 'month' ? 'true' : 'false' ?>"><i class="bi bi-calendar3"></i>Month</button>
+      <button class="chart-scope-option <?= $chartPeriod === 'year' ? 'active' : '' ?>" type="button" data-chart-scope="year" aria-pressed="<?= $chartPeriod === 'year' ? 'true' : 'false' ?>"><i class="bi bi-calendar-range"></i>Year</button>
+    </div>
+    <div class="chart-period-picker" id="chartPeriodPicker" <?= in_array($chartPeriod, ['month', 'year'], true) ? '' : 'hidden' ?>>
+      <div class="chart-period-control">
+        <label for="chartPeriodValue" id="chartPeriodLabel"><?= esc($chartPickerLabel) ?></label>
+        <input
+          class="form-control"
+          id="chartPeriodValue"
+          name="chart_period_value"
+          type="<?= esc($chartPickerType) ?>"
+          value="<?= esc($chartValue) ?>"
+          <?= $chartPeriod === 'month' ? 'max="' . esc($chartToday->format('Y-m')) . '"' : '' ?>
+          <?= $chartPeriod === 'year' ? 'min="2000" max="' . esc($chartToday->format('Y')) . '" step="1"' : '' ?>
+          <?= in_array($chartPeriod, ['month', 'year'], true) ? 'required' : 'disabled' ?>
+        >
+      </div>
+      <button class="btn btn-primary chart-period-apply" type="submit"><i class="bi bi-check2"></i>Apply</button>
     </div>
   </form>
 </div>
@@ -2395,6 +2447,62 @@ function syncDashboardPeriodInput(resetValue = false) {
 
 dashboardScope?.addEventListener('change', () => syncDashboardPeriodInput(true));
 syncDashboardPeriodInput(false);
+
+const chartFilterForm = document.getElementById('chartFilterForm');
+const chartScopeValue = document.getElementById('chartScopeValue');
+const chartScopeOptions = document.querySelectorAll('[data-chart-scope]');
+const chartPeriodPicker = document.getElementById('chartPeriodPicker');
+const chartPeriodInput = document.getElementById('chartPeriodValue');
+const chartPeriodLabel = document.getElementById('chartPeriodLabel');
+
+function selectChartScope(scope, submitImmediate = false) {
+  if (!chartFilterForm || !chartScopeValue || !chartPeriodPicker || !chartPeriodInput || !chartPeriodLabel) return;
+
+  const previousScope = chartScopeValue.value;
+  chartScopeValue.value = scope;
+  chartScopeOptions.forEach((button) => {
+    const isActive = button.dataset.chartScope === scope;
+    button.classList.toggle('active', isActive);
+    button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+  });
+
+  const needsPicker = scope === 'month' || scope === 'year';
+  chartPeriodPicker.hidden = !needsPicker;
+  chartPeriodInput.disabled = !needsPicker;
+  chartPeriodInput.required = needsPicker;
+  chartPeriodInput.removeAttribute('min');
+  chartPeriodInput.removeAttribute('max');
+  chartPeriodInput.removeAttribute('step');
+
+  if (scope === 'month') {
+    chartPeriodLabel.textContent = 'Choose month';
+    chartPeriodInput.type = 'month';
+    chartPeriodInput.max = dashboardCurrentMonth;
+    if (previousScope !== 'month' || !/^\d{4}-\d{2}$/.test(chartPeriodInput.value)) {
+      chartPeriodInput.value = dashboardCurrentMonth;
+    }
+    window.setTimeout(() => chartPeriodInput.focus(), 0);
+  } else if (scope === 'year') {
+    chartPeriodLabel.textContent = 'Choose year';
+    chartPeriodInput.type = 'number';
+    chartPeriodInput.min = '2000';
+    chartPeriodInput.max = dashboardCurrentYear;
+    chartPeriodInput.step = '1';
+    if (previousScope !== 'year' || !/^\d{4}$/.test(chartPeriodInput.value)) {
+      chartPeriodInput.value = dashboardCurrentYear;
+    }
+    window.setTimeout(() => chartPeriodInput.focus(), 0);
+  }
+
+  if (submitImmediate && !needsPicker) chartFilterForm.requestSubmit();
+}
+
+chartScopeOptions.forEach((button) => {
+  button.addEventListener('click', () => {
+    const scope = button.dataset.chartScope || 'all';
+    selectChartScope(scope, true);
+  });
+});
 
 const MONTHLY_PREDICTION_ENDPOINT = '../api/predict_monthly.php';
 const HOTSPOT_ENDPOINT = '../api/predict_hotspot.php';
