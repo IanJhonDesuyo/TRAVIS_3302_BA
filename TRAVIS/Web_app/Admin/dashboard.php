@@ -1612,6 +1612,9 @@ page_start('Dashboard', 'dashboard', 'Search violations, plates, locations...');
   gap: 8px;
   flex-wrap: wrap;
 }
+.overview-filter-form.is-loading { opacity: .7; pointer-events: none; }
+.overview-filter-error { display: block; width: 100%; color: #b42318; font-size: .65rem; text-align: right; }
+.overview-filter-error:empty { display: none; }
 .overview-filter-form .dashboard-filter { min-width: 145px; }
 #dashboardPeriodValueField { min-width: 165px; }
 .overview-period-badge {
@@ -1839,7 +1842,7 @@ body.municipal-portal .top-violator-metric > strong { display: block; margin-top
 
 <!-- Main statistics -->
 <div class="dashboard-section-heading dashboard-overview-heading">
-  <span>Operational overview <span class="overview-period-badge"><i class="bi bi-funnel"></i><?= esc($overviewLabel) ?></span></span>
+  <span>Operational overview <span class="overview-period-badge" id="dashboardOverviewBadge"><i class="bi bi-funnel"></i><?= esc($overviewLabel) ?></span></span>
   <form class="overview-filter-form" id="dashboardOverviewFilterForm" method="get" action="">
     <div class="dashboard-filter">
       <label for="dashboardScope">Record period</label>
@@ -1865,9 +1868,10 @@ body.municipal-portal .top-violator-metric > strong { display: block; margin-top
     </div>
     <input type="hidden" name="chart_scope" value="<?= esc($chartPeriod) ?>">
     <?php if (in_array($chartPeriod, ['month', 'year'], true)): ?><input type="hidden" name="chart_period_value" value="<?= esc($chartValue) ?>"><?php endif; ?>
+    <small class="overview-filter-error" id="dashboardOverviewFilterError" role="alert"></small>
   </form>
 </div>
-<div class="row g-3 mb-4">
+<div class="row g-3 mb-4" id="dashboardOverviewKpis">
   <div class="col-sm-6 col-xl-3">
     <div class="stat-card dashboard-stat-card dashboard-kpi dashboard-kpi-vehicles h-100">
       <div class="stat-icon tone-primary"><i class="bi bi-car-front"></i></div>
@@ -1921,7 +1925,7 @@ body.municipal-portal .top-violator-metric > strong { display: block; margin-top
 @media(max-width:1199.98px){.dated-traffic-grid{grid-template-columns:1fr 1fr}}@media(max-width:575.98px){.dated-traffic-grid{grid-template-columns:1fr}.dated-traffic-card .section-head{align-items:flex-start}}
 </style>
 <div class="dashboard-section-heading"><span>Historical analytics</span></div>
-<div class="section-card dated-traffic-card mb-4">
+<div class="section-card dated-traffic-card mb-4" id="dashboardHistoricalTraffic">
   <div class="section-head"><div><span class="dashboard-eyebrow">HISTORICAL TRAFFIC</span><h5 class="mb-1">Vehicle Count — <?= esc($overviewLabel) ?></h5><small class="text-muted">Traffic volume follows the global dashboard period.</small></div><span class="overview-period-badge"><i class="bi bi-calendar3"></i><?= esc($overviewLabel) ?></span></div>
   <div class="dated-traffic-grid">
     <div class="dated-traffic-main"><small><?= esc($overviewLabel) ?></small><strong><?= num($trafficPeriodTotal) ?></strong><span><?= num($trafficPeriodInbound) ?> inbound · <?= num($trafficPeriodOutbound) ?> outbound</span></div>
@@ -2074,7 +2078,7 @@ body.municipal-portal #aiDecisionCard .ai-preview-item:hover{transform:translate
 
 <!-- Compact operational counters -->
 <div class="dashboard-section-heading"><span>Live operations</span></div>
-<div class="row g-3 mb-4">
+<div class="row g-3 mb-4" id="dashboardLiveOperationMetrics">
   <div class="col-6 col-md-3">
     <div class="section-card compact-metric h-100">
       <small class="text-muted">Pending Violations</small>
@@ -2169,7 +2173,7 @@ body.municipal-portal #aiDecisionCard .ai-preview-item:hover{transform:translate
 </div>
 
 <div class="dashboard-section-heading"><span>Enforcement insights</span></div>
-<div class="section-card mb-4">
+<div class="section-card mb-4" id="dashboardTopViolators">
   <div class="section-head">
     <div>
       <h6>Top 5 Violators</h6>
@@ -2215,8 +2219,8 @@ body.municipal-portal #aiDecisionCard .ai-preview-item:hover{transform:translate
     <small class="chart-filter-error" id="chartFilterError" role="alert"></small>
   </div>
   <form class="chart-filter-form" id="chartFilterForm" method="get" action="">
-    <input type="hidden" name="dashboard_scope" value="<?= esc($overviewPeriod) ?>">
-    <?php if ($overviewPeriod !== 'all'): ?><input type="hidden" name="period_value" value="<?= esc($overviewValue) ?>"><?php endif; ?>
+    <input type="hidden" id="chartOverviewScope" name="dashboard_scope" value="<?= esc($overviewPeriod) ?>">
+    <input type="hidden" id="chartOverviewValue" name="period_value" value="<?= esc($overviewValue) ?>" <?= $overviewPeriod === 'all' ? 'disabled' : '' ?>>
     <input type="hidden" id="chartScopeValue" name="chart_scope" value="<?= esc($chartPeriod) ?>">
     <div class="chart-scope-switch" role="group" aria-label="Graph period">
       <button class="chart-scope-option <?= $chartPeriod === 'all' ? 'active' : '' ?>" type="button" data-chart-scope="all" aria-pressed="<?= $chartPeriod === 'all' ? 'true' : 'false' ?>"><i class="bi bi-infinity"></i>Overall</button>
@@ -2269,7 +2273,7 @@ body.municipal-portal #aiDecisionCard .ai-preview-item:hover{transform:translate
 
 <!-- Recent operational activity -->
 <div class="dashboard-section-heading"><span>Recent activity</span></div>
-<div class="row g-3">
+<div class="row g-3" id="dashboardRecentActivity">
   <div class="col-lg-6">
     <div class="section-card h-100">
       <div class="section-head">
@@ -2326,8 +2330,8 @@ body.municipal-portal #aiDecisionCard .ai-preview-item:hover{transform:translate
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>
 // Give every compact dashboard card a useful explanation on hover and focus.
-(function addDashboardCardDetails() {
-  const cards = document.querySelectorAll([
+function addDashboardCardDetails(root = document) {
+  const cards = root.querySelectorAll([
     '.dashboard-kpi',
     '.dated-traffic-main',
     '.dated-traffic-metric',
@@ -2387,9 +2391,9 @@ body.municipal-portal #aiDecisionCard .ai-preview-item:hover{transform:translate
     if (!card.matches('a, button, [tabindex]')) card.tabIndex = 0;
   });
 
-  document.addEventListener('DOMContentLoaded', () => {
-    if (!window.bootstrap?.Tooltip) return;
-    document.querySelectorAll('[data-bs-toggle="tooltip"].dashboard-info-card').forEach((card) => {
+  if (window.bootstrap?.Tooltip) {
+    cards.forEach((card) => {
+      if (!card.matches('[data-bs-toggle="tooltip"].dashboard-info-card')) return;
       bootstrap.Tooltip.getOrCreateInstance(card, {
         container: 'body',
         boundary: 'viewport',
@@ -2398,18 +2402,28 @@ body.municipal-portal #aiDecisionCard .ai-preview-item:hover{transform:translate
         delay: { show: 220, hide: 80 }
       });
     });
-  });
-})();
+  }
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => addDashboardCardDetails());
+} else {
+  addDashboardCardDetails();
+}
 
 const dashboardScope = document.getElementById('dashboardScope');
 const dashboardOverviewFilterForm = document.getElementById('dashboardOverviewFilterForm');
+const dashboardOverviewFilterError = document.getElementById('dashboardOverviewFilterError');
 const dashboardPeriodField = document.getElementById('dashboardPeriodValueField');
 const dashboardPeriodInput = document.getElementById('dashboardPeriodValue');
 const dashboardPeriodLabel = document.getElementById('dashboardPeriodValueLabel');
+const chartOverviewScope = document.getElementById('chartOverviewScope');
+const chartOverviewValue = document.getElementById('chartOverviewValue');
 const dashboardToday = <?= json_encode(date('Y-m-d')) ?>;
 const dashboardCurrentMonth = <?= json_encode(date('Y-m')) ?>;
 const dashboardCurrentYear = <?= json_encode(date('Y')) ?>;
 let dashboardFilterTimer = null;
+let dashboardOverviewController = null;
 
 function syncDashboardPeriodInput(resetValue = false) {
   if (!dashboardScope || !dashboardPeriodField || !dashboardPeriodInput || !dashboardPeriodLabel) return;
@@ -2459,12 +2473,92 @@ function scheduleDashboardFilter() {
   }, 250);
 }
 
+async function refreshDashboardOverview() {
+  if (!dashboardOverviewFilterForm || !dashboardScope || !dashboardPeriodInput) return;
+
+  dashboardOverviewController?.abort();
+  const requestController = new AbortController();
+  dashboardOverviewController = requestController;
+  if (dashboardOverviewFilterError) dashboardOverviewFilterError.textContent = '';
+  dashboardOverviewFilterForm.classList.add('is-loading');
+  dashboardOverviewFilterForm.setAttribute('aria-busy', 'true');
+
+  const parameters = new URLSearchParams(new FormData(dashboardOverviewFilterForm));
+  const requestUrl = new URL(window.location.href);
+  requestUrl.search = parameters.toString();
+
+  try {
+    const response = await fetch(requestUrl, {
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      credentials: 'same-origin',
+      cache: 'no-store',
+      signal: requestController.signal
+    });
+    if (!response.ok) throw new Error('Unable to update the dashboard.');
+
+    const parsedPage = new DOMParser().parseFromString(await response.text(), 'text/html');
+    const syncIds = [
+      'dashboardOverviewBadge',
+      'dashboardOverviewKpis',
+      'dashboardHistoricalTraffic',
+      'monthlyExecutiveSummary',
+      'dashboardLiveOperationMetrics',
+      'dashboardTopViolators',
+      'dashboardRecentActivity'
+    ];
+
+    for (const id of syncIds) {
+      const currentElement = document.getElementById(id);
+      const updatedElement = parsedPage.getElementById(id);
+      if (!currentElement || !updatedElement) {
+        throw new Error('The dashboard response is incomplete. Please try again.');
+      }
+      currentElement.querySelectorAll('[data-bs-toggle="tooltip"]').forEach((element) => {
+        window.bootstrap?.Tooltip?.getInstance(element)?.dispose();
+      });
+      currentElement.replaceWith(updatedElement);
+    }
+
+    const normalizedScope = parsedPage.getElementById('dashboardScope')?.value || dashboardScope.value;
+    const normalizedValue = parsedPage.getElementById('dashboardPeriodValue')?.value || '';
+    dashboardScope.value = normalizedScope;
+    dashboardPeriodInput.value = normalizedValue;
+    syncDashboardPeriodInput(false);
+
+    if (chartOverviewScope) chartOverviewScope.value = normalizedScope;
+    if (chartOverviewValue) {
+      chartOverviewValue.value = normalizedValue;
+      chartOverviewValue.disabled = normalizedScope === 'all';
+    }
+
+    addDashboardCardDetails(document);
+    window.history.replaceState({}, '', requestUrl);
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') return;
+    if (dashboardOverviewFilterError) {
+      dashboardOverviewFilterError.textContent = error instanceof Error
+        ? error.message
+        : 'Unable to update the dashboard.';
+    }
+  } finally {
+    if (dashboardOverviewController === requestController) {
+      dashboardOverviewFilterForm.classList.remove('is-loading');
+      dashboardOverviewFilterForm.removeAttribute('aria-busy');
+    }
+  }
+}
+
 dashboardScope?.addEventListener('change', () => {
   syncDashboardPeriodInput(true);
   scheduleDashboardFilter();
 });
 dashboardPeriodInput?.addEventListener('input', scheduleDashboardFilter);
 dashboardPeriodInput?.addEventListener('change', scheduleDashboardFilter);
+dashboardOverviewFilterForm?.addEventListener('submit', (event) => {
+  event.preventDefault();
+  if (!dashboardOverviewFilterForm.reportValidity()) return;
+  refreshDashboardOverview();
+});
 syncDashboardPeriodInput(false);
 
 const chartFilterForm = document.getElementById('chartFilterForm');
