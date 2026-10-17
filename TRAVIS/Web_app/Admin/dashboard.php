@@ -1667,13 +1667,6 @@ page_start('Dashboard', 'dashboard', 'Search violations, plates, locations...');
   border-color: #087d78 !important;
   box-shadow: 0 0 0 3px rgba(8, 125, 120, .12) !important;
 }
-.dashboard-filter-action {
-  min-height: 42px;
-  padding-right: 16px;
-  padding-left: 16px;
-  border-radius: 10px !important;
-  font-weight: 700;
-}
 .chart-filter-panel {
   display: flex;
   align-items: flex-end;
@@ -1823,7 +1816,6 @@ body.municipal-portal .top-violator-metric > strong { display: block; margin-top
 @media (max-width: 767.98px) {
   .dashboard-filter-row,
   .dashboard-filter { width: 100%; }
-  .dashboard-filter-action { width: 100%; }
   .section-head { align-items: flex-start !important; }
   .dashboard-overview-heading { align-items: stretch; flex-direction: column; }
   .overview-filter-form { justify-content: stretch; }
@@ -1848,7 +1840,7 @@ body.municipal-portal .top-violator-metric > strong { display: block; margin-top
 <!-- Main statistics -->
 <div class="dashboard-section-heading dashboard-overview-heading">
   <span>Operational overview <span class="overview-period-badge"><i class="bi bi-funnel"></i><?= esc($overviewLabel) ?></span></span>
-  <form class="overview-filter-form" method="get" action="">
+  <form class="overview-filter-form" id="dashboardOverviewFilterForm" method="get" action="">
     <div class="dashboard-filter">
       <label for="dashboardScope">Record period</label>
       <select class="form-select" id="dashboardScope" name="dashboard_scope">
@@ -1873,7 +1865,6 @@ body.municipal-portal .top-violator-metric > strong { display: block; margin-top
     </div>
     <input type="hidden" name="chart_scope" value="<?= esc($chartPeriod) ?>">
     <?php if (in_array($chartPeriod, ['month', 'year'], true)): ?><input type="hidden" name="chart_period_value" value="<?= esc($chartValue) ?>"><?php endif; ?>
-    <button class="btn btn-primary dashboard-filter-action" type="submit"><i class="bi bi-funnel me-1"></i>Apply to Dashboard</button>
   </form>
 </div>
 <div class="row g-3 mb-4">
@@ -2411,18 +2402,21 @@ body.municipal-portal #aiDecisionCard .ai-preview-item:hover{transform:translate
 })();
 
 const dashboardScope = document.getElementById('dashboardScope');
+const dashboardOverviewFilterForm = document.getElementById('dashboardOverviewFilterForm');
 const dashboardPeriodField = document.getElementById('dashboardPeriodValueField');
 const dashboardPeriodInput = document.getElementById('dashboardPeriodValue');
 const dashboardPeriodLabel = document.getElementById('dashboardPeriodValueLabel');
 const dashboardToday = <?= json_encode(date('Y-m-d')) ?>;
 const dashboardCurrentMonth = <?= json_encode(date('Y-m')) ?>;
 const dashboardCurrentYear = <?= json_encode(date('Y')) ?>;
+let dashboardFilterTimer = null;
 
 function syncDashboardPeriodInput(resetValue = false) {
   if (!dashboardScope || !dashboardPeriodField || !dashboardPeriodInput || !dashboardPeriodLabel) return;
   const scope = dashboardScope.value;
   dashboardPeriodField.hidden = scope === 'all';
   dashboardPeriodInput.disabled = scope === 'all';
+  dashboardPeriodInput.required = scope !== 'all';
   dashboardPeriodInput.removeAttribute('min');
   dashboardPeriodInput.removeAttribute('max');
   dashboardPeriodInput.removeAttribute('step');
@@ -2447,7 +2441,30 @@ function syncDashboardPeriodInput(resetValue = false) {
   }
 }
 
-dashboardScope?.addEventListener('change', () => syncDashboardPeriodInput(true));
+function scheduleDashboardFilter() {
+  if (!dashboardOverviewFilterForm || !dashboardScope || !dashboardPeriodInput) return;
+
+  const scope = dashboardScope.value;
+  const value = dashboardPeriodInput.value;
+  const validFormat = scope === 'all'
+    || (scope === 'day' && /^\d{4}-\d{2}-\d{2}$/.test(value))
+    || (scope === 'month' && /^\d{4}-\d{2}$/.test(value))
+    || (scope === 'year' && /^\d{4}$/.test(value));
+
+  if (!validFormat || !dashboardOverviewFilterForm.reportValidity()) return;
+
+  window.clearTimeout(dashboardFilterTimer);
+  dashboardFilterTimer = window.setTimeout(() => {
+    dashboardOverviewFilterForm.requestSubmit();
+  }, 250);
+}
+
+dashboardScope?.addEventListener('change', () => {
+  syncDashboardPeriodInput(true);
+  scheduleDashboardFilter();
+});
+dashboardPeriodInput?.addEventListener('input', scheduleDashboardFilter);
+dashboardPeriodInput?.addEventListener('change', scheduleDashboardFilter);
 syncDashboardPeriodInput(false);
 
 const chartFilterForm = document.getElementById('chartFilterForm');
