@@ -296,11 +296,24 @@ page_start('Traffic Enforcer Management', 'traffic-enforcers', 'Search enforcers
 .enforcer-record-panel-head{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid rgba(16,47,73,.09);color:#102f49;background:rgba(8,125,120,.055)}
 .enforcer-record-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px;padding:15px}
 .enforcer-record-field{min-width:0;padding-left:10px;border-left:2px solid #dcebed}.enforcer-record-field.wide{grid-column:1/-1}.enforcer-record-field small{display:block;margin-bottom:3px;color:#6b7d78;font-size:.64rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase}.enforcer-record-field strong{display:block;color:#10202c;font-size:.82rem;line-height:1.45;overflow-wrap:anywhere}
-.enforcer-form-section{display:flex;align-items:center;gap:10px;margin:4px 0 0;padding:11px 13px;border:1px solid rgba(8,125,120,.16);border-radius:11px;background:rgba(8,125,120,.055)}
-.enforcer-form-section i{display:grid;width:30px;height:30px;place-items:center;border-radius:9px;color:#fff;background:#087d78}.enforcer-form-section strong,.enforcer-form-section small{display:block}.enforcer-form-section small{font-size:.68rem}
+.enforcer-form-modal .modal-dialog{width:min(1040px,calc(100vw - 2rem));max-width:1040px}
+.enforcer-form-modal .modal-content{overflow:hidden}
+.enforcer-form-modal .modal-body{padding:20px;background:linear-gradient(145deg,rgba(247,251,250,.98),rgba(255,252,247,.98))}
+.enforcer-form-layout{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:15px 16px}
+.enforcer-form-layout>[class*="col-"]{width:auto;max-width:none;padding:0}
+.enforcer-form-layout>.col-12{grid-column:1/-1}.enforcer-form-layout>.col-md-8{grid-column:span 8}.enforcer-form-layout>.col-md-6{grid-column:span 6}.enforcer-form-layout>.col-md-4{grid-column:span 4}.enforcer-form-layout>.col-md-3{grid-column:span 3}.enforcer-form-layout>.col-md-2{grid-column:span 2}
+.enforcer-form-layout>.col-12:has(.enforcer-form-section){margin-top:3px}
+.enforcer-form-layout>.col-12:first-child{margin-top:0}
+.enforcer-form-section{display:flex;align-items:center;gap:11px;margin:0;padding:12px 15px;border:1px solid rgba(8,125,120,.14);border-radius:12px;background:linear-gradient(135deg,rgba(8,125,120,.09),rgba(8,125,120,.035))}
+.enforcer-form-section i{display:grid;flex:0 0 32px;width:32px;height:32px;place-items:center;border-radius:9px;color:#fff;background:#087d78}.enforcer-form-section strong,.enforcer-form-section small{display:block}.enforcer-form-section strong{color:#102f49;font-size:.82rem}.enforcer-form-section small{margin-top:1px;font-size:.65rem}
+.enforcer-form-layout .form-label{display:flex;align-items:center;gap:6px;min-height:18px;margin-bottom:6px;color:#36564f;font-size:.72rem;font-weight:700}
+.enforcer-form-layout .form-label small{font-size:.59rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.enforcer-form-layout .form-control,.enforcer-form-layout .form-select{width:100%;min-height:42px;border-radius:10px}
+.enforcer-form-layout>div>small.text-muted{display:block;margin-top:5px;font-size:.62rem;line-height:1.4}
 .enforcer-danger-note{display:flex;gap:10px;padding:13px;border:1px solid rgba(220,38,38,.16);border-radius:12px;color:#7f1d1d;background:#fff5f5}
-@media(max-width:991.98px){.enforcer-record-grid{grid-template-columns:1fr}}
-@media(max-width:767.98px){.enforcer-filter,.enforcer-filter .form-control,.enforcer-filter .form-select{width:100%}.enforcer-profile-overview{align-items:flex-start;flex-direction:column}.enforcer-profile-badges{justify-content:flex-start}.enforcer-record-fields{grid-template-columns:1fr}.enforcer-record-field.wide{grid-column:auto}}
+@media(max-width:991.98px){.enforcer-record-grid{grid-template-columns:1fr}.enforcer-form-layout>.col-md-8{grid-column:1/-1}.enforcer-form-layout>.col-md-6,.enforcer-form-layout>.col-md-4,.enforcer-form-layout>.col-md-3,.enforcer-form-layout>.col-md-2{grid-column:span 6}}
+@media(max-width:767.98px){.enforcer-filter,.enforcer-filter .form-control,.enforcer-filter .form-select{width:100%}.enforcer-profile-overview{align-items:flex-start;flex-direction:column}.enforcer-profile-badges{justify-content:flex-start}.enforcer-record-fields{grid-template-columns:1fr}.enforcer-record-field.wide{grid-column:auto}.enforcer-form-modal .modal-dialog{width:calc(100vw - 1rem);margin:.5rem}.enforcer-form-modal .modal-body{padding:12px}}
+@media(max-width:575.98px){.enforcer-form-layout{grid-template-columns:1fr;gap:13px}.enforcer-form-layout>.col-12,.enforcer-form-layout>.col-md-8,.enforcer-form-layout>.col-md-6,.enforcer-form-layout>.col-md-4,.enforcer-form-layout>.col-md-3,.enforcer-form-layout>.col-md-2{grid-column:1/-1}}
 </style>
 
 <div class="enforcer-page-head">
@@ -371,7 +384,7 @@ function enforcer_form_fields(array $officer, array $zones, string $prefix): voi
 {
     $value = static fn(string $key): string => (string)($officer[$key] ?? '');
     ?>
-    <div class="row g-3">
+    <div class="enforcer-form-layout">
       <div class="col-12"><div class="enforcer-form-section"><i class="bi bi-person-vcard"></i><div><strong>Personal Information</strong><small class="text-muted">Identity and contact details</small></div></div></div>
       <div class="col-md-4"><label class="form-label" for="<?= esc($prefix) ?>FirstName">First Name</label><input class="form-control" id="<?= esc($prefix) ?>FirstName" name="first_name" value="<?= esc($value('first_name')) ?>" maxlength="100" required></div>
       <div class="col-md-3"><label class="form-label">Middle Name <small class="text-muted">(Optional)</small></label><input class="form-control" name="middle_name" value="<?= esc($value('middle_name')) ?>" maxlength="100"></div>
@@ -397,7 +410,7 @@ function enforcer_form_fields(array $officer, array $zones, string $prefix): voi
 }
 ?>
 
-<div class="modal fade" id="addEnforcerModal" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable"><div class="modal-content"><form method="post" autocomplete="off">
+<div class="modal fade enforcer-form-modal" id="addEnforcerModal" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable"><div class="modal-content"><form method="post" autocomplete="off">
   <div class="modal-header"><div><h5 class="modal-title">Add Traffic Enforcer</h5><small class="text-muted">Create a new employee profile and assignment</small></div><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Close"></button></div>
   <div class="modal-body"><input type="hidden" name="action" value="add_enforcer"><input type="hidden" name="csrf_token" value="<?= esc(csrf_token()) ?>"><?php enforcer_form_fields(['status' => 'active'], $zones, 'addEnforcer'); ?></div>
   <div class="modal-footer"><button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button><button class="btn btn-primary"><i class="bi bi-person-plus me-1"></i>Save Enforcer</button></div>
@@ -424,7 +437,7 @@ function enforcer_form_fields(array $officer, array $zones, string $prefix): voi
     <div class="modal-footer"><button class="btn btn-light" type="button" data-bs-dismiss="modal">Close</button><button class="btn btn-primary" type="button" data-bs-dismiss="modal" data-bs-toggle="modal" data-bs-target="#editEnforcer<?= $officerId ?>"><i class="bi bi-pencil-square me-1"></i>Edit Profile</button></div>
   </div></div></div>
 
-  <div class="modal fade enforcer-modal" id="editEnforcer<?= $officerId ?>" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable"><div class="modal-content"><form method="post" autocomplete="off">
+  <div class="modal fade enforcer-modal enforcer-form-modal" id="editEnforcer<?= $officerId ?>" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable"><div class="modal-content"><form method="post" autocomplete="off">
     <div class="modal-header"><div><h5 class="modal-title">Edit Traffic Enforcer</h5><small class="text-muted"><?= esc($fullName) ?> · <?= esc($officer['badge_number']) ?></small></div><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Close"></button></div>
     <div class="modal-body"><input type="hidden" name="action" value="update_enforcer"><input type="hidden" name="officer_id" value="<?= $officerId ?>"><input type="hidden" name="csrf_token" value="<?= esc(csrf_token()) ?>"><?php enforcer_form_fields($officer, $zones, 'editEnforcer' . $officerId); ?></div>
     <div class="modal-footer"><button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button><button class="btn btn-primary"><i class="bi bi-save me-1"></i>Save Changes</button></div>
