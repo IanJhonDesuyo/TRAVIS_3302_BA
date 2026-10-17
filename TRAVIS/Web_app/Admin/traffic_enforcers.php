@@ -306,14 +306,14 @@ page_start('Traffic Enforcer Management', 'traffic-enforcers', 'Search enforcers
 .enforcer-form-layout>.col-12:first-child{margin-top:0}
 .enforcer-form-section{display:flex;align-items:center;gap:11px;margin:0;padding:12px 15px;border:1px solid rgba(8,125,120,.14);border-radius:12px;background:linear-gradient(135deg,rgba(8,125,120,.09),rgba(8,125,120,.035))}
 .enforcer-form-section i{display:grid;flex:0 0 32px;width:32px;height:32px;place-items:center;border-radius:9px;color:#fff;background:#087d78}.enforcer-form-section strong,.enforcer-form-section small{display:block}.enforcer-form-section strong{color:#102f49;font-size:.82rem}.enforcer-form-section small{margin-top:1px;font-size:.65rem}
-.enforcer-form-layout .form-label{display:flex;align-items:center;gap:6px;min-height:18px;margin-bottom:6px;color:#36564f;font-size:.72rem;font-weight:700}
+.enforcer-form-layout .form-label{display:flex;align-items:flex-end;gap:6px;min-height:36px;margin-bottom:6px;color:#36564f;font-size:.72rem;font-weight:700;line-height:1.35}
 .enforcer-form-layout .form-label small{font-size:.59rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em}
 .enforcer-form-layout .form-control,.enforcer-form-layout .form-select{width:100%;min-height:42px;border-radius:10px}
 .enforcer-form-layout>div>small.text-muted{display:block;margin-top:5px;font-size:.62rem;line-height:1.4}
 .enforcer-danger-note{display:flex;gap:10px;padding:13px;border:1px solid rgba(220,38,38,.16);border-radius:12px;color:#7f1d1d;background:#fff5f5}
 @media(max-width:991.98px){.enforcer-record-grid{grid-template-columns:1fr}.enforcer-form-layout>.col-md-8{grid-column:1/-1}.enforcer-form-layout>.col-md-6,.enforcer-form-layout>.col-md-4,.enforcer-form-layout>.col-md-3,.enforcer-form-layout>.col-md-2{grid-column:span 6}}
 @media(max-width:767.98px){.enforcer-filter,.enforcer-filter .form-control,.enforcer-filter .form-select{width:100%}.enforcer-profile-overview{align-items:flex-start;flex-direction:column}.enforcer-profile-badges{justify-content:flex-start}.enforcer-record-fields{grid-template-columns:1fr}.enforcer-record-field.wide{grid-column:auto}.enforcer-form-modal .modal-dialog{width:calc(100vw - 1rem);margin:.5rem}.enforcer-form-modal .modal-body{padding:12px}}
-@media(max-width:575.98px){.enforcer-form-layout{grid-template-columns:1fr;gap:13px}.enforcer-form-layout>.col-12,.enforcer-form-layout>.col-md-8,.enforcer-form-layout>.col-md-6,.enforcer-form-layout>.col-md-4,.enforcer-form-layout>.col-md-3,.enforcer-form-layout>.col-md-2{grid-column:1/-1}}
+@media(max-width:575.98px){.enforcer-form-layout{grid-template-columns:1fr;gap:13px}.enforcer-form-layout>.col-12,.enforcer-form-layout>.col-md-8,.enforcer-form-layout>.col-md-6,.enforcer-form-layout>.col-md-4,.enforcer-form-layout>.col-md-3,.enforcer-form-layout>.col-md-2{grid-column:1/-1}.enforcer-form-layout .form-label{min-height:0}}
 </style>
 
 <div class="enforcer-page-head">
@@ -386,10 +386,10 @@ function enforcer_form_fields(array $officer, array $zones, string $prefix): voi
     ?>
     <div class="enforcer-form-layout">
       <div class="col-12"><div class="enforcer-form-section"><i class="bi bi-person-vcard"></i><div><strong>Personal Information</strong><small class="text-muted">Identity and contact details</small></div></div></div>
-      <div class="col-md-4"><label class="form-label" for="<?= esc($prefix) ?>FirstName">First Name</label><input class="form-control" id="<?= esc($prefix) ?>FirstName" name="first_name" value="<?= esc($value('first_name')) ?>" maxlength="100" required></div>
-      <div class="col-md-3"><label class="form-label">Middle Name <small class="text-muted">(Optional)</small></label><input class="form-control" name="middle_name" value="<?= esc($value('middle_name')) ?>" maxlength="100"></div>
-      <div class="col-md-3"><label class="form-label">Last Name</label><input class="form-control" name="last_name" value="<?= esc($value('last_name')) ?>" maxlength="100" required></div>
-      <div class="col-md-2"><label class="form-label">Suffix</label><input class="form-control" name="suffix" value="<?= esc($value('suffix')) ?>" maxlength="20" placeholder="Jr., Sr., III"></div>
+      <div class="col-md-6"><label class="form-label" for="<?= esc($prefix) ?>FirstName">First Name</label><input class="form-control" id="<?= esc($prefix) ?>FirstName" name="first_name" value="<?= esc($value('first_name')) ?>" maxlength="100" required></div>
+      <div class="col-md-6"><label class="form-label">Middle Name <small class="text-muted">(Optional)</small></label><input class="form-control" name="middle_name" value="<?= esc($value('middle_name')) ?>" maxlength="100"></div>
+      <div class="col-md-6"><label class="form-label">Last Name</label><input class="form-control" name="last_name" value="<?= esc($value('last_name')) ?>" maxlength="100" required></div>
+      <div class="col-md-6"><label class="form-label">Suffix <small class="text-muted">(Optional)</small></label><input class="form-control" name="suffix" value="<?= esc($value('suffix')) ?>" maxlength="20" placeholder="Jr., Sr., III"></div>
       <div class="col-md-4"><label class="form-label">Birth Date</label><input type="date" class="form-control" name="birth_date" value="<?= esc($value('birth_date')) ?>"></div>
       <div class="col-md-4"><label class="form-label">Contact Number</label><input type="tel" class="form-control" name="contact_number" value="<?= esc($value('contact_number')) ?>" maxlength="30" placeholder="09XX XXX XXXX"></div>
       <div class="col-md-4"><label class="form-label">Email Address</label><input type="email" class="form-control" name="email" value="<?= esc($value('email')) ?>" maxlength="150"></div>
