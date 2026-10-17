@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/layout.php';
+require_once __DIR__ . '/decision_support_analytics_data.php';
 
 /*
 |--------------------------------------------------------------------------
@@ -7,116 +8,30 @@ require_once __DIR__ . '/layout.php';
 |--------------------------------------------------------------------------
 */
 
-$analyticsPeriod = strtolower(trim((string)($_GET['analytics_period'] ?? 'day')));
-$analyticsDay = trim((string)($_GET['analytics_day'] ?? date('Y-m-d')));
-$analyticsMonth = trim((string)($_GET['analytics_month'] ?? date('Y-m')));
-$analyticsYear = trim((string)($_GET['analytics_year'] ?? date('Y')));
-$parsedAnalyticsDay = DateTime::createFromFormat('!Y-m-d', $analyticsDay);
-if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $analyticsDay) || !$parsedAnalyticsDay || $parsedAnalyticsDay->format('Y-m-d') !== $analyticsDay) $analyticsDay = date('Y-m-d');
-if (!preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $analyticsMonth)) $analyticsMonth = date('Y-m');
-if (!preg_match('/^\d{4}$/', $analyticsYear) || (int)$analyticsYear < 2000 || (int)$analyticsYear > 2100) $analyticsYear = date('Y');
-$analyticsPeriods = [
-    'day' => ["v.violation_date = '{$analyticsDay}'", date('F j, Y', strtotime($analyticsDay))],
-    'month' => ["DATE_FORMAT(v.violation_date, '%Y-%m') = '{$analyticsMonth}'", date('F Y', strtotime($analyticsMonth . '-01'))],
-    'year' => ["YEAR(v.violation_date) = {$analyticsYear}", $analyticsYear],
-    'all' => ['1=1', 'All Records'],
-];
-if (!isset($analyticsPeriods[$analyticsPeriod])) $analyticsPeriod = 'day';
-[$analyticsDateCondition, $analyticsPeriodLabel] = $analyticsPeriods[$analyticsPeriod];
-$analyticsWhere = "({$analyticsDateCondition}) AND v.status <> 'cancelled'";
-$paymentPeriods = [
-    'day' => "DATE(p.payment_date) = '{$analyticsDay}'",
-    'month' => "DATE_FORMAT(p.payment_date, '%Y-%m') = '{$analyticsMonth}'",
-    'year' => "YEAR(p.payment_date) = {$analyticsYear}",
-    'all' => '1=1',
-];
-$paymentWhere = $paymentPeriods[$analyticsPeriod] . " AND p.payment_status = 'completed'";
+$analyticsData = decision_support_analytics_data(
+    (string)($_GET['analytics_period'] ?? 'year'),
+    (string)($_GET['analytics_period_value'] ?? '')
+);
+$analyticsPeriod = (string)$analyticsData['scope'];
+$analyticsValue = (string)$analyticsData['value'];
+$analyticsPeriodLabel = (string)$analyticsData['period_label'];
+$analyticsPickerType = $analyticsPeriod === 'year' ? 'number' : 'month';
+$analyticsPickerLabel = $analyticsPeriod === 'year' ? 'Choose year' : 'Choose month';
+$analyticsToday = new DateTimeImmutable('today');
 
-$todayAnalytics = fetch_one("
-    SELECT
-        COUNT(*) AS violations_today,
-        COALESCE(SUM(v.penalty_amount), 0) AS penalties_today,
-        COUNT(DISTINCT v.violation_location) AS affected_locations
-    FROM violations v
-    WHERE {$analyticsWhere}
-") ?: [];
-
-$collectionAnalytics = fetch_one("
-    SELECT COUNT(*) AS payment_count, COALESCE(SUM(p.amount_paid), 0) AS collected_amount
-    FROM payments p
-    WHERE {$paymentWhere}
-") ?: [];
-
-$topViolation = fetch_one("
-    SELECT item.violation_type, COUNT(*) AS total
-    FROM violation_items item
-    JOIN violations v ON v.violation_id = item.violation_id
-    WHERE {$analyticsWhere}
-    GROUP BY item.violation_type
-    ORDER BY total DESC
-    LIMIT 1
-") ?: [];
-
-$topLocation = fetch_one("
-    SELECT v.violation_location, COUNT(*) AS total
-    FROM violations v
-    WHERE {$analyticsWhere}
-    GROUP BY v.violation_location
-    ORDER BY total DESC
-    LIMIT 1
-") ?: [];
-
-$peakHour = fetch_one("
-    SELECT
-        HOUR(v.created_at) AS peak_hour,
-        COUNT(*) AS total
-    FROM violations v
-    WHERE {$analyticsWhere}
-    GROUP BY HOUR(v.created_at)
-    ORDER BY total DESC
-    LIMIT 1
-") ?: [];
-
-$analyticsChartYear = match ($analyticsPeriod) {
-    'day' => (int) substr($analyticsDay, 0, 4),
-    'month' => (int) substr($analyticsMonth, 0, 4),
-    'year' => (int) $analyticsYear,
-    default => (int) date('Y'),
-};
-
-$monthlyTrend = monthly_violation_counts($analyticsChartYear);
-$monthlyCollectionTrend = monthly_collection_totals($analyticsChartYear);
-
-$locationRows = fetch_all("
-    SELECT v.violation_location, COUNT(*) AS total
-    FROM violations v
-    WHERE {$analyticsWhere}
-    GROUP BY v.violation_location
-    ORDER BY total DESC
-    LIMIT 8
-");
-
-$locationLabels = [];
-$locationData = [];
-
-foreach ($locationRows as $row) {
-    $locationLabels[] = (string) $row['violation_location'];
-    $locationData[] = (int) $row['total'];
-}
-
-$violationsToday = (int) ($todayAnalytics['violations_today'] ?? 0);
-$penaltiesToday = (float) ($todayAnalytics['penalties_today'] ?? 0);
-$affectedLocations = (int) ($todayAnalytics['affected_locations'] ?? 0);
-$paymentCount = (int) ($collectionAnalytics['payment_count'] ?? 0);
-$collectedAmount = (float) ($collectionAnalytics['collected_amount'] ?? 0);
-$topViolationName = (string) ($topViolation['violation_type'] ?? 'No data');
-$topViolationCount = (int) ($topViolation['total'] ?? 0);
-$topLocationName = (string) ($topLocation['violation_location'] ?? 'No data');
-$topLocationCount = (int) ($topLocation['total'] ?? 0);
-
-$peakHourValue = isset($peakHour['peak_hour'])
-    ? date('g A', mktime((int) $peakHour['peak_hour'], 0))
-    : 'No data';
+$monthlyTrend = $analyticsData['violations'];
+$monthlyCollectionTrend = $analyticsData['collections'];
+$analyticsChartLabels = $analyticsData['labels'];
+$violationsToday = (int)$analyticsData['violation_count'];
+$penaltiesToday = (float)$analyticsData['estimated_penalties'];
+$affectedLocations = (int)$analyticsData['affected_locations'];
+$paymentCount = (int)$analyticsData['payment_count'];
+$collectedAmount = (float)$analyticsData['collected_amount'];
+$topViolationName = (string)$analyticsData['top_violation'];
+$topViolationCount = (int)$analyticsData['top_violation_count'];
+$topLocationName = (string)$analyticsData['top_location'];
+$topLocationCount = (int)$analyticsData['top_location_count'];
+$peakHourValue = (string)$analyticsData['peak_hour'];
 
 page_start(
     'Decision Support',
@@ -677,6 +592,83 @@ body.municipal-portal .content .ds-guidance-card.is-low::before { background: li
 
 .ds-section-title small {
     color: var(--text-soft);
+}
+
+.ds-analytics-heading {
+    align-items: flex-end;
+    padding: 14px 16px;
+    border: 1px solid rgba(16,47,73,.13);
+    border-radius: 14px;
+    background: linear-gradient(135deg, rgba(255,255,255,.96), rgba(235,248,246,.88));
+    box-shadow: 0 8px 20px rgba(16,47,73,.055);
+}
+.ds-analytics-heading.is-loading { opacity: .72; pointer-events: none; }
+.ds-analytics-heading h5 { color: #102f49 !important; }
+.ds-analytics-heading small { color: #667a74 !important; }
+.analytics-filter-error {
+    display: block;
+    margin-top: 4px;
+    color: #b42318 !important;
+    font-size: .65rem !important;
+}
+.analytics-filter-error:empty { display: none; }
+.analytics-filter-form {
+    display: flex;
+    align-items: flex-end;
+    justify-content: flex-end;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.analytics-scope-switch {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(92px, 1fr));
+    gap: 4px;
+    padding: 4px;
+    border: 1px solid rgba(16,47,73,.13);
+    border-radius: 12px;
+    background: rgba(255,255,255,.82);
+    box-shadow: inset 0 1px 3px rgba(16,47,73,.05);
+}
+.analytics-scope-option {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 36px;
+    padding: 0 12px;
+    border: 0;
+    border-radius: 9px;
+    color: #60736d;
+    background: transparent;
+    font-size: .72rem;
+    font-weight: 700;
+    white-space: nowrap;
+    transition: background .16s ease, color .16s ease, box-shadow .16s ease;
+}
+.analytics-scope-option:hover { color: #087d78; background: rgba(8,125,120,.07); }
+.analytics-scope-option.active {
+    color: #fff;
+    background: linear-gradient(135deg,#087d78,#16a37f);
+    box-shadow: 0 6px 14px rgba(8,125,120,.2);
+}
+.analytics-period-picker { display: flex; align-items: flex-end; }
+.analytics-period-picker[hidden] { display: none !important; }
+.analytics-period-control { min-width: 155px; }
+.analytics-period-control label {
+    display: block;
+    margin-bottom: 4px;
+    color: #526b64;
+    font-size: .62rem;
+    font-weight: 800;
+    letter-spacing: .045em;
+    text-transform: uppercase;
+}
+.analytics-period-control .form-control {
+    min-height: 44px;
+    border-radius: 10px;
+    color: #102f49 !important;
+    background: #fff !important;
+    font-size: .78rem;
 }
 
 .ds-hotspot-card {
@@ -1286,6 +1278,8 @@ body.municipal-portal .content .ds-deployment-note i {
     .ds-deployment-table {
         grid-template-columns: repeat(2,minmax(0,1fr));
     }
+    .ds-analytics-heading { align-items: stretch; flex-direction: column; }
+    .analytics-filter-form { justify-content: stretch; }
 }
 
 @media (max-width: 767.98px) {
@@ -1314,6 +1308,9 @@ body.municipal-portal .content .ds-deployment-note i {
     .ds-deployment-note {
         margin: 0 1rem 1rem;
     }
+    .analytics-scope-switch { width: 100%; grid-template-columns: repeat(2,minmax(0,1fr)); }
+    .analytics-period-picker,
+    .analytics-period-control { width: 100%; min-width: 0; }
 }
 </style>
 
@@ -1527,55 +1524,67 @@ body.municipal-portal .content .ds-deployment-note i {
     </div>
   </div>
 
-  <div class="ds-section-title">
+  <div class="ds-section-title ds-analytics-heading" id="analyticsFilterPanel">
     <div>
       <h5>Database Analytics</h5>
-      <small>Operational indicators generated directly from MySQL records · Showing <?= esc($analyticsPeriodLabel) ?></small>
+      <small id="analyticsSummary"><?= esc($analyticsData['summary']) ?></small>
+      <small class="analytics-filter-error" id="analyticsFilterError" role="alert"></small>
     </div>
-    <form method="get" class="d-flex align-items-center gap-2 flex-wrap" id="analyticsFilterForm">
-      <label class="small text-muted mb-0" for="analyticsPeriodSelect">Collection period</label>
-      <select class="form-select form-select-sm" name="analytics_period" id="analyticsPeriodSelect" style="width:150px">
-        <option value="day" <?= $analyticsPeriod === 'day' ? 'selected' : '' ?>>Specific day</option>
-        <option value="month" <?= $analyticsPeriod === 'month' ? 'selected' : '' ?>>Specific month</option>
-        <option value="year" <?= $analyticsPeriod === 'year' ? 'selected' : '' ?>>Specific year</option>
-        <option value="all" <?= $analyticsPeriod === 'all' ? 'selected' : '' ?>>All records</option>
-      </select>
-      <input class="form-control form-control-sm analytics-filter-value" type="date" name="analytics_day" id="analyticsDayInput" value="<?= esc($analyticsDay) ?>" style="width:150px">
-      <input class="form-control form-control-sm analytics-filter-value" type="month" name="analytics_month" id="analyticsMonthInput" value="<?= esc($analyticsMonth) ?>" style="width:150px">
-      <input class="form-control form-control-sm analytics-filter-value" type="number" name="analytics_year" id="analyticsYearInput" value="<?= esc($analyticsYear) ?>" min="2000" max="2100" style="width:110px">
-      <button class="btn btn-sm btn-primary" type="submit"><i class="bi bi-funnel me-1"></i>Apply</button>
+    <form method="get" class="analytics-filter-form" id="analyticsFilterForm">
+      <input type="hidden" name="analytics_period" id="analyticsPeriodValue" value="<?= esc($analyticsPeriod) ?>">
+      <div class="analytics-scope-switch" role="group" aria-label="Database analytics period">
+        <button class="analytics-scope-option <?= $analyticsPeriod === 'all' ? 'active' : '' ?>" type="button" data-analytics-scope="all" aria-pressed="<?= $analyticsPeriod === 'all' ? 'true' : 'false' ?>"><i class="bi bi-infinity"></i>Overall</button>
+        <button class="analytics-scope-option <?= $analyticsPeriod === 'week' ? 'active' : '' ?>" type="button" data-analytics-scope="week" aria-pressed="<?= $analyticsPeriod === 'week' ? 'true' : 'false' ?>"><i class="bi bi-calendar-week"></i>Week</button>
+        <button class="analytics-scope-option <?= $analyticsPeriod === 'month' ? 'active' : '' ?>" type="button" data-analytics-scope="month" aria-pressed="<?= $analyticsPeriod === 'month' ? 'true' : 'false' ?>"><i class="bi bi-calendar3"></i>Month</button>
+        <button class="analytics-scope-option <?= $analyticsPeriod === 'year' ? 'active' : '' ?>" type="button" data-analytics-scope="year" aria-pressed="<?= $analyticsPeriod === 'year' ? 'true' : 'false' ?>"><i class="bi bi-calendar-range"></i>Year</button>
+      </div>
+      <div class="analytics-period-picker" id="analyticsPeriodPicker" <?= in_array($analyticsPeriod, ['month', 'year'], true) ? '' : 'hidden' ?>>
+        <div class="analytics-period-control">
+          <label for="analyticsPeriodInput" id="analyticsPeriodLabel"><?= esc($analyticsPickerLabel) ?></label>
+          <input
+            class="form-control"
+            id="analyticsPeriodInput"
+            name="analytics_period_value"
+            type="<?= esc($analyticsPickerType) ?>"
+            value="<?= esc($analyticsValue) ?>"
+            <?= $analyticsPeriod === 'month' ? 'max="' . esc($analyticsToday->format('Y-m')) . '"' : '' ?>
+            <?= $analyticsPeriod === 'year' ? 'min="2000" max="' . esc($analyticsToday->format('Y')) . '" step="1"' : '' ?>
+            <?= in_array($analyticsPeriod, ['month', 'year'], true) ? 'required' : 'disabled' ?>
+          >
+        </div>
+      </div>
     </form>
   </div>
 
   <div class="ds-analysis-grid mb-3">
     <div class="ds-analysis-kpi">
       <small>Actual Collection</small>
-      <strong><?= peso($collectedAmount) ?></strong>
+      <strong id="analyticsCollectedAmount"><?= peso($collectedAmount) ?></strong>
     </div>
 
     <div class="ds-analysis-kpi">
       <small>Completed Payments</small>
-      <strong><?= num($paymentCount) ?></strong>
+      <strong id="analyticsPaymentCount"><?= num($paymentCount) ?></strong>
     </div>
 
     <div class="ds-analysis-kpi">
       <small>Violations</small>
-      <strong><?= num($violationsToday) ?></strong>
+      <strong id="analyticsViolationCount"><?= num($violationsToday) ?></strong>
     </div>
 
     <div class="ds-analysis-kpi">
       <small>Estimated Penalties</small>
-      <strong><?= peso($penaltiesToday) ?></strong>
+      <strong id="analyticsEstimatedPenalties"><?= peso($penaltiesToday) ?></strong>
     </div>
 
     <div class="ds-analysis-kpi">
       <small>Affected Locations</small>
-      <strong><?= num($affectedLocations) ?></strong>
+      <strong id="analyticsAffectedLocations"><?= num($affectedLocations) ?></strong>
     </div>
 
     <div class="ds-analysis-kpi">
       <small>Peak Recording Hour</small>
-      <strong><?= esc($peakHourValue) ?></strong>
+      <strong id="analyticsPeakHour"><?= esc($peakHourValue) ?></strong>
     </div>
   </div>
 
@@ -1585,12 +1594,12 @@ body.municipal-portal .content .ds-deployment-note i {
         <div class="section-head">
           <div>
             <h6>Leading Violation</h6>
-            <small class="text-muted"><?= esc($analyticsPeriodLabel) ?> database result</small>
+            <small class="text-muted" id="analyticsTopViolationPeriod"><?= esc($analyticsPeriodLabel) ?> database result</small>
           </div>
         </div>
 
-        <h5><?= esc($topViolationName) ?></h5>
-        <p class="text-muted mb-0"><?= num($topViolationCount) ?> recorded cases</p>
+        <h5 id="analyticsTopViolation"><?= esc($topViolationName) ?></h5>
+        <p class="text-muted mb-0" id="analyticsTopViolationCount"><?= num($topViolationCount) ?> recorded cases</p>
       </div>
     </div>
 
@@ -1599,12 +1608,12 @@ body.municipal-portal .content .ds-deployment-note i {
         <div class="section-head">
           <div>
             <h6>Leading Database Location</h6>
-            <small class="text-muted"><?= esc($analyticsPeriodLabel) ?> violation concentration</small>
+            <small class="text-muted" id="analyticsTopLocationPeriod"><?= esc($analyticsPeriodLabel) ?> violation concentration</small>
           </div>
         </div>
 
-        <h5><?= esc($topLocationName) ?></h5>
-        <p class="text-muted mb-0"><?= num($topLocationCount) ?> recorded cases</p>
+        <h5 id="analyticsTopLocation"><?= esc($topLocationName) ?></h5>
+        <p class="text-muted mb-0" id="analyticsTopLocationCount"><?= num($topLocationCount) ?> recorded cases</p>
       </div>
     </div>
   </div>
@@ -1615,7 +1624,7 @@ body.municipal-portal .content .ds-deployment-note i {
         <div class="section-head">
           <div>
             <h6>Violation Records</h6>
-            <small class="text-muted">Monthly records · <?= esc((string) $analyticsChartYear) ?></small>
+            <small class="text-muted" id="analyticsViolationChartDescription"><?= esc($analyticsData['violation_chart_description']) ?></small>
           </div>
         </div>
         <div style="height:240px"><canvas id="dsTrendChart"></canvas></div>
@@ -1627,7 +1636,7 @@ body.municipal-portal .content .ds-deployment-note i {
         <div class="section-head">
           <div>
             <h6>Monthly Collection</h6>
-            <small class="text-muted">Completed payments · <?= esc((string) $analyticsChartYear) ?></small>
+            <small class="text-muted" id="analyticsCollectionChartDescription"><?= esc($analyticsData['collection_chart_description']) ?></small>
           </div>
         </div>
         <div style="height:240px"><canvas id="dsCollectionChart"></canvas></div>
@@ -1726,30 +1735,185 @@ body.municipal-portal .content .ds-deployment-note i {
 const DS_MONTHLY_ENDPOINT = '../api/predict_monthly.php';
 const DS_HOTSPOT_ENDPOINT = '../api/predict_hotspot.php';
 
-const dsMonths = <?= json_encode(month_labels()) ?>;
+const dsMonths = <?= json_encode($analyticsChartLabels) ?>;
 const dsMonthlyTrend = <?= json_encode($monthlyTrend) ?>;
 const dsMonthlyCollections = <?= json_encode($monthlyCollectionTrend) ?>;
 
-const databaseTopViolation = <?= json_encode($topViolationName) ?>;
-const databaseTopLocation = <?= json_encode($topLocationName) ?>;
-const databasePeakHour = <?= json_encode($peakHourValue) ?>;
+let databaseTopViolation = <?= json_encode($topViolationName) ?>;
+let databaseTopLocation = <?= json_encode($topLocationName) ?>;
+let databasePeakHour = <?= json_encode($peakHourValue) ?>;
+let dsViolationChart = null;
+let dsCollectionChart = null;
 
-function updateAnalyticsFilterInput() {
-  const selected = document.getElementById('analyticsPeriodSelect')?.value || 'day';
-  const inputs = {
-    day: document.getElementById('analyticsDayInput'),
-    month: document.getElementById('analyticsMonthInput'),
-    year: document.getElementById('analyticsYearInput')
-  };
-  Object.entries(inputs).forEach(([period, input]) => {
-    if (!input) return;
-    const visible = selected === period;
-    input.classList.toggle('d-none', !visible);
-    input.disabled = !visible;
+const analyticsFilterForm = document.getElementById('analyticsFilterForm');
+const analyticsFilterPanel = document.getElementById('analyticsFilterPanel');
+const analyticsFilterError = document.getElementById('analyticsFilterError');
+const analyticsPeriodValue = document.getElementById('analyticsPeriodValue');
+const analyticsPeriodPicker = document.getElementById('analyticsPeriodPicker');
+const analyticsPeriodInput = document.getElementById('analyticsPeriodInput');
+const analyticsPeriodLabel = document.getElementById('analyticsPeriodLabel');
+const analyticsScopeOptions = document.querySelectorAll('[data-analytics-scope]');
+const analyticsCurrentMonth = <?= json_encode($analyticsToday->format('Y-m')) ?>;
+const analyticsCurrentYear = <?= json_encode($analyticsToday->format('Y')) ?>;
+let analyticsRefreshTimer = null;
+
+function selectAnalyticsScope(scope, refreshImmediately = false) {
+  if (!analyticsFilterForm || !analyticsPeriodValue || !analyticsPeriodPicker || !analyticsPeriodInput || !analyticsPeriodLabel) return;
+
+  const previousScope = analyticsPeriodValue.value;
+  analyticsPeriodValue.value = scope;
+  analyticsScopeOptions.forEach((button) => {
+    const isActive = button.dataset.analyticsScope === scope;
+    button.classList.toggle('active', isActive);
+    button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
   });
+
+  const needsPicker = scope === 'month' || scope === 'year';
+  analyticsPeriodPicker.hidden = !needsPicker;
+  analyticsPeriodInput.disabled = !needsPicker;
+  analyticsPeriodInput.required = needsPicker;
+  analyticsPeriodInput.removeAttribute('min');
+  analyticsPeriodInput.removeAttribute('max');
+  analyticsPeriodInput.removeAttribute('step');
+
+  if (scope === 'month') {
+    analyticsPeriodLabel.textContent = 'Choose month';
+    analyticsPeriodInput.type = 'month';
+    analyticsPeriodInput.max = analyticsCurrentMonth;
+    if (previousScope !== 'month' || !/^\d{4}-\d{2}$/.test(analyticsPeriodInput.value)) {
+      analyticsPeriodInput.value = analyticsCurrentMonth;
+    }
+    window.setTimeout(() => analyticsPeriodInput.focus(), 0);
+  } else if (scope === 'year') {
+    analyticsPeriodLabel.textContent = 'Choose year';
+    analyticsPeriodInput.type = 'number';
+    analyticsPeriodInput.min = '2000';
+    analyticsPeriodInput.max = analyticsCurrentYear;
+    analyticsPeriodInput.step = '1';
+    if (previousScope !== 'year' || !/^\d{4}$/.test(analyticsPeriodInput.value)) {
+      analyticsPeriodInput.value = analyticsCurrentYear;
+    }
+    window.setTimeout(() => analyticsPeriodInput.focus(), 0);
+  }
+
+  if (refreshImmediately && (!needsPicker || analyticsPeriodInput.checkValidity())) {
+    analyticsFilterForm.requestSubmit();
+  }
 }
-document.getElementById('analyticsPeriodSelect')?.addEventListener('change', updateAnalyticsFilterInput);
-updateAnalyticsFilterInput();
+
+analyticsScopeOptions.forEach((button) => {
+  button.addEventListener('click', () => {
+    selectAnalyticsScope(button.dataset.analyticsScope || 'all', true);
+  });
+});
+
+function scheduleAnalyticsRefresh() {
+  if (!analyticsFilterForm || !analyticsPeriodInput || analyticsPeriodInput.disabled) return;
+  const scope = analyticsPeriodValue?.value || '';
+  const validFormat = scope === 'month'
+    ? /^\d{4}-\d{2}$/.test(analyticsPeriodInput.value)
+    : /^\d{4}$/.test(analyticsPeriodInput.value);
+  if (!validFormat || !analyticsPeriodInput.checkValidity()) return;
+
+  window.clearTimeout(analyticsRefreshTimer);
+  analyticsRefreshTimer = window.setTimeout(() => analyticsFilterForm.requestSubmit(), 250);
+}
+
+analyticsPeriodInput?.addEventListener('input', scheduleAnalyticsRefresh);
+analyticsPeriodInput?.addEventListener('change', scheduleAnalyticsRefresh);
+
+function formatAnalyticsMoney(value) {
+  return new Intl.NumberFormat('en-PH', {
+    style: 'currency',
+    currency: 'PHP',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(Number(value || 0));
+}
+
+function setAnalyticsText(id, value) {
+  const element = document.getElementById(id);
+  if (element) element.textContent = value;
+}
+
+async function refreshDatabaseAnalytics() {
+  if (!analyticsFilterForm || !analyticsPeriodValue || !dsViolationChart || !dsCollectionChart) return;
+
+  if (analyticsFilterError) analyticsFilterError.textContent = '';
+  analyticsFilterPanel?.classList.add('is-loading');
+  analyticsFilterPanel?.setAttribute('aria-busy', 'true');
+
+  try {
+    const parameters = new URLSearchParams({ analytics_period: analyticsPeriodValue.value });
+    if (!analyticsPeriodInput.disabled && analyticsPeriodInput.value) {
+      parameters.set('analytics_period_value', analyticsPeriodInput.value);
+    }
+
+    const response = await fetch(`../api/decision_support_analytics.php?${parameters.toString()}`, {
+      headers: { Accept: 'application/json' },
+      credentials: 'same-origin',
+      cache: 'no-store'
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || !payload?.success) {
+      throw new Error(payload?.message || 'Unable to update database analytics.');
+    }
+
+    setAnalyticsText('analyticsSummary', payload.summary);
+    setAnalyticsText('analyticsCollectedAmount', formatAnalyticsMoney(payload.collected_amount));
+    setAnalyticsText('analyticsPaymentCount', Number(payload.payment_count || 0).toLocaleString());
+    setAnalyticsText('analyticsViolationCount', Number(payload.violation_count || 0).toLocaleString());
+    setAnalyticsText('analyticsEstimatedPenalties', formatAnalyticsMoney(payload.estimated_penalties));
+    setAnalyticsText('analyticsAffectedLocations', Number(payload.affected_locations || 0).toLocaleString());
+    setAnalyticsText('analyticsPeakHour', payload.peak_hour);
+    setAnalyticsText('analyticsTopViolationPeriod', `${payload.period_label} database result`);
+    setAnalyticsText('analyticsTopViolation', payload.top_violation);
+    setAnalyticsText('analyticsTopViolationCount', `${Number(payload.top_violation_count || 0).toLocaleString()} recorded cases`);
+    setAnalyticsText('analyticsTopLocationPeriod', `${payload.period_label} violation concentration`);
+    setAnalyticsText('analyticsTopLocation', payload.top_location);
+    setAnalyticsText('analyticsTopLocationCount', `${Number(payload.top_location_count || 0).toLocaleString()} recorded cases`);
+    setAnalyticsText('analyticsViolationChartDescription', payload.violation_chart_description);
+    setAnalyticsText('analyticsCollectionChartDescription', payload.collection_chart_description);
+
+    databaseTopViolation = payload.top_violation;
+    databaseTopLocation = payload.top_location;
+    databasePeakHour = payload.peak_hour;
+
+    dsViolationChart.data.labels = payload.labels;
+    dsViolationChart.data.datasets[0].data = payload.violations;
+    dsCollectionChart.data.labels = payload.labels;
+    dsCollectionChart.data.datasets[0].data = payload.collections;
+    dsViolationChart.update();
+    dsCollectionChart.update();
+
+    analyticsPeriodValue.value = payload.scope;
+    if ((payload.scope === 'month' || payload.scope === 'year') && payload.value) {
+      analyticsPeriodInput.value = payload.value;
+    }
+
+    const pageUrl = new URL(window.location.href);
+    pageUrl.searchParams.set('analytics_period', payload.scope);
+    if (payload.value) pageUrl.searchParams.set('analytics_period_value', payload.value);
+    else pageUrl.searchParams.delete('analytics_period_value');
+    pageUrl.searchParams.delete('analytics_day');
+    pageUrl.searchParams.delete('analytics_month');
+    pageUrl.searchParams.delete('analytics_year');
+    window.history.replaceState({}, '', pageUrl);
+  } catch (error) {
+    if (analyticsFilterError) {
+      analyticsFilterError.textContent = error instanceof Error ? error.message : 'Unable to update database analytics.';
+    }
+  } finally {
+    analyticsFilterPanel?.classList.remove('is-loading');
+    analyticsFilterPanel?.removeAttribute('aria-busy');
+  }
+}
+
+analyticsFilterForm?.addEventListener('submit', (event) => {
+  event.preventDefault();
+  if (!analyticsFilterForm.reportValidity()) return;
+  refreshDatabaseAnalytics();
+});
 
 function dsNormalizeRisk(value) {
   return String(value || '')
@@ -2239,7 +2403,7 @@ const dsViolationGradient = dsViolationContext.createLinearGradient(0, 0, 0, 240
 dsViolationGradient.addColorStop(0, 'rgba(8, 125, 120, .34)');
 dsViolationGradient.addColorStop(1, 'rgba(8, 125, 120, 0)');
 
-new Chart(dsViolationContext, {
+dsViolationChart = new Chart(dsViolationContext, {
   type: 'line',
   data: {
     labels: dsMonths,
@@ -2266,7 +2430,7 @@ const dsCollectionGradient = dsCollectionContext.createLinearGradient(0, 0, 0, 2
 dsCollectionGradient.addColorStop(0, '#087d78');
 dsCollectionGradient.addColorStop(1, '#eb941f');
 
-new Chart(dsCollectionContext, {
+dsCollectionChart = new Chart(dsCollectionContext, {
   type: 'bar',
   data: {
     labels: dsMonths,
