@@ -699,6 +699,8 @@ a:hover{color:#fff}
 #addViolationModal .license-status-row .form-check-label{line-height:1.25;}
 #addViolationModal .vehicle-status-row{grid-template-columns:1fr;}
 #addViolationModal .violation-item-row{padding:10px 4px;border:1px solid rgba(16,47,73,.1);border-radius:11px;background:rgba(255,255,255,.35);}
+#addViolationModal #tmoOfficerField{--tmo-menu-clearance:80px;}
+#addViolationModal #tmoOfficerField.tmo-menu-open{margin-bottom:var(--tmo-menu-clearance);}
 @media(max-width:575.98px){
     #addViolationModal .modal-dialog{height:calc(100dvh - 1rem);margin:.5rem;}
     #addViolationModal .license-status-row{grid-template-columns:1fr;}
@@ -1260,6 +1262,13 @@ const tmoOfficerSelect = document.getElementById('tmoOfficerSelect');
 let driverAnalysisTimer = null;
 let automaticOffenseFloor = 1;
 
+function setTmoMenuOpen(isOpen) {
+  if (!tmoOfficerField || !tmoOfficerSelect) return;
+  const visibleRows = Math.min(Math.max(tmoOfficerSelect.options.length, 2), 6);
+  tmoOfficerField.style.setProperty('--tmo-menu-clearance', `${visibleRows * 36 + 8}px`);
+  tmoOfficerField.classList.toggle('tmo-menu-open', isOpen);
+}
+
 function syncDriverName() {
   if (!driverNameInput) return;
   const lastName = driverLastNameInput?.value.trim().replace(/\s+/g, ' ') || '';
@@ -1332,6 +1341,7 @@ function syncOfficerFields() {
     tmoOfficerSelect.disabled = !isTmo;
     tmoOfficerSelect.required = isTmo;
   }
+  if (!isTmo) setTmoMenuOpen(false);
 }
 
 function updateAutomaticOffenseNumber() {
@@ -1518,6 +1528,12 @@ insurancePolicyNotSpecifiedCheck?.addEventListener('change', syncOptionalVehicle
 document.querySelectorAll('input[name="apprehending_officer_agency"]').forEach(function (input) {
   input.addEventListener('change', syncOfficerFields);
 });
+tmoOfficerSelect?.addEventListener('pointerdown', () => setTmoMenuOpen(true));
+tmoOfficerSelect?.addEventListener('keydown', (event) => {
+  if (['Enter', ' ', 'ArrowDown', 'ArrowUp'].includes(event.key)) setTmoMenuOpen(true);
+});
+tmoOfficerSelect?.addEventListener('change', () => window.setTimeout(() => setTmoMenuOpen(false), 0));
+tmoOfficerSelect?.addEventListener('blur', () => setTmoMenuOpen(false));
 
 noPlateCheck?.addEventListener('change', function () {
   plateNumberInput.disabled = this.checked;
