@@ -13,6 +13,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'recor
     $violationId = (int)($_POST['violation_id'] ?? 0);
     $amountPaid = (float)payment_post('amount_paid', '0');
     $officialReceiptNumber = strtoupper(payment_post('official_receipt_number'));
+    $paymentOrderPrinted = payment_post('payment_order_printed') === '1';
     // The Municipal Treasurer accepts cash payments only.
     $paymentMethod = 'cash';
 
@@ -38,6 +39,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'recor
         }
         if (!preg_match('/^[A-Z0-9][A-Z0-9 .\/-]*$/', $officialReceiptNumber)) {
             throw new RuntimeException('Official receipt number contains unsupported characters.');
+        }
+        if (!$paymentOrderPrinted) {
+            throw new RuntimeException('Print the Tax Order of Payment before recording the payment.');
         }
 
         $penalty = (float)$violation['penalty_amount'];
@@ -526,11 +530,45 @@ div[style*="border-radius: 999px"]:not(.tag){
 .payment-review-penalty>strong{color:#087d78;font-size:1.08rem;}
 .payment-entry-panel{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;align-items:start;padding:16px;border:1px solid rgba(8,125,120,.2);border-radius:14px;background:linear-gradient(135deg,rgba(8,125,120,.055),rgba(255,255,255,.55));}
 .payment-entry-action{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) minmax(220px,340px);gap:14px;align-items:stretch;}
-.payment-entry-action .btn{min-height:48px;}
+.payment-entry-buttons{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
+.payment-entry-action .btn{display:inline-flex;align-items:center;justify-content:center;min-height:48px;}
+.payment-entry-action .btn:disabled{cursor:not-allowed;opacity:.55;box-shadow:none!important;}
 .payment-reference-note{display:flex;align-items:center;gap:9px;min-height:48px;padding:4px 2px;color:#60736d;font-size:.76rem;line-height:1.45;}
 .payment-reference-note i{display:grid;place-items:center;flex:0 0 28px;width:28px;height:28px;border-radius:50%;background:rgba(8,125,120,.1);color:#087d78;font-size:.82rem;}
 @media(max-width:991.98px){.payment-review-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.payment-entry-panel{grid-template-columns:1fr 1fr}.payment-entry-panel>div:nth-of-type(3){grid-column:1/-1}}
-@media(max-width:575.98px){.payment-review-grid,.payment-entry-panel,.payment-entry-action{grid-template-columns:1fr}.payment-entry-panel>div:nth-of-type(3),.payment-entry-action{grid-column:auto}}
+@media(max-width:767.98px){.payment-entry-action{grid-template-columns:1fr}.payment-entry-buttons{grid-template-columns:1fr 1fr}}
+@media(max-width:575.98px){.payment-review-grid,.payment-entry-panel,.payment-entry-action,.payment-entry-buttons{grid-template-columns:1fr}.payment-entry-panel>div:nth-of-type(3),.payment-entry-action{grid-column:auto}}
+.payment-order-print-sheet{display:none;font-family:"Times New Roman",serif;color:#111;background:#fff;}
+.payment-order-header{display:grid;grid-template-columns:82px 1fr 82px;align-items:center;gap:12px;text-align:center;}
+.payment-order-header img{width:72px;height:72px;border-radius:50%;object-fit:cover;filter:grayscale(1);}
+.payment-order-header p{margin:0;font-size:13px;line-height:1.2;}
+.payment-order-header h1{margin:3px 0 0;font-size:18px;font-weight:700;letter-spacing:.03em;}
+.payment-order-header>strong{align-self:start;padding-top:8px;font-size:14px;}
+.payment-order-print-sheet>h2{margin:12px 0 2px;text-align:center;font-size:19px;text-decoration:underline;}
+.payment-order-issued{margin:0 0 10px;text-align:center;font-size:12px;font-weight:700;}
+.payment-order-reference-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 28px;margin:0 0 10px 44%;font-size:12px;}
+.payment-order-reference-grid>div,.payment-order-person-grid>div,.payment-order-total-grid>div{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:end;gap:8px;min-width:0;}
+.payment-order-reference-grid span,.payment-order-person-grid span,.payment-order-total-grid span{font-weight:700;white-space:nowrap;}
+.payment-order-reference-grid strong,.payment-order-person-grid strong{min-height:19px;padding:0 4px 2px;border-bottom:1px solid #111;overflow-wrap:anywhere;}
+.payment-order-person-grid{display:grid;grid-template-columns:1.3fr 1fr 1fr 1fr;gap:8px 18px;margin-bottom:9px;font-size:12px;}
+.payment-order-person-grid .wide{grid-column:1/-1;}
+.payment-order-instruction{margin:8px 0 6px;font-size:11px;}
+.payment-order-charges{width:100%;border-collapse:collapse;font-size:12px;}
+.payment-order-charges th,.payment-order-charges td{padding:6px 8px;border:1px solid #111;vertical-align:top;}
+.payment-order-charges th{font-weight:700;text-align:center;}
+.payment-order-charges th:first-child,.payment-order-charges td:first-child{width:60%;text-align:left;}
+.payment-order-charges th:nth-child(2),.payment-order-charges td:nth-child(2){width:22%;}
+.payment-order-charges th:last-child,.payment-order-charges td:last-child{width:18%;text-align:right;}
+.payment-order-charges tfoot th{text-align:right;}
+.payment-order-total-grid{display:grid;grid-template-columns:1fr 1fr 1.15fr;gap:24px;margin:10px 0 18px;font-size:12px;}
+.payment-order-total-grid strong{min-height:21px;padding:2px 6px;border-bottom:1px solid #111;text-align:right;font-size:14px;}
+.payment-order-signatures{display:grid;grid-template-columns:1fr 1fr;gap:80px;margin-top:24px;font-size:12px;}
+.payment-order-signatures>div{display:grid;grid-template-columns:auto 1fr;align-items:end;gap:8px;}
+.payment-order-signatures strong{height:25px;border-bottom:1px solid #111;}
+.payment-order-signatures small{grid-column:2;text-align:center;font-size:10px;}
+.payment-order-apprehended{display:grid;width:55%;margin:28px auto 0;text-align:center;}
+.payment-order-apprehended strong{height:22px;border-bottom:1px dashed #111;}
+.payment-order-apprehended span{margin-top:3px;font-size:10px;}
 </style>
 
 <div class="d-flex justify-content-between flex-wrap mb-4 gap-2">
@@ -608,6 +646,7 @@ div[style*="border-radius: 999px"]:not(.tag){
             <input type="hidden" name="action" value="record_payment">
             <input type="hidden" name="violation_id" value="<?= (int)$selectedViolation['violation_id'] ?>">
             <input type="hidden" name="payment_method" value="cash">
+            <input type="hidden" name="payment_order_printed" id="paymentOrderPrinted" value="0">
 
             <div>
               <label class="form-label">Violation Fee / Amount Paid</label>
@@ -626,11 +665,69 @@ div[style*="border-radius: 999px"]:not(.tag){
             <div class="payment-entry-action">
               <div class="payment-reference-note" role="note">
                 <i class="bi bi-info-circle" aria-hidden="true"></i>
-                <span>The OR number will be saved together with an internal system payment reference.</span>
+                <span id="paymentOrderStatus">Print the Tax Order of Payment first, then enter the OR number to confirm collection.</span>
               </div>
-              <button class="btn btn-success" id="openPaymentConfirmation" type="button"><i class="bi bi-check2-circle me-1"></i>Confirm Payment</button>
+              <div class="payment-entry-buttons">
+                <button class="btn btn-outline-primary" id="printPaymentOrder" type="button"><i class="bi bi-printer me-1"></i>Print Payment Order</button>
+                <button class="btn btn-success" id="openPaymentConfirmation" type="button" disabled><i class="bi bi-check2-circle me-1"></i>Confirm Payment</button>
+              </div>
             </div>
           </form>
+
+          <section class="payment-order-print-sheet" id="paymentOrderPrintSheet" aria-label="Tax Order of Payment">
+            <header class="payment-order-header">
+              <img src="../../assets/images/nasugbu-seal.jpg" alt="Municipality of Nasugbu seal">
+              <div>
+                <p>Republic of the Philippines</p>
+                <p>Office of the Mayor</p>
+                <h1>TRAFFIC MANAGEMENT OFFICE</h1>
+              </div>
+              <strong>TMO File</strong>
+            </header>
+
+            <h2>TAX ORDER OF PAYMENT</h2>
+            <p class="payment-order-issued"><?= esc(date('l, F j, Y g:i:s A')) ?></p>
+
+            <div class="payment-order-reference-grid">
+              <div><span>CONTROL No.</span><strong><?= esc(str_pad((string)$selectedViolation['violation_id'], 5, '0', STR_PAD_LEFT)) ?></strong></div>
+              <div><span>OVR No.</span><strong><?= esc($selectedViolation['ticket_number']) ?></strong></div>
+              <div><span>Date / Time of Apprehension</span><strong><?= esc(date('m/d/Y g:i A', strtotime((string)$selectedViolation['violation_date'] . ' ' . (string)$selectedViolation['violation_time']))) ?></strong></div>
+              <div><span>MV File No.</span><strong><?= esc(trim((string)($selectedViolation['vehicle_registration_number'] ?? '')) ?: '—') ?></strong></div>
+            </div>
+
+            <div class="payment-order-person-grid">
+              <div class="wide"><span>NAME</span><strong><?= esc($selectedViolation['driver_name']) ?></strong></div>
+              <div class="wide"><span>ADDRESS</span><strong><?= esc(trim((string)($selectedViolation['driver_address'] ?? '')) ?: '—') ?></strong></div>
+              <div><span>MAKE / TYPE</span><strong><?= esc($selectedViolation['vehicle_type']) ?></strong></div>
+              <div><span>MOTOR No.</span><strong>—</strong></div>
+              <div><span>PLATE No.</span><strong><?= esc($selectedViolation['plate_number']) ?></strong></div>
+              <div><span>COLOR</span><strong><?= esc(trim((string)($selectedViolation['vehicle_color'] ?? '')) ?: '—') ?></strong></div>
+            </div>
+
+            <p class="payment-order-instruction">TO: THE TREASURER — Please collect the amount specified below as prescribed in the Municipal Ordinance.</p>
+
+            <table class="payment-order-charges">
+              <thead><tr><th>VIOLATION / PARTICULARS</th><th>REFERENCE</th><th>AMOUNT</th></tr></thead>
+              <tbody>
+                <tr><td><?= esc($selectedViolation['violation_type']) ?></td><td><?= esc(trim((string)($selectedViolation['coding_sticker_number'] ?? '')) ?: $selectedViolation['ticket_number']) ?></td><td><?= peso($selectedViolation['penalty_amount']) ?></td></tr>
+              </tbody>
+              <tfoot>
+                <tr><th colspan="2">TOTAL</th><td><?= peso($selectedViolation['penalty_amount']) ?></td></tr>
+              </tfoot>
+            </table>
+
+            <div class="payment-order-total-grid">
+              <div><span>NO. OF DAYS IMPOUNDED</span><strong>0</strong></div>
+              <div><span>IMPOUNDING FEE</span><strong>₱0.00</strong></div>
+              <div><span>GRAND TOTAL</span><strong><?= peso($selectedViolation['penalty_amount']) ?></strong></div>
+            </div>
+
+            <div class="payment-order-signatures">
+              <div><span>Verified by:</span><strong></strong><small>Authorized TMO Officer</small></div>
+              <div><span>Approved by:</span><strong></strong><small>Municipal Treasurer / Authorized Officer</small></div>
+            </div>
+            <div class="payment-order-apprehended"><strong></strong><span>Signature of Apprehended Person</span></div>
+          </section>
       </div>
     <?php endif; ?>
   </div>
@@ -665,15 +762,71 @@ div[style*="border-radius: 999px"]:not(.tag){
   </div>
 </div>
 <script>
-document.getElementById('openPaymentConfirmation')?.addEventListener('click', function () {
-  const form = document.getElementById('recordPaymentForm');
-  if (!form?.reportValidity()) return;
-  const receipt = document.getElementById('officialReceiptNumber')?.value.trim().toUpperCase() || '';
+const recordPaymentForm = document.getElementById('recordPaymentForm');
+const officialReceiptInput = document.getElementById('officialReceiptNumber');
+const paymentOrderPrintedInput = document.getElementById('paymentOrderPrinted');
+const printPaymentOrderButton = document.getElementById('printPaymentOrder');
+const confirmPaymentButton = document.getElementById('openPaymentConfirmation');
+const paymentOrderStatus = document.getElementById('paymentOrderStatus');
+
+function resetPrintedPaymentOrder() {
+  if (paymentOrderPrintedInput) paymentOrderPrintedInput.value = '0';
+  if (confirmPaymentButton) confirmPaymentButton.disabled = true;
+  if (paymentOrderStatus) paymentOrderStatus.textContent = 'Print the Tax Order of Payment first, then enter the OR number to confirm collection.';
+}
+
+printPaymentOrderButton?.addEventListener('click', function () {
+  document.body.classList.add('printing-payment-order');
+
+  let completed = false;
+  const finishPrint = function () {
+    if (completed) return;
+    completed = true;
+    document.body.classList.remove('printing-payment-order');
+    window.removeEventListener('afterprint', finishPrint);
+    if (paymentOrderPrintedInput) paymentOrderPrintedInput.value = '1';
+    if (confirmPaymentButton) confirmPaymentButton.disabled = false;
+    if (paymentOrderStatus) paymentOrderStatus.textContent = 'Payment order prepared. You may now confirm and record the payment.';
+  };
+
+  window.addEventListener('afterprint', finishPrint);
+  window.print();
+  window.setTimeout(finishPrint, 2000);
+});
+
+confirmPaymentButton?.addEventListener('click', function () {
+  if (!recordPaymentForm?.reportValidity()) return;
+  if (paymentOrderPrintedInput?.value !== '1') {
+    resetPrintedPaymentOrder();
+    printPaymentOrderButton?.focus();
+    return;
+  }
+  const receipt = officialReceiptInput?.value.trim().toUpperCase() || '';
   document.getElementById('confirmOfficialReceipt').textContent = receipt;
   bootstrap.Modal.getOrCreateInstance(document.getElementById('confirmPaymentModal')).show();
 });
 </script>
 <style>
+@page{size:A4 landscape;margin:8mm;}
+@media print{
+  body.printing-payment-order *{visibility:hidden!important;}
+  body.printing-payment-order #paymentOrderPrintSheet,
+  body.printing-payment-order #paymentOrderPrintSheet *{visibility:visible!important;}
+  body.printing-payment-order #paymentOrderPrintSheet{
+    display:block!important;
+    position:fixed;
+    inset:0 auto auto 0;
+    width:100%;
+    min-height:190mm;
+    box-sizing:border-box;
+    padding:7mm 10mm;
+    border:1px solid #111;
+    color:#111!important;
+    background:#fff!important;
+    box-shadow:none!important;
+  }
+  body.printing-payment-order #paymentOrderPrintSheet *{color:#111!important;}
+}
 body.municipal-portal .payment-confirm-modal .modal-dialog{width:min(460px,calc(100vw - 2rem))!important;max-width:460px!important}
 body.municipal-portal .payment-confirm-modal .modal-content{position:relative;overflow:hidden;border:1px solid rgba(8,125,120,.24)!important;border-radius:20px!important;background:linear-gradient(145deg,#fff,#fbfaf5)!important;box-shadow:0 24px 60px rgba(16,47,73,.25)!important}
 .payment-confirm-accent{height:6px;background:linear-gradient(90deg,#087d78,#34d399)}
