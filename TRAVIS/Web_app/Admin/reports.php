@@ -20,6 +20,29 @@ if (!in_array($reportType, $allowedReportTypes, true)) {
     $reportType = 'violations';
 }
 
+$locationOptions = [
+    'violations' => array_column(fetch_all("
+        SELECT DISTINCT TRIM(violation_location) AS location
+        FROM violations
+        WHERE violation_location IS NOT NULL AND TRIM(violation_location) <> ''
+        ORDER BY location ASC
+    "), 'location'),
+    'payments' => [],
+    'monitoring' => array_column(fetch_all("
+        SELECT DISTINCT TRIM(c.location) AS location
+        FROM camera_monitoring_logs l
+        INNER JOIN cameras c ON c.camera_id = l.camera_id
+        WHERE c.location IS NOT NULL AND TRIM(c.location) <> ''
+        ORDER BY location ASC
+    "), 'location'),
+];
+
+if ($reportType === 'payments') {
+    $locationFilter = '';
+} elseif ($locationFilter !== '' && !in_array($locationFilter, $locationOptions[$reportType], true)) {
+    $locationFilter = '';
+}
+
 // On first load (and after Reset), cover the complete available dataset so the
 // administrator immediately sees a useful report instead of an empty page.
 $reportDateSources = [
@@ -192,8 +215,8 @@ function build_report(
         }
 
         if ($locationFilter !== '') {
-            $where[] = 'v.violation_location LIKE ?';
-            $params[] = '%' . $locationFilter . '%';
+            $where[] = 'TRIM(v.violation_location) = ?';
+            $params[] = $locationFilter;
             $types .= 's';
         }
 
@@ -315,8 +338,8 @@ function build_report(
         }
 
         if ($locationFilter !== '') {
-            $where[] = 'c.location LIKE ?';
-            $params[] = '%' . $locationFilter . '%';
+            $where[] = 'TRIM(c.location) = ?';
+            $params[] = $locationFilter;
             $types .= 's';
         }
 
@@ -960,8 +983,13 @@ div[style*="border-radius: 999px"]:not(.tag){
     </div>
 
     <div class="col-md-6 col-xl-3">
-      <label class="form-label">Location Contains</label>
-      <input type="text" class="form-control" name="location" value="<?= esc($locationFilter) ?>" placeholder="Example: J.P. Laurel Street" <?= $reportType === 'payments' ? 'disabled' : '' ?>>
+      <label class="form-label" for="locationFilter">Location</label>
+      <select class="form-select" name="location" id="locationFilter" <?= $reportType === 'payments' ? 'disabled' : '' ?>>
+        <option value="">All Locations</option>
+        <?php foreach ($locationOptions[$reportType] as $locationOption): ?>
+          <option value="<?= esc((string)$locationOption) ?>" <?= $locationFilter === $locationOption ? 'selected' : '' ?>><?= esc((string)$locationOption) ?></option>
+        <?php endforeach; ?>
+      </select>
     </div>
 
     <div class="col-12 d-flex flex-wrap gap-2">
@@ -991,7 +1019,7 @@ div[style*="border-radius: 999px"]:not(.tag){
         <small class="text-muted">
           Period: <?= esc($dateFrom) ?> to <?= esc($dateTo) ?>
           <?php if ($statusFilter !== ''): ?> • Filter: <?= esc(ucwords(str_replace('_', ' ', $statusFilter))) ?><?php endif; ?>
-          <?php if ($locationFilter !== '' && $reportType !== 'payments'): ?> • Location contains “<?= esc($locationFilter) ?>”<?php endif; ?>
+          <?php if ($locationFilter !== '' && $reportType !== 'payments'): ?> • Location: <?= esc($locationFilter) ?><?php endif; ?>
         </small>
       </div>
 
@@ -1076,10 +1104,11 @@ div[style*="border-radius: 999px"]:not(.tag){
 
 <script>
 const statusOptions = <?= json_encode($statusOptions, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+const locationOptions = <?= json_encode($locationOptions, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
 const reportTypeSelect = document.getElementById('reportType');
 const statusSelect = document.getElementById('statusFilter');
 const statusLabel = document.getElementById('statusLabel');
-const locationInput = document.querySelector('input[name="location"]');
+const locationSelect = document.getElementById('locationFilter');
 
 function rebuildStatusOptions() {
   const reportType = reportTypeSelect.value;
@@ -1095,9 +1124,21 @@ function rebuildStatusOptions() {
 
   statusLabel.textContent = reportType === 'monitoring' ? 'Congestion Level' : 'Status';
 
-  if (locationInput) {
-    locationInput.disabled = reportType === 'payments';
-    if (reportType === 'payments') locationInput.value = '';
+  if (locationSelect) {
+    locationSelect.innerHTML = '';
+    const allLocationsOption = document.createElement('option');
+    allLocationsOption.value = '';
+    allLocationsOption.textContent = 'All Locations';
+    locationSelect.appendChild(allLocationsOption);
+
+    (locationOptions[reportType] || []).forEach((location) => {
+      const option = document.createElement('option');
+      option.value = location;
+      option.textContent = location;
+      locationSelect.appendChild(option);
+    });
+
+    locationSelect.disabled = reportType === 'payments';
   }
 }
 
