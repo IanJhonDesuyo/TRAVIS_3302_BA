@@ -769,12 +769,7 @@ const printPaymentOrderButton = document.getElementById('printPaymentOrder');
 const confirmPaymentButton = document.getElementById('openPaymentConfirmation');
 const paymentOrderStatus = document.getElementById('paymentOrderStatus');
 const paymentOrderPrintSheet = document.getElementById('paymentOrderPrintSheet');
-
-// Keep the print sheet outside the dashboard layout so hidden navigation and
-// content cannot reserve an empty first page in the browser print preview.
-if (paymentOrderPrintSheet?.parentElement !== document.body) {
-  document.body.appendChild(paymentOrderPrintSheet);
-}
+let paymentOrderPrintFrame = null;
 
 function resetPrintedPaymentOrder() {
   if (paymentOrderPrintedInput) paymentOrderPrintedInput.value = '0';
@@ -782,26 +777,66 @@ function resetPrintedPaymentOrder() {
   if (paymentOrderStatus) paymentOrderStatus.textContent = 'Print the Tax Order of Payment first, then enter the OR number to confirm collection.';
 }
 
-printPaymentOrderButton?.addEventListener('click', function () {
-  document.body.classList.add('printing-payment-order');
+printPaymentOrderButton?.addEventListener('click', async function () {
+  if (!paymentOrderPrintSheet) return;
 
-  let completed = false;
-  const finishPrint = function () {
-    if (completed) return;
-    completed = true;
-    document.body.classList.remove('printing-payment-order');
-    window.removeEventListener('afterprint', finishPrint);
+  printPaymentOrderButton.disabled = true;
+
+  try {
+    paymentOrderPrintFrame?.remove();
+
+    const printFrame = document.createElement('iframe');
+    printFrame.title = 'Tax Order of Payment';
+    printFrame.setAttribute('aria-hidden', 'true');
+    printFrame.style.cssText = 'position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0;pointer-events:none;';
+    document.body.appendChild(printFrame);
+    paymentOrderPrintFrame = printFrame;
+
+    const inlineStyles = Array.from(document.querySelectorAll('style'))
+      .map(function (style) { return style.textContent || ''; })
+      .join('\n');
+    const printDocument = printFrame.contentDocument;
+    const baseUrl = document.baseURI.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+
+    printDocument.open();
+    printDocument.write(
+      '<!doctype html><html><head><meta charset="utf-8">' +
+      '<meta name="viewport" content="width=device-width,initial-scale=1">' +
+      '<base href="' + baseUrl + '">' +
+      '<title>Tax Order of Payment</title><style>' + inlineStyles + '</style>' +
+      '<style>@page{size:A4 landscape;margin:8mm}' +
+      'html,body{width:auto!important;height:auto!important;margin:0!important;padding:0!important;overflow:visible!important;background:#fff!important}' +
+      '.payment-order-print-sheet{display:block!important;position:static!important;width:100%!important;height:auto!important;min-height:0!important;max-height:190mm!important;box-sizing:border-box!important;margin:0!important;padding:6mm 9mm!important;border:1px solid #111!important;color:#111!important;background:#fff!important;box-shadow:none!important;break-inside:avoid!important;page-break-inside:avoid!important}' +
+      '.payment-order-print-sheet *{color:#111!important}' +
+      '</style></head><body>' + paymentOrderPrintSheet.outerHTML + '</body></html>'
+    );
+    printDocument.close();
+
+    const images = Array.from(printDocument.images);
+    await Promise.all(images.map(function (image) {
+      if (image.complete) return Promise.resolve();
+      return new Promise(function (resolve) {
+        image.addEventListener('load', resolve, { once: true });
+        image.addEventListener('error', resolve, { once: true });
+      });
+    }));
+    if (printDocument.fonts?.ready) await printDocument.fonts.ready;
+
+    await new Promise(function (resolve) {
+      printFrame.contentWindow.requestAnimationFrame(function () {
+        printFrame.contentWindow.requestAnimationFrame(resolve);
+      });
+    });
+
+    printFrame.contentWindow.focus();
+    printFrame.contentWindow.print();
+
     if (paymentOrderPrintedInput) paymentOrderPrintedInput.value = '1';
     if (confirmPaymentButton) confirmPaymentButton.disabled = false;
     if (paymentOrderStatus) paymentOrderStatus.textContent = 'Payment order prepared. You may now confirm and record the payment.';
-  };
-
-  window.addEventListener('afterprint', finishPrint, { once: true });
-  window.requestAnimationFrame(function () {
-    window.requestAnimationFrame(function () {
-      window.print();
-    });
-  });
+  } finally {
+    printPaymentOrderButton.disabled = false;
+  }
 });
 
 confirmPaymentButton?.addEventListener('click', function () {
