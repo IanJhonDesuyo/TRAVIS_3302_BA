@@ -796,9 +796,12 @@ printPaymentOrderButton?.addEventListener('click', function () {
     if (paymentOrderStatus) paymentOrderStatus.textContent = 'Payment order prepared. You may now confirm and record the payment.';
   };
 
-  window.addEventListener('afterprint', finishPrint);
-  window.print();
-  window.setTimeout(finishPrint, 2000);
+  window.addEventListener('afterprint', finishPrint, { once: true });
+  window.requestAnimationFrame(function () {
+    window.requestAnimationFrame(function () {
+      window.print();
+    });
+  });
 });
 
 confirmPaymentButton?.addEventListener('click', function () {
