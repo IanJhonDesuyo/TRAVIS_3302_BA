@@ -1132,11 +1132,11 @@ body.municipal-portal .content .violations-top-metric strong{color:#102f49!impor
             <div class="col-12"><div class="ticket-form-section"><span class="section-number">1</span><div><strong>Driver Information</strong><small class="text-muted">Personal details of the apprehended driver</small></div></div></div>
             <input type="hidden" id="driverNameInput" name="driver_name">
             <div class="col-12">
-              <div class="row g-2 driver-name-grid">
-                <div class="col-sm-6 col-lg-3 ticket-field"><label class="form-label" for="driverLastNameInput">Surname</label><input type="text" id="driverLastNameInput" name="driver_last_name" class="form-control" maxlength="100" autocomplete="family-name" required></div>
-                <div class="col-sm-6 col-lg-3 ticket-field"><label class="form-label" for="driverFirstNameInput">First Name</label><input type="text" id="driverFirstNameInput" name="driver_first_name" class="form-control" maxlength="100" autocomplete="given-name" required></div>
-                <div class="col-sm-6 col-lg-3 ticket-field"><label class="form-label" for="driverMiddleNameInput">Middle Name <span class="field-optional">Optional</span></label><input type="text" id="driverMiddleNameInput" name="driver_middle_name" class="form-control" maxlength="100" autocomplete="additional-name"></div>
-                <div class="col-sm-6 col-lg-3 ticket-field"><label class="form-label" for="driverSuffixInput">Suffix <span class="field-optional">Optional</span></label><input type="text" id="driverSuffixInput" name="driver_suffix" class="form-control" maxlength="20" placeholder="Jr., Sr., III"></div>
+              <div class="row g-3 driver-name-grid">
+                <div class="col-md-6 ticket-field"><label class="form-label" for="driverFirstNameInput">First Name</label><input type="text" id="driverFirstNameInput" name="driver_first_name" class="form-control" maxlength="100" autocomplete="given-name" required></div>
+                <div class="col-md-6 ticket-field"><label class="form-label" for="driverMiddleNameInput">Middle Name <span class="field-optional">Optional</span></label><input type="text" id="driverMiddleNameInput" name="driver_middle_name" class="form-control" maxlength="100" autocomplete="additional-name"></div>
+                <div class="col-md-6 ticket-field"><label class="form-label" for="driverLastNameInput">Last Name</label><input type="text" id="driverLastNameInput" name="driver_last_name" class="form-control" maxlength="100" autocomplete="family-name" required></div>
+                <div class="col-md-6 ticket-field"><label class="form-label" for="driverSuffixInput">Suffix <span class="field-optional">Optional</span></label><input type="text" id="driverSuffixInput" name="driver_suffix" class="form-control" maxlength="20" placeholder="Jr., Sr., III"></div>
               </div>
             </div>
             <div class="col-md-4 ticket-field"><label class="form-label" for="driverBirthDateInput">Date of Birth <span class="field-optional">Optional</span></label><input type="date" id="driverBirthDateInput" name="date_of_birth" class="form-control"><small class="ticket-field-help">Used with the structured name when matching records.</small></div>
