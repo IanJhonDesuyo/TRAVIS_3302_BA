@@ -20,15 +20,7 @@ $chartDateCondition = '1=1';
 $chartLabel = 'Overall';
 $today = new DateTimeImmutable('today');
 
-if ($chartPeriod === 'week') {
-    $weekStart = $today->modify('monday this week');
-    $weekEnd = $weekStart->modify('+6 days');
-    $weekStartValue = $weekStart->format('Y-m-d');
-    $weekEndValue = $weekEnd->format('Y-m-d');
-    $chartDateCondition = "%s BETWEEN '{$weekStartValue}' AND '{$weekEndValue}'";
-    $chartLabel = $weekStart->format('M j') . ' – ' . $weekEnd->format('M j, Y');
-    $chartValue = '';
-} elseif ($chartPeriod === 'month') {
+if (in_array($chartPeriod, ['week', 'month'], true)) {
     $currentMonth = $today->format('Y-m');
     if (!preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $chartValue) || $chartValue > $currentMonth) {
         $chartValue = $currentMonth;
@@ -61,23 +53,23 @@ $violationRows = [];
 $collectionRows = [];
 
 if ($chartPeriod === 'week') {
-    for ($offset = 0; $offset < 7; $offset++) {
-        $day = $weekStart->modify("+{$offset} days");
-        $labels[$offset] = $day->format('D j');
-        $violations[$offset] = 0;
-        $collections[$offset] = 0.0;
+    $weeksInMonth = (int)ceil(((int)$selectedMonth->format('t')) / 7);
+    for ($week = 1; $week <= $weeksInMonth; $week++) {
+        $labels[$week] = 'Week ' . $week;
+        $violations[$week] = 0;
+        $collections[$week] = 0.0;
     }
     $violationRows = fetch_all("
-        SELECT DATEDIFF(violation_date, '{$weekStartValue}') AS bucket, COUNT(*) AS total
+        SELECT FLOOR((DAY(violation_date) - 1) / 7) + 1 AS bucket, COUNT(*) AS total
         FROM violations
         WHERE LOWER(status) <> 'cancelled' AND " . $conditionFor('violation_date') . "
-        GROUP BY DATEDIFF(violation_date, '{$weekStartValue}')
+        GROUP BY FLOOR((DAY(violation_date) - 1) / 7) + 1
     ");
     $collectionRows = fetch_all("
-        SELECT DATEDIFF(DATE(payment_date), '{$weekStartValue}') AS bucket, COALESCE(SUM(amount_paid), 0) AS total
+        SELECT FLOOR((DAY(payment_date) - 1) / 7) + 1 AS bucket, COALESCE(SUM(amount_paid), 0) AS total
         FROM payments
         WHERE LOWER(payment_status) = 'completed' AND " . $conditionFor('DATE(payment_date)') . "
-        GROUP BY DATEDIFF(DATE(payment_date), '{$weekStartValue}')
+        GROUP BY FLOOR((DAY(payment_date) - 1) / 7) + 1
     ");
 } elseif ($chartPeriod === 'month') {
     $daysInMonth = (int)$selectedMonth->format('t');
@@ -152,7 +144,7 @@ foreach ($collectionRows as $row) {
 }
 
 $description = $chartPeriod === 'week'
-    ? 'Daily records · Week of ' . $chartLabel
+    ? 'Weekly records · ' . $chartLabel
     : ($chartPeriod === 'month'
         ? 'Daily records · ' . $chartLabel
         : ($chartPeriod === 'year' ? 'Monthly records · ' . $chartLabel : 'Yearly records · Overall'));
