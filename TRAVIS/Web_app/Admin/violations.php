@@ -655,6 +655,12 @@ a:hover{color:#fff}
 #addViolationModal .modal-body::-webkit-scrollbar-thumb{background:rgba(8,125,120,.72);border:2px solid transparent;border-radius:10px;background-clip:padding-box;}
 #addViolationModal .modal-header,
 #addViolationModal .modal-footer{flex:0 0 auto;}
+#addViolationModal .ticket-form-grid{--bs-gutter-x:.75rem;--bs-gutter-y:.75rem;}
+#addViolationModal .ticket-field{display:flex;min-width:0;flex-direction:column;}
+#addViolationModal .ticket-field .form-control,
+#addViolationModal .ticket-field .form-select{min-height:43px;}
+#addViolationModal .field-optional{margin-left:5px;color:#74847f;font-size:.58rem;font-weight:700;letter-spacing:.035em;text-transform:uppercase;}
+#addViolationModal .ticket-field-help{display:block;margin-top:4px;color:#667a74;font-size:.64rem;line-height:1.35;}
 .ticket-form-section{
     display:flex;
     align-items:center;
@@ -679,7 +685,7 @@ a:hover{color:#fff}
 }
 .ticket-form-section strong{display:block;font-size:.86rem;line-height:1.2;}
 .ticket-form-section small{display:block;margin-top:2px;font-size:.68rem;}
-#addViolationModal .form-label{margin-bottom:.4rem;font-weight:600;}
+#addViolationModal .form-label{margin-bottom:.3rem;font-weight:600;line-height:1.25;}
 #addViolationModal .form-check{padding:8px 10px 8px 2rem;border-radius:9px;background:rgba(8,125,120,.04);}
 #addViolationModal .license-status-row{
     display:grid;
@@ -1122,15 +1128,19 @@ body.municipal-portal .content .violations-top-metric strong{color:#102f49!impor
         </div>
         <div class="modal-body">
           <input type="hidden" name="action" value="add_violation">
-          <div class="row g-3">
+          <div class="row ticket-form-grid">
             <div class="col-12"><div class="ticket-form-section"><span class="section-number">1</span><div><strong>Driver Information</strong><small class="text-muted">Personal details of the apprehended driver</small></div></div></div>
             <input type="hidden" id="driverNameInput" name="driver_name">
-            <div class="col-md-3"><label class="form-label" for="driverLastNameInput">Surname</label><input type="text" id="driverLastNameInput" name="driver_last_name" class="form-control" maxlength="100" autocomplete="family-name" required></div>
-            <div class="col-md-3"><label class="form-label" for="driverFirstNameInput">First Name</label><input type="text" id="driverFirstNameInput" name="driver_first_name" class="form-control" maxlength="100" autocomplete="given-name" required></div>
-            <div class="col-md-3"><label class="form-label" for="driverMiddleNameInput">Middle Name</label><input type="text" id="driverMiddleNameInput" name="driver_middle_name" class="form-control" maxlength="100" autocomplete="additional-name"><small class="text-muted">Optional; enter the full middle name when available.</small></div>
-            <div class="col-md-3"><label class="form-label" for="driverSuffixInput">Suffix</label><input type="text" id="driverSuffixInput" name="driver_suffix" class="form-control" maxlength="20" placeholder="Jr., Sr., III"></div>
-            <div class="col-md-6"><label class="form-label">Date of Birth</label><input type="date" name="date_of_birth" class="form-control"><small class="text-muted">Matching uses license first, then the structured name and birth date.</small></div>
-            <div class="col-12"><label class="form-label">Driver Address</label><input type="text" name="driver_address" class="form-control" maxlength="255" placeholder="House no., street, barangay, municipality"></div>
+            <div class="col-12">
+              <div class="row g-2 driver-name-grid">
+                <div class="col-sm-6 col-lg-3 ticket-field"><label class="form-label" for="driverLastNameInput">Surname</label><input type="text" id="driverLastNameInput" name="driver_last_name" class="form-control" maxlength="100" autocomplete="family-name" required></div>
+                <div class="col-sm-6 col-lg-3 ticket-field"><label class="form-label" for="driverFirstNameInput">First Name</label><input type="text" id="driverFirstNameInput" name="driver_first_name" class="form-control" maxlength="100" autocomplete="given-name" required></div>
+                <div class="col-sm-6 col-lg-3 ticket-field"><label class="form-label" for="driverMiddleNameInput">Middle Name <span class="field-optional">Optional</span></label><input type="text" id="driverMiddleNameInput" name="driver_middle_name" class="form-control" maxlength="100" autocomplete="additional-name"></div>
+                <div class="col-sm-6 col-lg-3 ticket-field"><label class="form-label" for="driverSuffixInput">Suffix <span class="field-optional">Optional</span></label><input type="text" id="driverSuffixInput" name="driver_suffix" class="form-control" maxlength="20" placeholder="Jr., Sr., III"></div>
+              </div>
+            </div>
+            <div class="col-md-4 ticket-field"><label class="form-label" for="driverBirthDateInput">Date of Birth <span class="field-optional">Optional</span></label><input type="date" id="driverBirthDateInput" name="date_of_birth" class="form-control"><small class="ticket-field-help">Used with the structured name when matching records.</small></div>
+            <div class="col-md-8 ticket-field"><label class="form-label" for="driverAddressInput">Driver Address <span class="field-optional">Optional</span></label><input type="text" id="driverAddressInput" name="driver_address" class="form-control" maxlength="255" placeholder="House no., street, barangay, municipality"></div>
             <div class="col-12"><div class="ticket-form-section"><span class="section-number">2</span><div><strong>License Information</strong><small class="text-muted">License number, validity, and confiscation status</small></div></div></div>
             <div class="col-md-6">
               <label class="form-label" for="licenseNumberInput">License Number</label>
