@@ -524,7 +524,7 @@ div[style*="border-radius: 999px"]:not(.tag){
 .payment-review-item>strong{display:block;color:#10202c;font-size:.86rem;line-height:1.35;overflow-wrap:anywhere;}
 .payment-review-penalty{background:rgba(8,125,120,.09);}
 .payment-review-penalty>strong{color:#087d78;font-size:1.08rem;}
-.payment-entry-panel{display:grid;grid-template-columns:1.2fr .7fr 1.2fr;gap:14px;align-items:start;padding:16px;border:1px solid rgba(8,125,120,.2);border-radius:14px;background:linear-gradient(135deg,rgba(8,125,120,.055),rgba(255,255,255,.55));}
+.payment-entry-panel{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;align-items:start;padding:16px;border:1px solid rgba(8,125,120,.2);border-radius:14px;background:linear-gradient(135deg,rgba(8,125,120,.055),rgba(255,255,255,.55));}
 .payment-entry-action{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) minmax(220px,340px);gap:14px;align-items:stretch;}
 .payment-entry-action .btn{min-height:48px;}
 .payment-reference-note{display:flex;align-items:center;gap:9px;min-height:48px;padding:4px 2px;color:#60736d;font-size:.76rem;line-height:1.45;}
@@ -607,6 +607,7 @@ div[style*="border-radius: 999px"]:not(.tag){
           <form method="post" class="payment-entry-panel" id="recordPaymentForm">
             <input type="hidden" name="action" value="record_payment">
             <input type="hidden" name="violation_id" value="<?= (int)$selectedViolation['violation_id'] ?>">
+            <input type="hidden" name="payment_method" value="cash">
 
             <div>
               <label class="form-label">Violation Fee / Amount Paid</label>
@@ -614,14 +615,6 @@ div[style*="border-radius: 999px"]:not(.tag){
                 <option value="<?= esc($selectedViolation['penalty_amount']) ?>"><?= peso($selectedViolation['penalty_amount']) ?> &mdash; <?= esc($selectedViolation['violation_type']) ?></option>
               </select>
               <small class="text-muted">The fee is taken from the selected violation and cannot be changed during payment.</small>
-            </div>
-
-            <div>
-              <label class="form-label">Payment Method</label>
-              <input type="hidden" name="payment_method" value="cash">
-              <div class="form-control d-flex align-items-center gap-2" aria-label="Payment method: Cash">
-                <i class="bi bi-cash-stack text-success"></i><strong>Cash</strong>
-              </div>
             </div>
 
             <div>
