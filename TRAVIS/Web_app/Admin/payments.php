@@ -768,6 +768,13 @@ const paymentOrderPrintedInput = document.getElementById('paymentOrderPrinted');
 const printPaymentOrderButton = document.getElementById('printPaymentOrder');
 const confirmPaymentButton = document.getElementById('openPaymentConfirmation');
 const paymentOrderStatus = document.getElementById('paymentOrderStatus');
+const paymentOrderPrintSheet = document.getElementById('paymentOrderPrintSheet');
+
+// Keep the print sheet outside the dashboard layout so hidden navigation and
+// content cannot reserve an empty first page in the browser print preview.
+if (paymentOrderPrintSheet?.parentElement !== document.body) {
+  document.body.appendChild(paymentOrderPrintSheet);
+}
 
 function resetPrintedPaymentOrder() {
   if (paymentOrderPrintedInput) paymentOrderPrintedInput.value = '0';
@@ -809,21 +816,27 @@ confirmPaymentButton?.addEventListener('click', function () {
 <style>
 @page{size:A4 landscape;margin:8mm;}
 @media print{
-  body.printing-payment-order *{visibility:hidden!important;}
-  body.printing-payment-order #paymentOrderPrintSheet,
-  body.printing-payment-order #paymentOrderPrintSheet *{visibility:visible!important;}
+  html:has(body.printing-payment-order),
+  body.printing-payment-order{width:auto!important;height:auto!important;margin:0!important;padding:0!important;overflow:visible!important;background:#fff!important;}
+  body.printing-payment-order>*:not(#paymentOrderPrintSheet){display:none!important;}
   body.printing-payment-order #paymentOrderPrintSheet{
     display:block!important;
-    position:fixed;
-    inset:0 auto auto 0;
+    position:static!important;
     width:100%;
-    min-height:190mm;
+    height:auto!important;
+    min-height:0!important;
+    max-height:190mm;
     box-sizing:border-box;
-    padding:7mm 10mm;
+    margin:0!important;
+    padding:6mm 9mm;
     border:1px solid #111;
     color:#111!important;
     background:#fff!important;
     box-shadow:none!important;
+    break-inside:avoid;
+    page-break-inside:avoid;
+    page-break-before:avoid;
+    page-break-after:avoid;
   }
   body.printing-payment-order #paymentOrderPrintSheet *{color:#111!important;}
 }
