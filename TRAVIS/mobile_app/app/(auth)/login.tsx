@@ -1,4 +1,3 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { Href, useRouter } from 'expo-router';
 import React, { useState } from 'react';
@@ -17,13 +16,13 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import api, { APP_ROOT_URL } from '../../api/axiosConfig';
 import LoginSuccessModal from '../../components/LoginSuccessModal';
+import { saveMobileSession } from '../../utils/session';
 
 export default function LoginScreen() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successVisible, setSuccessVisible] = useState(false);
@@ -38,7 +37,8 @@ export default function LoginScreen() {
       const response = await api.post('login.php', { email: email.trim(), password });
       if (response.data.success) {
         const user = response.data.user;
-        await AsyncStorage.setItem('travis_user', JSON.stringify(user));
+        if (!response.data.session_id || !response.data.refresh_token) throw new Error('The server did not create a mobile session.');
+        await saveMobileSession(user, response.data.session_id, response.data.refresh_token);
         setLoggedInName(user.full_name);
         setLoggedInRole(user.role || '');
         setSuccessVisible(true);
@@ -86,9 +86,7 @@ export default function LoginScreen() {
               </View>
               {errorMsg ? <Text style={styles.errorText}>{errorMsg}</Text> : null}
 
-              <View style={styles.optionsRow}>
-                <TouchableOpacity style={styles.rememberRow} onPress={() => setRememberMe(!rememberMe)}><View style={[styles.checkbox, rememberMe && styles.checkboxChecked]}>{rememberMe && <Ionicons name="checkmark" size={12} color="#fff" />}</View><Text style={styles.rememberText}>Remember me</Text></TouchableOpacity>
-              </View>
+              <View style={styles.optionsRow}><Ionicons name="shield-checkmark-outline" size={15} color="#D8E8E4" /><Text style={styles.rememberText}>Secure sign-in stays active on this device</Text></View>
               <TouchableOpacity style={[styles.signInButton, isLoading && styles.disabled]} onPress={handleSignIn} disabled={isLoading}>{!isLoading && <Ionicons name="log-in-outline" size={18} color="#fff" style={styles.signInIcon} />}<Text style={styles.signInText}>{isLoading ? 'Signing In...' : 'Sign In'}</Text></TouchableOpacity>
               <View style={styles.divider} />
               <Text style={styles.footerText}>Traffic Violation Recognition and AI Surveillance</Text><Text style={styles.footerSub}>Powered by Artificial Intelligence</Text>

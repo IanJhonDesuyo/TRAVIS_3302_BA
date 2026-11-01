@@ -17,6 +17,7 @@ if (($_SESSION['logged_in'] ?? false) !== true || empty($_SESSION['user_id'])) {
 
 require_once __DIR__ . '/violation_rules.php';
 require_once __DIR__ . '/../Web_app/db_connect.php';
+require_once __DIR__ . '/../Web_app/auth/audit.php';
 
 function api_name_component(mixed $value): string
 {
@@ -25,8 +26,33 @@ function api_name_component(mixed $value): string
 
 function api_structured_driver_name(string $lastName, string $firstName, string $middleName = '', string $suffix = ''): string
 {
-    $givenNames = trim(implode(' ', array_filter([$firstName, $middleName, $suffix], static fn(string $part): bool => $part !== '')));
-    return $lastName !== '' && $givenNames !== '' ? $lastName . ', ' . $givenNames : '';
+    return $lastName !== '' && $firstName !== ''
+        ? implode(', ', array_filter([$lastName, $firstName, $middleName, $suffix], static fn(string $part): bool => $part !== ''))
+        : '';
+}
+
+function api_generate_ticket_number(PDO $pdo): string
+{
+    $prefix = 'TRV-' . date('Ymd') . '-';
+    $statement = $pdo->prepare(
+        "SELECT ticket_number FROM violations WHERE ticket_number LIKE CONCAT(?, '%') ORDER BY violation_id DESC LIMIT 1"
+    );
+    $statement->execute([$prefix]);
+    $latestTicket = (string)($statement->fetchColumn() ?: '');
+    $nextNumber = $latestTicket !== '' ? ((int)substr($latestTicket, -6)) + 1 : 1;
+
+    return $prefix . str_pad((string)$nextNumber, 6, '0', STR_PAD_LEFT);
+}
+
+function api_valid_date(string $value): bool
+{
+    $date = DateTimeImmutable::createFromFormat('!Y-m-d', $value);
+    return $date instanceof DateTimeImmutable && $date->format('Y-m-d') === $value;
+}
+
+function api_valid_time(string $value): bool
+{
+    return preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/', $value) === 1;
 }
 
 $input = json_decode((string)file_get_contents('php://input'), true);
@@ -62,18 +88,23 @@ $plate = $hasNoPlate ? 'NO PLATE' : $submittedPlate;
 $vehicle = trim((string)($input['vehicle_type'] ?? ''));
 $location = trim((string)($input['location'] ?? ''));
 $inputMethod = ($input['input_method'] ?? 'manual') === 'ocr' ? 'ocr' : 'manual';
-$requestedTicket = strtoupper(trim((string)($input['ticket_number'] ?? '')));
 $driverAddress = trim((string)($input['driver_address'] ?? ''));
 $dateOfBirth = trim((string)($input['date_of_birth'] ?? ''));
 $licenseExpiry = $hasNoLicense ? '' : trim((string)($input['license_expiry_date'] ?? ''));
 $licenseConfiscated = (bool)($input['license_confiscated'] ?? false);
 $licenseRemarks = trim((string)($input['license_remarks'] ?? ''));
 $vehicleOwner = trim((string)($input['vehicle_owner'] ?? ''));
+$vehicleOwnerNotApplicable = (bool)($input['vehicle_owner_not_applicable'] ?? false);
+if ($vehicleOwnerNotApplicable) $vehicleOwner = 'NOT APPLICABLE';
 $vehicleRegistration = strtoupper(trim((string)($input['vehicle_registration_number'] ?? '')));
 $registrationNotApplicable = (bool)($input['registration_not_applicable'] ?? false);
 if ($registrationNotApplicable) $vehicleRegistration = 'NOT APPLICABLE';
 $vehicleColor = trim((string)($input['vehicle_color'] ?? ''));
+$vehicleColorNotApplicable = (bool)($input['vehicle_color_not_applicable'] ?? false);
+if ($vehicleColorNotApplicable) $vehicleColor = 'NOT APPLICABLE';
 $insurancePolicy = trim((string)($input['insurance_policy_number'] ?? ''));
+$insurancePolicyNotApplicable = (bool)($input['insurance_policy_not_applicable'] ?? false);
+if ($insurancePolicyNotApplicable) $insurancePolicy = 'NOT APPLICABLE';
 $isPampasadaTricycle = $vehicle === 'Tricycle';
 $codingSticker = $isPampasadaTricycle ? trim((string)($input['coding_sticker_number'] ?? '')) : '';
 $vehicleToda = $isPampasadaTricycle ? trim((string)($input['vehicle_toda'] ?? '')) : '';
@@ -96,9 +127,12 @@ if ($officerAgency === 'tmo') {
     $officerName = trim((string)$selectedOfficer['first_name'] . ' ' . (string)$selectedOfficer['last_name']);
     $officerPosition = trim((string)($selectedOfficer['rank'] ?? '')) ?: 'TMO Officer';
 }
-$apprehensionDatetime = trim((string)($input['apprehension_datetime'] ?? ''));
 $violationDate = trim((string)($input['violation_date'] ?? date('Y-m-d')));
-$violationTime = trim((string)($input['violation_time'] ?? date('H:i:s')));
+$violationTime = substr(trim((string)($input['violation_time'] ?? date('H:i'))), 0, 5);
+$apprehensionDatetime = trim((string)($input['apprehension_datetime'] ?? ''));
+if ($apprehensionDatetime === '') {
+    $apprehensionDatetime = $violationDate . ' ' . $violationTime . ':00';
+}
 
 $submittedItems = isset($input['violations']) && is_array($input['violations'])
     ? $input['violations']
@@ -167,8 +201,15 @@ if (!in_array($vehicle, travis_vehicle_types(), true)) {
 if ($officerName === '') {
     http_response_code(422); echo json_encode(['success' => false, 'error' => 'Apprehending officer is required']); exit;
 }
-if ($requestedTicket !== '' && mb_strlen($requestedTicket) > 80) {
-    http_response_code(422); echo json_encode(['success' => false, 'error' => 'Physical ticket number is too long']); exit;
+if (!api_valid_date($violationDate) || !api_valid_time($violationTime)) {
+    http_response_code(422); echo json_encode(['success' => false, 'error' => 'Select a valid violation date and time']); exit;
+}
+if (($dateOfBirth !== '' && !api_valid_date($dateOfBirth)) || ($licenseExpiry !== '' && !api_valid_date($licenseExpiry))) {
+    http_response_code(422); echo json_encode(['success' => false, 'error' => 'Select valid birth and license expiry dates']); exit;
+}
+if (preg_match('/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})(?::\d{2})?$/', $apprehensionDatetime, $apprehensionParts) !== 1
+    || !api_valid_date($apprehensionParts[1] ?? '') || !api_valid_time($apprehensionParts[2] ?? '')) {
+    http_response_code(422); echo json_encode(['success' => false, 'error' => 'Select a valid apprehension date and time']); exit;
 }
 if ($offenseNumber < 1 || $offenseNumber > 4) {
     http_response_code(422); echo json_encode(['success' => false, 'error' => 'Offense number must be from 1 to 4']); exit;
@@ -179,15 +220,7 @@ try {
         'analysis' => travis_offense_analysis($pdo, $driver, $item['violation_type'], $license, $dateOfBirth),
     ], $items);
     $pdo->beginTransaction();
-    do {
-        $ticket = $requestedTicket !== '' ? $requestedTicket : 'TRV-' . date('Ymd') . '-' . str_pad((string)random_int(1, 999999), 6, '0', STR_PAD_LEFT);
-        $check = $pdo->prepare('SELECT 1 FROM violations WHERE ticket_number = ?');
-        $check->execute([$ticket]);
-        $ticketExists = (bool)$check->fetchColumn();
-        if ($requestedTicket !== '' && $ticketExists) {
-            throw new DomainException('That physical ticket number has already been encoded');
-        }
-    } while ($ticketExists);
+    $ticket = api_generate_ticket_number($pdo);
 
     $statement = $pdo->prepare("INSERT INTO violations (
         ticket_number, driver_name, driver_last_name, driver_first_name, driver_middle_name, driver_suffix,
@@ -215,11 +248,16 @@ try {
         $itemStatement->execute([$id, $item['violation_type'], $item['penalty_amount'], $item['ocr_confidence']]);
     }
     $pdo->commit();
+    travis_audit_log(
+        $conn,
+        'create',
+        'violations',
+        'Created violation ticket ' . $ticket . ' from the mobile application with ' . count($items) . ' violation item(s).',
+        'success',
+        'violation',
+        $id
+    );
     echo json_encode(['success' => true, 'message' => count($items) . ' violation(s) added successfully', 'violation_id' => $id, 'ticket_number' => $ticket, 'violation_items' => $items, 'offense_analyses' => $offenses, 'offense_analysis' => $offenses[0]['analysis']]);
-} catch (DomainException $exception) {
-    if ($pdo->inTransaction()) $pdo->rollBack();
-    http_response_code(409);
-    echo json_encode(['success' => false, 'error' => $exception->getMessage()]);
 } catch (Throwable $exception) {
     if ($pdo->inTransaction()) $pdo->rollBack();
     error_log('add_violations.php: ' . $exception->getMessage());

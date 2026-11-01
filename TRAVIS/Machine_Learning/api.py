@@ -5,11 +5,19 @@ from typing import Any
 import calendar
 import logging
 import sys
+import tempfile
+import threading
 
 import joblib
 import pandas as pd
 from flask import Flask, jsonify, request
 from flask_cors import CORS
+from rapidocr_onnxruntime import RapidOCR
+
+LOCAL_CV_DIR = Path(__file__).resolve().parent.parent / "computer_vision"
+if LOCAL_CV_DIR.is_dir() and str(LOCAL_CV_DIR) not in sys.path:
+    sys.path.insert(0, str(LOCAL_CV_DIR))
+from ticket_ocr import analyze_ticket_image
 
 
 # ============================================================
@@ -73,6 +81,17 @@ hotspot_results: pd.DataFrame | None = None
 monthly_model_error: str | None = None
 hotspot_model_error: str | None = None
 hotspot_results_error: str | None = None
+ticket_ocr_engine = None
+ticket_ocr_lock = threading.Lock()
+
+
+def get_ticket_ocr_engine():
+    """Load one OCR model per Gunicorn worker and reuse it across requests."""
+
+    global ticket_ocr_engine
+    if ticket_ocr_engine is None:
+        ticket_ocr_engine = RapidOCR()
+    return ticket_ocr_engine
 
 
 # ============================================================
@@ -513,6 +532,7 @@ def home():
                 "POST /predict/monthly",
                 "GET /hotspots",
                 "GET /hotspots/<risk_level>",
+                "POST /ocr/ticket",
                 "POST /reload-models",
             ],
         },
@@ -562,6 +582,50 @@ def health():
         ),
         status_code,
     )
+
+
+@app.post("/ocr/ticket")
+def scan_traffic_ticket():
+    """Extract structured fields from an official TRAVIS ticket image."""
+
+    ticket = request.files.get("ticket")
+    if ticket is None or not ticket.filename:
+        return error_response("A ticket image is required.", 400)
+
+    allowed_types = {
+        "image/jpeg": ".jpg",
+        "image/png": ".png",
+        "image/webp": ".webp",
+    }
+    suffix = allowed_types.get(str(ticket.mimetype).lower())
+    if suffix is None:
+        return error_response("Use a JPEG, PNG, or WebP ticket image.", 415)
+
+    image_bytes = ticket.read(10 * 1024 * 1024 + 1)
+    if not image_bytes:
+        return error_response("The uploaded ticket image is empty.", 400)
+    if len(image_bytes) > 10 * 1024 * 1024:
+        return error_response("Ticket image must be 10 MB or smaller.", 413)
+
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as temporary:
+            temporary.write(image_bytes)
+            temporary_path = Path(temporary.name)
+
+        # RapidOCR's detector object is reused for speed and protected because
+        # each Gunicorn worker can serve two request threads.
+        with ticket_ocr_lock:
+            result = analyze_ticket_image(temporary_path, get_ticket_ocr_engine())
+        return jsonify(result), 200
+    except ValueError as error:
+        return error_response(str(error), 422)
+    except Exception as error:
+        logger.exception("Ticket OCR failed.")
+        return error_response("Ticket OCR processing failed.", 500, str(error))
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
 
 
 @app.get("/model-info")

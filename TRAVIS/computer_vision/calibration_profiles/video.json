@@ -1,0 +1,63 @@
+{
+    "profile_name": "video",
+    "road_roi": [
+        [
+            0,
+            0
+        ],
+        [
+            1,
+            0
+        ],
+        [
+            1,
+            1
+        ],
+        [
+            0,
+            1
+        ]
+    ],
+    "inbound_line": [
+        [
+            0.029272861168032786,
+            0.5222021333009074
+        ],
+        [
+            0.3902187482999057,
+            0.5180688344117315
+        ]
+    ],
+    "outbound_line": [
+        [
+            0.5596660136415567,
+            0.5222021333009074
+        ],
+        [
+            0.9217724984812491,
+            0.5180688344117315
+        ]
+    ],
+    "officer_zone": [],
+    "officer": {
+        "enabled": false,
+        "presence_frames": 3,
+        "absence_frames": 15
+    },
+    "collision": {
+        "enabled": true,
+        "ttc_warning_seconds": 2.5,
+        "maximum_pair_distance": 2.6,
+        "contact_iou": 0.08,
+        "confirmation_iou": 0.04,
+        "possible_frames": 3,
+        "confirmed_frames": 4,
+        "risk_memory_seconds": 4,
+        "minimum_track_confidence": 0.45,
+        "minimum_motorcycle_confidence": 0.25,
+        "occlusion_confirmation_frames": 3,
+        "occlusion_window_seconds": 2,
+        "occlusion_max_distance": 1.5,
+        "cooldown_seconds": 30
+    }
+}

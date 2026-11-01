@@ -8,12 +8,12 @@ from utils import crossed_line
 
 
 class DirectionCounter:
-    """Count a track once, using horizontal travel to validate its direction.
+    """Count a track once when it crosses its direction-specific line.
 
-    For the current camera orientation, leftward travel is inbound/northbound
-    and rightward travel is outbound/southbound. The two configured lines are
-    trigger zones; crossing the wrong line in the wrong direction never adds a
-    count.
+    Screen coordinates increase downwards. A vehicle travelling from the
+    bottom of the image to the top is inbound and must cross the inbound line.
+    A vehicle travelling from the top to the bottom is outbound and must cross
+    the outbound line. Crossing the other line never adds to that direction.
     """
 
     def __init__(
@@ -21,12 +21,12 @@ class DirectionCounter:
         inbound_line,
         outbound_line,
         history_size: int = 45,
-        minimum_horizontal_travel: int = 6,
+        minimum_vertical_travel: int = 6,
     ):
         self.inbound_line = inbound_line
         self.outbound_line = outbound_line
         self.history_size = max(2, int(history_size))
-        self.minimum_horizontal_travel = max(1, int(minimum_horizontal_travel))
+        self.minimum_vertical_travel = max(1, int(minimum_vertical_travel))
         self.inbound_count = 0
         self.outbound_count = 0
         self._counted_tracks: set[int] = set()
@@ -51,27 +51,62 @@ class DirectionCounter:
         if track_id in self._counted_tracks:
             return
 
-        # Use the short tracked trajectory instead of only the last frame
-        # pair. This still detects a crossing when inference skips frames or a
-        # vehicle moves several pixels between processed frames.
-        trajectory_start = history[0]
-        horizontal_travel = point[0] - history[0][0]
-        moving_left = horizontal_travel <= -self.minimum_horizontal_travel
-        moving_right = horizontal_travel >= self.minimum_horizontal_travel
+        # Look back through the short trajectory for a point on the required
+        # origin side. This retains crossings when inference skips frames and
+        # avoids losing a valid crossing when a one-frame displacement is less
+        # than the jitter threshold.
+        inbound_origin = self._find_origin(history, self.inbound_line, "below")
+        outbound_origin = self._find_origin(history, self.outbound_line, "above")
 
-        # Both calibrated lines are counting gates. Direction is determined by
-        # horizontal travel, not by which colored line is crossed first.
-        crossed_counting_gate = (
-            crossed_line(trajectory_start, point, self.inbound_line)
-            or crossed_line(trajectory_start, point, self.outbound_line)
+        inbound_crossing = (
+            inbound_origin is not None
+            and self._side_of_line(point, self.inbound_line) == "above"
+            and inbound_origin[1] - point[1] >= self.minimum_vertical_travel
+            and crossed_line(inbound_origin, point, self.inbound_line)
+        )
+        outbound_crossing = (
+            outbound_origin is not None
+            and self._side_of_line(point, self.outbound_line) == "below"
+            and point[1] - outbound_origin[1] >= self.minimum_vertical_travel
+            and crossed_line(outbound_origin, point, self.outbound_line)
         )
 
-        if moving_left and crossed_counting_gate:
+        if inbound_crossing:
             self._counted_tracks.add(track_id)
             self.inbound_count += 1
-        elif moving_right and crossed_counting_gate:
+        elif outbound_crossing:
             self._counted_tracks.add(track_id)
             self.outbound_count += 1
+
+    @classmethod
+    def _find_origin(cls, history, line, required_side: str):
+        """Return the most recent earlier point on the requested line side."""
+
+        for candidate in reversed(list(history)[:-1]):
+            if cls._side_of_line(candidate, line) == required_side:
+                return candidate
+        return None
+
+    @staticmethod
+    def _side_of_line(point, line) -> str:
+        """Classify a point as visually above or below a non-vertical line.
+
+        The result is independent of which endpoint was saved first. A
+        vertical line cannot define screen-top and screen-bottom regions, so
+        it intentionally returns ``on`` and cannot produce a directional
+        count until its calibration is corrected.
+        """
+
+        (x1, y1), (x2, y2) = line
+        horizontal_span = x2 - x1
+        if horizontal_span == 0:
+            return "on"
+
+        cross_product = horizontal_span * (point[1] - y1) - (y2 - y1) * (point[0] - x1)
+        normalized = cross_product if horizontal_span > 0 else -cross_product
+        if abs(normalized) < 1e-6:
+            return "on"
+        return "below" if normalized > 0 else "above"
 
     def snapshot(self) -> tuple[int, int]:
         return self.inbound_count, self.outbound_count

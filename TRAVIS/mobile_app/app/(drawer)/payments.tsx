@@ -88,15 +88,6 @@ const statusColor = (status: string): string => {
   return COLORS.neutral;
 };
 
-const methodIcon = (method: string): keyof typeof Ionicons.glyphMap => {
-  switch (method) {
-    case 'cash': return 'cash-outline';
-    case 'gcash': return 'phone-portrait-outline';
-    case 'bank_transfer': return 'business-outline';
-    default: return 'card-outline';
-  }
-};
-
 const methodLabel = (method: string): string => {
   switch (method) {
     case 'cash': return 'Cash';
@@ -128,14 +119,17 @@ export default function PaymentsScreen() {
   useEffect(() => {
     if (!violation_id || handledPaymentLink === violation_id || pendingViolations.length === 0) return;
     const violation = pendingViolations.find(item => String(item.violation_id) === String(violation_id));
-    setHandledPaymentLink(violation_id);
-    if (violation) {
-      setSelectedViolation(violation);
-      setOfficialReceiptNumber('');
-      setModalVisible(true);
-    } else {
-      Alert.alert('Payment unavailable', 'This violation is no longer pending or overdue.');
-    }
+    const timer = setTimeout(() => {
+      setHandledPaymentLink(violation_id);
+      if (violation) {
+        setSelectedViolation(violation);
+        setOfficialReceiptNumber('');
+        setModalVisible(true);
+      } else {
+        Alert.alert('Payment unavailable', 'This violation is no longer pending or overdue.');
+      }
+    }, 0);
+    return () => clearTimeout(timer);
   }, [violation_id, handledPaymentLink, pendingViolations]);
 
   // ===== FETCH DATA =====
@@ -284,64 +278,23 @@ export default function PaymentsScreen() {
   );
 
   const renderPendingItem = ({ item }: { item: Violation }) => (
-    <View style={styles.pendingItem}>
-      <View style={styles.itemHeader}>
-        <Text style={styles.ticketNumber}>{item.ticket_number}</Text>
-        <View style={[styles.statusBadge, { backgroundColor: statusColor(item.status) + '1A' }]}>
-          <Text style={[styles.statusText, { color: statusColor(item.status) }]}>
-            {item.status.toUpperCase()}
-          </Text>
-        </View>
-      </View>
-      <Text style={styles.driverName}>{item.driver_name}</Text>
-      <Text style={styles.plateInfo}>{item.plate_number} · {item.vehicle_type}</Text>
-      <View style={styles.itemMetaRow}>
-        <Text style={styles.violationType}>{item.violation_type}</Text>
-        <Text style={styles.locationDate}>{item.violation_location} · {item.violation_date}</Text>
-      </View>
-
-      <View style={styles.itemDivider} />
-
-      <View style={styles.pendingFooter}>
-        <Text style={styles.penalty}>{formatCurrency(item.penalty_amount)}</Text>
-        <TouchableOpacity
-          style={styles.processButton}
-          onPress={() => { setSelectedViolation(item); setOfficialReceiptNumber(''); setModalVisible(true); }}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.processButtonText}>Process Payment</Text>
-        </TouchableOpacity>
-      </View>
+    <View style={styles.tableRow}>
+      <View style={styles.tableMainCell}><Text style={styles.tablePrimary} numberOfLines={1}>{item.ticket_number}</Text><Text style={styles.tableSecondary} numberOfLines={1}>{item.driver_name} · {item.plate_number}</Text></View>
+      <View style={styles.tableDetailCell}><Text style={styles.tablePrimary} numberOfLines={1}>{item.violation_type}</Text><Text style={styles.tableSecondary}>{item.violation_date}</Text></View>
+      <Text style={styles.tableAmount}>{formatCurrency(item.penalty_amount)}</Text>
+      <TouchableOpacity style={styles.tableActionButton} onPress={() => { setSelectedViolation(item); setOfficialReceiptNumber(''); setModalVisible(true); }} accessibilityLabel={`Preview and process ${item.ticket_number}`}>
+        <Ionicons name="eye-outline" size={16} color={COLORS.primary} />
+      </TouchableOpacity>
     </View>
   );
 
   const renderPaymentItem = ({ item }: { item: Payment }) => (
-    <View style={styles.paymentItem}>
-      <View style={styles.itemHeader}>
-        <Text style={styles.paymentReference}>{`PAY-${String(item.payment_id).padStart(6, '0')}`}</Text>
-        <View style={[styles.statusBadge, { backgroundColor: statusColor(item.payment_status) + '1A' }]}>
-          <Text style={[styles.statusText, { color: statusColor(item.payment_status) }]}>
-            {item.payment_status.toUpperCase()}
-          </Text>
-        </View>
-      </View>
-      <Text style={styles.paymentTicket}>{item.ticket_number}</Text>
-      <Text style={styles.paymentDriver}>{item.driver_name} · {item.plate_number}</Text>
-      <Text style={styles.paymentViolation}>{item.violation_type}</Text>
-
-      <View style={styles.itemDivider} />
-
-      <View style={styles.paymentFooter}>
-        <View style={styles.paymentMethodRow}>
-          <Ionicons name={methodIcon(item.payment_method)} size={14} color={COLORS.textSecondary} />
-          <Text style={styles.methodText}>{methodLabel(item.payment_method)}</Text>
-        </View>
-        <Text style={styles.paymentAmount}>{formatCurrency(item.amount_paid)}</Text>
-      </View>
-      <Text style={styles.paymentMeta}>{item.payment_date} · Received by {item.received_by_name || 'N/A'}</Text>
-      <TouchableOpacity style={styles.receiptButton} onPress={() => setSelectedPayment(item)}>
-        <Ionicons name="receipt-outline" size={14} color={COLORS.primary} />
-        <Text style={styles.receiptButtonText}>View Receipt</Text>
+    <View style={styles.tableRow}>
+      <View style={styles.tableMainCell}><Text style={styles.tablePrimary} numberOfLines={1}>{item.ticket_number}</Text><Text style={styles.tableSecondary} numberOfLines={1}>{item.driver_name} · {item.plate_number}</Text></View>
+      <View style={styles.tableDetailCell}><Text style={styles.tablePrimary} numberOfLines={1}>{item.violation_type}</Text><Text style={styles.tableSecondary}>{item.payment_date}</Text></View>
+      <Text style={styles.tableAmount}>{formatCurrency(item.amount_paid)}</Text>
+      <TouchableOpacity style={styles.tableActionButton} onPress={() => setSelectedPayment(item)} accessibilityLabel={`View receipt for ${item.ticket_number}`}>
+        <Ionicons name="eye-outline" size={16} color={COLORS.primary} />
       </TouchableOpacity>
     </View>
   );
@@ -364,7 +317,7 @@ export default function PaymentsScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
+      <StatusBar barStyle="dark-content" />
       <ScrollView
         style={styles.container}
         contentContainerStyle={{ paddingBottom: 40 }}
@@ -407,13 +360,10 @@ export default function PaymentsScreen() {
           {filteredPending.length === 0 ? (
             renderEmpty('No pending or overdue violations were found.')
           ) : (
-            <FlatList
-              data={filteredPending}
-              renderItem={renderPendingItem}
-              keyExtractor={item => item.violation_id.toString()}
-              scrollEnabled={false}
-              ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
-            />
+            <View style={styles.tableShell}>
+              <View style={styles.tableHeader}><Text style={[styles.tableHeaderText, styles.tableMainCell]}>TICKET / DRIVER</Text><Text style={[styles.tableHeaderText, styles.tableDetailCell]}>VIOLATION</Text><Text style={[styles.tableHeaderText, styles.tableAmount]}>AMOUNT</Text><Text style={[styles.tableHeaderText, styles.tableActionHeader]}>VIEW</Text></View>
+              <FlatList data={filteredPending} renderItem={renderPendingItem} keyExtractor={item => item.violation_id.toString()} scrollEnabled={false} ItemSeparatorComponent={() => <View style={styles.tableDivider} />} />
+            </View>
           )}
         </View>
 
@@ -438,13 +388,10 @@ export default function PaymentsScreen() {
           {filteredPayments.length === 0 ? (
             renderEmpty('No payment transactions matched your current filters.')
           ) : (
-            <FlatList
-              data={filteredPayments}
-              renderItem={renderPaymentItem}
-              keyExtractor={item => item.payment_id.toString()}
-              scrollEnabled={false}
-              ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
-            />
+            <View style={styles.tableShell}>
+              <View style={styles.tableHeader}><Text style={[styles.tableHeaderText, styles.tableMainCell]}>TICKET / DRIVER</Text><Text style={[styles.tableHeaderText, styles.tableDetailCell]}>VIOLATION</Text><Text style={[styles.tableHeaderText, styles.tableAmount]}>PAID</Text><Text style={[styles.tableHeaderText, styles.tableActionHeader]}>VIEW</Text></View>
+              <FlatList data={filteredPayments} renderItem={renderPaymentItem} keyExtractor={item => item.payment_id.toString()} scrollEnabled={false} ItemSeparatorComponent={() => <View style={styles.tableDivider} />} />
+            </View>
           )}
         </View>
       </ScrollView>
@@ -656,6 +603,19 @@ const styles = StyleSheet.create({
   filterChipActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
   filterChipText: { fontSize: 12, fontWeight: '600', color: COLORS.textSecondary },
   filterChipTextActive: { color: '#FFFFFF' },
+
+  tableShell: { overflow: 'hidden', borderWidth: 1, borderColor: COLORS.border, borderRadius: 12, backgroundColor: COLORS.surface },
+  tableHeader: { minHeight: 38, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, backgroundColor: '#EDF4F2', borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  tableHeaderText: { color: COLORS.textSecondary, fontSize: 7, fontWeight: '900', letterSpacing: .25 },
+  tableRow: { minHeight: 67, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 9 },
+  tableMainCell: { flex: 1.15, paddingRight: 6 },
+  tableDetailCell: { flex: .9, paddingRight: 6 },
+  tablePrimary: { color: COLORS.textPrimary, fontSize: 9, lineHeight: 13, fontWeight: '800' },
+  tableSecondary: { color: COLORS.textTertiary, fontSize: 7.5, lineHeight: 11, marginTop: 2 },
+  tableAmount: { width: 61, color: COLORS.textPrimary, fontSize: 9, fontWeight: '900', textAlign: 'right', paddingRight: 6 },
+  tableActionHeader: { width: 34, textAlign: 'center' },
+  tableActionButton: { width: 34, height: 33, borderRadius: 9, borderWidth: 1, borderColor: COLORS.primary + '55', backgroundColor: COLORS.primary + '0D', alignItems: 'center', justifyContent: 'center' },
+  tableDivider: { height: 1, marginHorizontal: 8, backgroundColor: COLORS.border },
 
   pendingItem: {
     backgroundColor: COLORS.bg, borderRadius: 14, padding: 14,

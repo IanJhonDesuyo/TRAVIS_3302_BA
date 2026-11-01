@@ -260,6 +260,42 @@ header.topbar,
     box-shadow:0 14px 30px rgba(0,0,0,.28) !important;
     color:#fff !important;
 }
+
+.notification-landscape-card{padding:22px 24px !important;}
+.notification-landscape-grid{
+    display:grid;
+    grid-template-columns:minmax(250px,.78fr) minmax(0,1.55fr);
+    gap:0;
+    margin-top:4px;
+}
+.notification-landscape-panel{min-width:0;padding:4px 24px 2px 0;}
+.notification-landscape-panel.schedule-panel{
+    padding-right:0;
+    padding-left:24px;
+    border-left:1px solid rgba(16,47,73,.16);
+}
+.notification-panel-title{margin:0;color:#102f49;font-size:.92rem;font-weight:800;}
+.notification-panel-copy{display:block;margin-top:3px;margin-bottom:16px;color:#667a74;font-size:.67rem;line-height:1.45;}
+.notification-option-stack{display:grid;gap:11px;}
+.notification-option-row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:18px;
+    min-height:48px;
+    padding:9px 12px;
+    border:1px solid rgba(16,47,73,.10);
+    border-radius:11px;
+    background:rgba(8,125,120,.035);
+}
+.notification-option-row .form-check{margin:0;}
+.notification-delay{margin-top:13px;}
+.notification-time-grid .form-control{min-width:0;}
+@media (max-width:991.98px){
+    .notification-landscape-grid{grid-template-columns:1fr;}
+    .notification-landscape-panel{padding:2px 0 20px;}
+    .notification-landscape-panel.schedule-panel{padding:20px 0 0;border-top:1px solid rgba(16,47,73,.16);border-left:0;}
+}
 .section-head{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;margin-bottom:16px}
 .section-head h6{color:#fff !important;font-weight:700;margin:0}
 .section-card small,.section-card .text-muted{color:var(--text-soft) !important}
@@ -528,22 +564,9 @@ div[style*="border-radius: 999px"]:not(.tag){
         <span class="tag tag-success">Applied on next start</span>
       </div>
 
-      <div class="mb-3">
-        <label class="form-label small fw-semibold">Minimum Detection Confidence</label>
-        <select name="confidence_threshold" class="form-select" required>
-          <?php foreach ([
-            '0.30' => '30% — More sensitive',
-            '0.40' => '40% — Sensitive',
-            '0.50' => '50% — Balanced (recommended)',
-            '0.60' => '60% — More selective',
-            '0.70' => '70% — Strict',
-            '0.80' => '80% — Very strict',
-          ] as $value => $label): ?>
-            <option value="<?= esc($value) ?>" <?= abs((float)$settings['confidence_threshold'] - (float)$value) < 0.001 ? 'selected' : '' ?>><?= esc($label) ?></option>
-          <?php endforeach; ?>
-        </select>
-        <small class="text-muted d-block mt-2">How certain the AI must be before accepting a detection. Lower values detect more but may create false detections; higher values are stricter but may miss unclear objects.</small>
-      </div>
+      <!-- Keep the active detector threshold in every settings submission,
+           but hide the control until vehicle-class thresholds are unified. -->
+      <input type="hidden" name="confidence_threshold" value="<?= esc($settings['confidence_threshold']) ?>">
 
       <div class="form-check form-switch mb-2">
         <input class="form-check-input" name="enable_officer_detection" type="checkbox" <?= $settings['enable_officer_detection'] === '1' ? 'checked' : '' ?>>
@@ -560,50 +583,66 @@ div[style*="border-radius: 999px"]:not(.tag){
   </div>
 
   <!-- Notifications -->
-  <div class="col-lg-6">
-    <div class="section-card h-100">
+  <div class="col-12">
+    <div class="section-card notification-landscape-card">
       <div class="section-head">
         <h6>Notifications</h6>
         <span class="tag tag-success">Saved</span>
       </div>
 
-      <div class="form-check form-switch mb-2">
-        <input class="form-check-input" name="notify_congestion" type="checkbox" <?= $settings['notify_congestion'] === '1' ? 'checked' : '' ?>>
-        <label class="form-check-label">Critical congestion alerts</label>
-      </div>
+      <div class="notification-landscape-grid">
+        <section class="notification-landscape-panel" aria-labelledby="alertNotificationHeading">
+          <h6 class="notification-panel-title" id="alertNotificationHeading">Alert Notifications</h6>
+          <small class="notification-panel-copy">Choose which confirmed monitoring events should create dashboard alerts.</small>
 
-      <div class="form-check form-switch mb-2">
-        <input class="form-check-input" name="notify_collision" type="checkbox" <?= $settings['notify_collision'] === '1' ? 'checked' : '' ?>>
-        <label class="form-check-label">Confirmed collision alerts</label>
-      </div>
+          <div class="notification-option-stack">
+            <div class="notification-option-row">
+              <div class="form-check form-switch">
+                <input class="form-check-input" name="notify_congestion" id="notifyCongestion" type="checkbox" <?= $settings['notify_congestion'] === '1' ? 'checked' : '' ?>>
+                <label class="form-check-label" for="notifyCongestion">Critical congestion alerts</label>
+              </div>
+            </div>
+            <div class="notification-option-row">
+              <div class="form-check form-switch">
+                <input class="form-check-input" name="notify_collision" id="notifyCollision" type="checkbox" <?= $settings['notify_collision'] === '1' ? 'checked' : '' ?>>
+                <label class="form-check-label" for="notifyCollision">Confirmed collision alerts</label>
+              </div>
+            </div>
+            <div class="notification-option-row">
+              <div class="form-check form-switch">
+                <input class="form-check-input" name="notify_officer_absence" id="notifyOfficerAbsence" type="checkbox" <?= $settings['notify_officer_absence'] === '1' ? 'checked' : '' ?>>
+                <label class="form-check-label" for="notifyOfficerAbsence">Officer absence alerts</label>
+              </div>
+            </div>
+          </div>
 
-      <hr class="border-secondary opacity-25 my-3">
-      <div class="section-head mb-2">
-        <h6>Enforcer Duty Schedule</h6>
-      </div>
-      <div class="form-check form-switch mb-3">
-        <input class="form-check-input" name="enforcer_schedule_enabled" type="checkbox" <?= $settings['enforcer_schedule_enabled'] === '1' ? 'checked' : '' ?>>
-        <label class="form-check-label">Limit officer detection to duty hours</label>
-      </div>
-      <div class="row g-2">
-        <div class="col-6"><label class="form-label small fw-semibold">Duty starts</label><input type="time" name="enforcer_duty_start" class="form-control" value="<?= esc($settings['enforcer_duty_start']) ?>" required></div>
-        <div class="col-6"><label class="form-label small fw-semibold">Duty ends</label><input type="time" name="enforcer_duty_end" class="form-control" value="<?= esc($settings['enforcer_duty_end']) ?>" required></div>
-        <div class="col-6"><label class="form-label small fw-semibold">Break starts</label><input type="time" name="enforcer_break_start" class="form-control" value="<?= esc($settings['enforcer_break_start']) ?>" required></div>
-        <div class="col-6"><label class="form-label small fw-semibold">Break ends</label><input type="time" name="enforcer_break_end" class="form-control" value="<?= esc($settings['enforcer_break_end']) ?>" required></div>
-      </div>
-      <small class="text-muted d-block mt-2">Officer presence is reported as Unknown before duty, after duty, and during break.</small>
+          <div class="notification-delay">
+            <label class="form-label small fw-semibold" for="officerAbsenceSeconds">Officer absence delay (seconds)</label>
+            <input type="number" min="60" max="3600" step="30" id="officerAbsenceSeconds" name="officer_absence_seconds" class="form-control" value="<?= esc($settings['officer_absence_seconds']) ?>" required>
+            <small class="text-muted d-block mt-1">An alert is created only after continuous absence for this period.</small>
+          </div>
+        </section>
 
-      <div class="form-check form-switch mb-2">
-        <input class="form-check-input" name="notify_officer_absence" type="checkbox" <?= $settings['notify_officer_absence'] === '1' ? 'checked' : '' ?>>
-        <label class="form-check-label">Officer absence alerts</label>
-      </div>
+        <section class="notification-landscape-panel schedule-panel" aria-labelledby="dutyScheduleHeading">
+          <h6 class="notification-panel-title" id="dutyScheduleHeading">Enforcer Duty Schedule</h6>
+          <small class="notification-panel-copy">Define when officer-presence monitoring and absence alerts are operational.</small>
 
-      <div class="mt-3">
-        <label class="form-label small fw-semibold">Officer absence delay (seconds)</label>
-        <input type="number" min="60" max="3600" step="30" name="officer_absence_seconds" class="form-control" value="<?= esc($settings['officer_absence_seconds']) ?>" required>
-        <small class="text-muted">An alert is created only after continuous absence for this period.</small>
-      </div>
+          <div class="notification-option-row mb-3">
+            <div class="form-check form-switch">
+              <input class="form-check-input" name="enforcer_schedule_enabled" id="enforcerScheduleEnabled" type="checkbox" <?= $settings['enforcer_schedule_enabled'] === '1' ? 'checked' : '' ?>>
+              <label class="form-check-label" for="enforcerScheduleEnabled">Limit officer detection to duty hours</label>
+            </div>
+          </div>
 
+          <div class="row g-2 notification-time-grid">
+            <div class="col-xl-3 col-sm-6"><label class="form-label small fw-semibold">Duty starts</label><input type="time" name="enforcer_duty_start" class="form-control" value="<?= esc($settings['enforcer_duty_start']) ?>" required></div>
+            <div class="col-xl-3 col-sm-6"><label class="form-label small fw-semibold">Duty ends</label><input type="time" name="enforcer_duty_end" class="form-control" value="<?= esc($settings['enforcer_duty_end']) ?>" required></div>
+            <div class="col-xl-3 col-sm-6"><label class="form-label small fw-semibold">Break starts</label><input type="time" name="enforcer_break_start" class="form-control" value="<?= esc($settings['enforcer_break_start']) ?>" required></div>
+            <div class="col-xl-3 col-sm-6"><label class="form-label small fw-semibold">Break ends</label><input type="time" name="enforcer_break_end" class="form-control" value="<?= esc($settings['enforcer_break_end']) ?>" required></div>
+          </div>
+          <small class="text-muted d-block mt-2">Officer presence is reported as Unknown before duty, after duty, and during break.</small>
+        </section>
+      </div>
     </div>
   </div>
 

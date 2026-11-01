@@ -43,6 +43,10 @@ Copy-Item -LiteralPath (Join-Path $projectRoot 'Machine_Learning\requirements-vp
 Copy-Item -LiteralPath (Join-Path $projectRoot 'Machine_Learning\models') -Destination $mlRoot -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $projectRoot 'Machine_Learning\results') -Destination $mlRoot -Recurse -Force
 
+$ocrRoot = Join-Path $outputRoot 'computer_vision'
+New-Item -ItemType Directory -Path $ocrRoot -Force | Out-Null
+Copy-Item -LiteralPath (Join-Path $projectRoot 'computer_vision\ticket_ocr.py') -Destination $ocrRoot -Force
+
 # User-generated files belong in the persistent runtime mounts, not in the
 # immutable application image or deployment archive.
 $generatedUploadDirectories = @(

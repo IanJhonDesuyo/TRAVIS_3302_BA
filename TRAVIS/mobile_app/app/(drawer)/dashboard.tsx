@@ -48,6 +48,19 @@ const statusColor = (status: string): string => {
 };
 const mono = Platform.select({ ios: 'Courier', android: 'monospace', default: 'monospace' });
 
+type TrafficAnalytics = {
+  period: string;
+  period_label: string;
+  vehicle_total: number;
+  inbound_total: number;
+  outbound_total: number;
+  recorded_days: number;
+  daily_average: number;
+  busiest_date: string | null;
+  busiest_total: number;
+  series: { label: string; vehicle_total: number; inbound_total: number; outbound_total: number }[];
+};
+
 // ========== COUNT-UP ANIMATION ==========
 function useCountUp(target: number, active: boolean, duration = 900) {
   const [value, setValue] = useState(0);
@@ -110,6 +123,8 @@ export default function DashboardScreen() {
     pendingViolations: 0,
   });
   const [monthlySummary, setMonthlySummary] = useState<any>(null);
+  const [traffic, setTraffic] = useState<TrafficAnalytics | null>(null);
+  const [trafficLoading, setTrafficLoading] = useState(false);
 
   // Chart data
   const [monthlyTrend, setMonthlyTrend] = useState<{ labels: string[]; data: number[] }>({
@@ -230,15 +245,44 @@ export default function DashboardScreen() {
     }
   };
 
+  const fetchTrafficData = useCallback(async () => {
+    setTrafficLoading(true);
+    try {
+      const period = ({ Today: 'day', Week: 'week', Month: 'month', Year: 'year' } as const)[dateRange];
+      const today = new Date();
+      const response = await api.get('get_traffic_analytics.php', {
+        params: {
+          period,
+          date: `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`,
+          month: `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`,
+          year: today.getFullYear(),
+        },
+      });
+      setTraffic(response.data?.success ? response.data.data : null);
+    } catch (error) {
+      console.error('Traffic analytics fetch error:', error);
+      setTraffic(null);
+    } finally {
+      setTrafficLoading(false);
+    }
+  }, [dateRange]);
+
   useFocusEffect(
     useCallback(() => {
       fetchDashboardData();
     }, [])
   );
 
+  useFocusEffect(
+    useCallback(() => {
+      void fetchTrafficData();
+    }, [fetchTrafficData])
+  );
+
   const refresh = () => {
     setRefreshing(true);
     fetchDashboardData();
+    void fetchTrafficData();
   };
 
   const openOcrScanner = () => {
@@ -312,7 +356,7 @@ export default function DashboardScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.header} />
+      <StatusBar barStyle="light-content" />
       <View style={styles.container}>
 
         <ScrollView
@@ -582,6 +626,39 @@ export default function DashboardScreen() {
                     <Text style={[styles.dateFilterText, dateRange === r && styles.dateFilterTextActive]}>{r}</Text>
                   </TouchableOpacity>
                 ))}
+              </View>
+
+              <Text style={styles.sectionLabel}>TRAFFIC RECORDS</Text>
+              <View style={[styles.panel, styles.analyticsCard]}>
+                <View style={styles.chartHeader}>
+                  <View style={styles.chartTitleGroup}>
+                    <View style={[styles.chartIcon, { backgroundColor: '#E6F5F2' }]}><Ionicons name="car-outline" size={18} color={COLORS.primary} /></View>
+                    <View><Text style={styles.chartTitle}>Vehicle movement</Text><Text style={styles.chartSubtitle}>{traffic?.period_label || `${dateRange} records`}</Text></View>
+                  </View>
+                </View>
+                {trafficLoading ? (
+                  <View style={styles.trafficLoading}><ActivityIndicator color={COLORS.primary} /><Text style={styles.chartEmptyText}>Loading traffic records...</Text></View>
+                ) : traffic ? (
+                  <>
+                    <View style={styles.trafficSummaryGrid}>
+                      <View style={styles.trafficSummaryCell}><Text style={styles.trafficSummaryLabel}>TOTAL VEHICLES</Text><Text style={styles.trafficSummaryValue}>{traffic.vehicle_total.toLocaleString()}</Text></View>
+                      <View style={styles.trafficSummaryCell}><Text style={styles.trafficSummaryLabel}>INBOUND</Text><Text style={[styles.trafficSummaryValue, { color: COLORS.success }]}>{traffic.inbound_total.toLocaleString()}</Text></View>
+                      <View style={styles.trafficSummaryCell}><Text style={styles.trafficSummaryLabel}>OUTBOUND</Text><Text style={[styles.trafficSummaryValue, { color: COLORS.warning }]}>{traffic.outbound_total.toLocaleString()}</Text></View>
+                      <View style={styles.trafficSummaryCell}><Text style={styles.trafficSummaryLabel}>DAILY AVERAGE</Text><Text style={styles.trafficSummaryValue}>{traffic.daily_average.toLocaleString()}</Text></View>
+                    </View>
+                    {traffic.series.length > 1 && (
+                      <View style={styles.chartViewport}><LineChart
+                        data={{ labels: traffic.series.map(item => item.label), datasets: [{ data: traffic.series.map(item => item.vehicle_total), strokeWidth: 3 }] }}
+                        width={chartWidth - 30} height={205} fromZero withShadow segments={4} withOuterLines={false}
+                        chartConfig={{ backgroundColor: '#FFFDF7', backgroundGradientFrom: '#FFFDF7', backgroundGradientTo: '#FFFDF7', decimalPlaces: 0, color: (opacity = 1) => `rgba(8, 125, 120, ${opacity})`, labelColor: (opacity = 1) => `rgba(82, 107, 100, ${opacity})`, fillShadowGradientFrom: COLORS.primary, fillShadowGradientFromOpacity: .2, fillShadowGradientTo: '#FFFDF7', fillShadowGradientToOpacity: .01, propsForDots: { r: '3', strokeWidth: '2', stroke: '#FFFDF7' }, propsForBackgroundLines: { stroke: 'rgba(16,47,73,.10)', strokeDasharray: '4 6' } }}
+                        style={styles.chart}
+                      /></View>
+                    )}
+                    <Text style={styles.trafficFootnote}>{traffic.recorded_days} recorded day{traffic.recorded_days === 1 ? '' : 's'}{traffic.busiest_date ? ` · Busiest: ${traffic.busiest_date} (${traffic.busiest_total})` : ''}</Text>
+                  </>
+                ) : (
+                  <View style={styles.chartEmpty}><Ionicons name="car-outline" size={28} color={COLORS.neutral} /><Text style={styles.chartEmptyTitle}>No traffic record</Text><Text style={styles.chartEmptyText}>No saved monitoring count is available for this period.</Text></View>
+                )}
               </View>
 
               <Text style={styles.sectionLabel}>MONTHLY VIOLATION TRENDS</Text>
@@ -868,5 +945,11 @@ const styles = StyleSheet.create({
   chartEmptyTitle: { color: COLORS.textPrimary, fontSize: 13, fontWeight: '800', marginTop: 9 },
   chartEmptyText: { color: COLORS.textTertiary, fontSize: 10, textAlign: 'center', lineHeight: 15, marginTop: 4 },
   compactChartEmpty: { minHeight: 110, alignItems: 'center', justifyContent: 'center', gap: 7 },
+  trafficLoading: { minHeight: 120, alignItems: 'center', justifyContent: 'center', gap: 8 },
+  trafficSummaryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 9, marginBottom: 12 },
+  trafficSummaryCell: { width: '48.5%', minHeight: 76, justifyContent: 'space-between', backgroundColor: '#F7FAFC', borderWidth: 1, borderColor: COLORS.border, borderRadius: 12, padding: 11 },
+  trafficSummaryLabel: { color: COLORS.textTertiary, fontSize: 8, fontWeight: '800', letterSpacing: .6 },
+  trafficSummaryValue: { color: COLORS.textPrimary, fontSize: 21, fontWeight: '900', fontFamily: mono, marginTop: 7 },
+  trafficFootnote: { color: COLORS.textTertiary, fontSize: 10, lineHeight: 15, marginTop: 9 },
 
 });

@@ -16,8 +16,9 @@ function violation_name_component(string $value): string
 
 function violation_structured_driver_name(string $lastName, string $firstName, string $middleName = '', string $suffix = ''): string
 {
-    $givenNames = trim(implode(' ', array_filter([$firstName, $middleName, $suffix], static fn(string $part): bool => $part !== '')));
-    return $lastName !== '' && $givenNames !== '' ? $lastName . ', ' . $givenNames : '';
+    return $lastName !== '' && $firstName !== ''
+        ? implode(', ', array_filter([$lastName, $firstName, $middleName, $suffix], static fn(string $part): bool => $part !== ''))
+        : '';
 }
 
 function generateTicketNumber(mysqli $conn): string
@@ -79,10 +80,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $registrationNotApplicable = isset($_POST['registration_not_applicable']);
         $vehicleRegistration = $registrationNotApplicable ? 'NOT APPLICABLE' : strtoupper(violation_post('vehicle_registration_number'));
         $vehicle = violation_post('vehicle_type');
-        $vehicleColorNotSpecified = isset($_POST['vehicle_color_not_specified']);
-        $insurancePolicyNotSpecified = isset($_POST['insurance_policy_not_specified']);
-        $vehicleColor = $vehicleColorNotSpecified ? 'NOT SPECIFIED' : violation_post('vehicle_color');
-        $insurancePolicy = $insurancePolicyNotSpecified ? 'NOT SPECIFIED' : violation_post('insurance_policy_number');
+        $vehicleColorNotApplicable = isset($_POST['vehicle_color_not_applicable']);
+        $insurancePolicyNotApplicable = isset($_POST['insurance_policy_not_applicable']);
+        $vehicleColor = $vehicleColorNotApplicable ? 'NOT APPLICABLE' : violation_post('vehicle_color');
+        $insurancePolicy = $insurancePolicyNotApplicable ? 'NOT APPLICABLE' : violation_post('insurance_policy_number');
         $isPampasadaTricycle = $vehicle === 'Tricycle';
         $codingSticker = $isPampasadaTricycle ? violation_post('coding_sticker_number') : '';
         $vehicleToda = $isPampasadaTricycle ? violation_post('vehicle_toda') : '';
@@ -1181,16 +1182,16 @@ body.municipal-portal .content .violations-top-metric strong{color:#102f49!impor
               <label class="form-label" for="vehicleColorInput">Color of Vehicle</label>
               <input type="text" id="vehicleColorInput" name="vehicle_color" class="form-control" maxlength="80">
               <div class="form-check mt-2">
-                <input class="form-check-input" type="checkbox" name="vehicle_color_not_specified" value="1" id="vehicleColorNotSpecifiedCheck">
-                <label class="form-check-label" for="vehicleColorNotSpecifiedCheck">Not specified</label>
+                <input class="form-check-input" type="checkbox" name="vehicle_color_not_applicable" value="1" id="vehicleColorNotApplicableCheck">
+                <label class="form-check-label" for="vehicleColorNotApplicableCheck">Not applicable</label>
               </div>
             </div>
             <div class="col-md-6">
               <label class="form-label" for="insurancePolicyInput">Insurance Policy Number</label>
               <input type="text" id="insurancePolicyInput" name="insurance_policy_number" class="form-control" maxlength="100">
               <div class="form-check mt-2">
-                <input class="form-check-input" type="checkbox" name="insurance_policy_not_specified" value="1" id="insurancePolicyNotSpecifiedCheck">
-                <label class="form-check-label" for="insurancePolicyNotSpecifiedCheck">Not specified</label>
+                <input class="form-check-input" type="checkbox" name="insurance_policy_not_applicable" value="1" id="insurancePolicyNotApplicableCheck">
+                <label class="form-check-label" for="insurancePolicyNotApplicableCheck">Not applicable</label>
               </div>
             </div>
             <div class="col-md-6 d-none" id="codingStickerField"><label class="form-label">Coding Sticker Number</label><input type="text" name="coding_sticker_number" class="form-control" maxlength="100"><small class="text-muted">For tricycles operating as public transport only.</small></div>
@@ -1296,9 +1297,9 @@ const noPlateCheck = document.getElementById('noPlateCheck');
 const plateNumberInput = document.getElementById('plateNumberInput');
 const registrationNotApplicableCheck = document.getElementById('registrationNotApplicableCheck');
 const vehicleRegistrationInput = document.getElementById('vehicleRegistrationInput');
-const vehicleColorNotSpecifiedCheck = document.getElementById('vehicleColorNotSpecifiedCheck');
+const vehicleColorNotApplicableCheck = document.getElementById('vehicleColorNotApplicableCheck');
 const vehicleColorInput = document.getElementById('vehicleColorInput');
-const insurancePolicyNotSpecifiedCheck = document.getElementById('insurancePolicyNotSpecifiedCheck');
+const insurancePolicyNotApplicableCheck = document.getElementById('insurancePolicyNotApplicableCheck');
 const insurancePolicyInput = document.getElementById('insurancePolicyInput');
 const vehicleTypeInput = document.querySelector('#addViolationModal select[name="vehicle_type"]');
 const codingStickerField = document.getElementById('codingStickerField');
@@ -1382,18 +1383,18 @@ function syncRegistrationField() {
     : (vehicleRegistrationInput.value === 'NOT APPLICABLE' ? '' : vehicleRegistrationInput.value);
 }
 
-function syncNotSpecifiedField(checkbox, input) {
-  const notSpecified = Boolean(checkbox?.checked);
+function syncNotApplicableField(checkbox, input) {
+  const notApplicable = Boolean(checkbox?.checked);
   if (!input) return;
-  input.disabled = notSpecified;
-  input.value = notSpecified
-    ? 'NOT SPECIFIED'
-    : (input.value === 'NOT SPECIFIED' ? '' : input.value);
+  input.disabled = notApplicable;
+  input.value = notApplicable
+    ? 'NOT APPLICABLE'
+    : (['NOT APPLICABLE', 'NOT SPECIFIED'].includes(input.value.toUpperCase()) ? '' : input.value);
 }
 
 function syncOptionalVehicleFields() {
-  syncNotSpecifiedField(vehicleColorNotSpecifiedCheck, vehicleColorInput);
-  syncNotSpecifiedField(insurancePolicyNotSpecifiedCheck, insurancePolicyInput);
+  syncNotApplicableField(vehicleColorNotApplicableCheck, vehicleColorInput);
+  syncNotApplicableField(insurancePolicyNotApplicableCheck, insurancePolicyInput);
 }
 
 function syncOfficerFields() {
@@ -1455,10 +1456,10 @@ document.querySelectorAll('.add-existing-violator').forEach(function (button) {
     ticketForm.elements.vehicle_registration_number.value = registration;
     syncRegistrationField();
     const vehicleColor = button.dataset.color || '';
-    vehicleColorNotSpecifiedCheck.checked = vehicleColor.toUpperCase() === 'NOT SPECIFIED';
+    vehicleColorNotApplicableCheck.checked = ['NOT APPLICABLE', 'NOT SPECIFIED'].includes(vehicleColor.toUpperCase());
     vehicleColorInput.value = vehicleColor;
     const insurancePolicy = button.dataset.insurance || '';
-    insurancePolicyNotSpecifiedCheck.checked = insurancePolicy.toUpperCase() === 'NOT SPECIFIED';
+    insurancePolicyNotApplicableCheck.checked = ['NOT APPLICABLE', 'NOT SPECIFIED'].includes(insurancePolicy.toUpperCase());
     insurancePolicyInput.value = insurancePolicy;
     syncOptionalVehicleFields();
     violationLocationInput.value = '';
@@ -1594,8 +1595,8 @@ noLicenseCheck?.addEventListener('change', function () {
 
 vehicleTypeInput?.addEventListener('change', syncTricycleFields);
 registrationNotApplicableCheck?.addEventListener('change', syncRegistrationField);
-vehicleColorNotSpecifiedCheck?.addEventListener('change', syncOptionalVehicleFields);
-insurancePolicyNotSpecifiedCheck?.addEventListener('change', syncOptionalVehicleFields);
+vehicleColorNotApplicableCheck?.addEventListener('change', syncOptionalVehicleFields);
+insurancePolicyNotApplicableCheck?.addEventListener('change', syncOptionalVehicleFields);
 document.querySelectorAll('input[name="apprehending_officer_agency"]').forEach(function (input) {
   input.addEventListener('change', syncOfficerFields);
 });

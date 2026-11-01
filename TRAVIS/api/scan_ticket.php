@@ -21,17 +21,93 @@ if (!in_array($mime, ['image/jpeg', 'image/png', 'image/webp'], true)) {
 }
 
 $projectRoot = dirname(__DIR__);
-$python = $projectRoot . DIRECTORY_SEPARATOR . '.venv' . DIRECTORY_SEPARATOR . 'Scripts' . DIRECTORY_SEPARATOR . 'python.exe';
+$hostedMode = getenv('TRAVIS_HOSTED_MODE') === '1';
+$mlApiUrl = rtrim((string)(getenv('TRAVIS_ML_API_URL') ?: ''), '/');
+
+if ($hostedMode) {
+    if ($mlApiUrl === '' || !function_exists('curl_init')) {
+        http_response_code(503);
+        echo json_encode(['error' => 'The hosted OCR service is not configured.']);
+        exit;
+    }
+
+    $upload = new CURLFile(
+        $_FILES['ticket']['tmp_name'],
+        $mime,
+        basename((string)($_FILES['ticket']['name'] ?? 'ticket.jpg'))
+    );
+    $curl = curl_init($mlApiUrl . '/ocr/ticket');
+    curl_setopt_array($curl, [
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => ['ticket' => $upload],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_CONNECTTIMEOUT => 10,
+        CURLOPT_TIMEOUT => 120,
+        CURLOPT_HTTPHEADER => ['Accept: application/json'],
+    ]);
+    $responseBody = curl_exec($curl);
+    $curlError = curl_error($curl);
+    $statusCode = (int)curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
+    curl_close($curl);
+
+    if ($responseBody === false) {
+        error_log('TRAVIS hosted OCR connection failed: ' . $curlError);
+        http_response_code(502);
+        echo json_encode(['error' => 'The OCR service is temporarily unavailable.']);
+        exit;
+    }
+
+    $result = json_decode((string)$responseBody, true);
+    if (!is_array($result)) {
+        error_log('TRAVIS hosted OCR returned non-JSON output (HTTP ' . $statusCode . ').');
+        http_response_code(502);
+        echo json_encode(['error' => 'The OCR service returned an unreadable response.']);
+        exit;
+    }
+    if ($statusCode >= 400 || empty($result['success'])) {
+        http_response_code($statusCode >= 400 && $statusCode < 500 ? $statusCode : 502);
+        echo json_encode(['error' => $result['error'] ?? $result['message'] ?? 'Ticket could not be read.']);
+        exit;
+    }
+
+    echo json_encode($result);
+    exit;
+}
+
+// Local XAMPP development keeps using the project virtual environment. Also
+// accept a Unix-style venv so this endpoint remains portable outside Windows.
+$pythonCandidates = [
+    $projectRoot . DIRECTORY_SEPARATOR . '.venv' . DIRECTORY_SEPARATOR . 'Scripts' . DIRECTORY_SEPARATOR . 'python.exe',
+    $projectRoot . DIRECTORY_SEPARATOR . '.venv' . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . 'python3',
+];
+$python = '';
+foreach ($pythonCandidates as $candidate) {
+    if (is_file($candidate)) { $python = $candidate; break; }
+}
 $script = $projectRoot . DIRECTORY_SEPARATOR . 'computer_vision' . DIRECTORY_SEPARATOR . 'ticket_ocr.py';
+if ($python === '' || !is_file($script)) {
+    http_response_code(503);
+    echo json_encode(['error' => 'The local OCR runtime is not installed.']);
+    exit;
+}
+
 $command = escapeshellarg($python) . ' ' . escapeshellarg($script) . ' ' . escapeshellarg($_FILES['ticket']['tmp_name']) . ' 2>&1';
 $output = []; $exitCode = 0;
 exec($command, $output, $exitCode);
-$lastLine = $output ? end($output) : '';
-$result = json_decode((string)$lastLine, true);
+$result = null;
+for ($index = count($output) - 1; $index >= 0; $index--) {
+    $decoded = json_decode((string)$output[$index], true);
+    if (is_array($decoded)) { $result = $decoded; break; }
+}
 if (!is_array($result)) {
-    http_response_code(500); echo json_encode(['error' => 'OCR service returned an invalid response']); exit;
+    error_log('TRAVIS local OCR returned no JSON. Exit code: ' . $exitCode);
+    http_response_code(500);
+    echo json_encode(['error' => 'The local OCR process failed before returning a result.']);
+    exit;
 }
 if ($exitCode !== 0 || empty($result['success'])) {
-    http_response_code(422); echo json_encode(['error' => $result['error'] ?? 'Ticket could not be read']); exit;
+    http_response_code(422);
+    echo json_encode(['error' => $result['error'] ?? 'Ticket could not be read.']);
+    exit;
 }
 echo json_encode($result);

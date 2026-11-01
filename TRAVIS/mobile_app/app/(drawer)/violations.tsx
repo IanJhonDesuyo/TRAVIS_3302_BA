@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   ScrollView,
   View,
@@ -12,6 +12,7 @@ import {
   RefreshControl,
   Modal,
   Alert,
+  Linking,
   Platform,
   KeyboardAvoidingView,
 } from 'react-native';
@@ -21,6 +22,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router/react-navigation';
 import api from '../../api/axiosConfig';
 import * as ImagePicker from 'expo-image-picker';
+import { CameraView, useCameraPermissions } from 'expo-camera';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import { Picker } from '@react-native-picker/picker';
 
 // ========== COLOR TOKENS ==========
 const COLORS = {
@@ -88,6 +92,7 @@ type StatusFilter = '' | 'pending' | 'overdue' | 'paid' | 'cancelled';
 type OffenseAnalysis = { previous_offenses: number; suggested_offense: number; maximum_offense: number; at_maximum: boolean; matched_by: string | null; last_violation_date: string | null; last_ticket_number: string | null; suggested_penalty: number; penalty_schedule: number[] };
 type SelectedViolation = { violation_type: string; penalty_amount: string; ocr_confidence?: number; penalty_overridden?: boolean; auto_added?: boolean };
 type TmoOfficer = { officer_id: number; first_name: string; last_name: string; badge_number?: string; rank?: string; zone_name?: string };
+type TicketDateTimeField = 'date_of_birth' | 'license_expiry_date' | 'violation_date' | 'violation_time' | 'apprehension_date' | 'apprehension_time';
 
 const FormSection = ({ number, title, subtitle, icon }: { number: string; title: string; subtitle: string; icon: keyof typeof Ionicons.glyphMap }) => (
   <View style={styles.formSectionHeader}>
@@ -104,10 +109,27 @@ const FormSection = ({ number, title, subtitle, icon }: { number: string; title:
 const formatCurrency = (amount: number): string => `\u20b1${amount.toLocaleString()}`;
 const safeText = (value: unknown): string => value == null ? '' : String(value);
 const normalizeNamePart = (value: string): string => value.trim().replace(/\s+/g, ' ');
+const formatDateValue = (value: Date): string => {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+const formatTimeValue = (value: Date): string => `${String(value.getHours()).padStart(2, '0')}:${String(value.getMinutes()).padStart(2, '0')}`;
+const pickerDateValue = (value: string, mode: 'date' | 'time'): Date => {
+  const now = new Date();
+  if (mode === 'date') {
+    const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (match) return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12, 0, 0);
+  } else {
+    const match = value.match(/^(\d{2}):(\d{2})/);
+    if (match) now.setHours(Number(match[1]), Number(match[2]), 0, 0);
+  }
+  return now;
+};
 const buildStructuredDriverName = (lastName: string, firstName: string, middleName = '', suffix = ''): string => {
-  const normalizedLastName = normalizeNamePart(lastName);
-  const givenNames = [firstName, middleName, suffix].map(normalizeNamePart).filter(Boolean).join(' ');
-  return normalizedLastName && givenNames ? `${normalizedLastName}, ${givenNames}` : '';
+  const parts = [lastName, firstName, middleName, suffix].map(normalizeNamePart);
+  return parts[0] && parts[1] ? parts.filter(Boolean).join(', ') : '';
 };
 
 const splitScannedDriverName = (value: string) => {
@@ -120,7 +142,16 @@ const splitScannedDriverName = (value: string) => {
   const withoutSuffix = suffixMatch ? normalizeNamePart(normalizedName.slice(0, suffixMatch.index)) : normalizedName;
 
   if (withoutSuffix.includes(',')) {
-    const [lastName, remainder = ''] = withoutSuffix.split(',', 2).map(normalizeNamePart);
+    const commaParts = withoutSuffix.split(',').map(normalizeNamePart);
+    if (commaParts.length >= 3) {
+      return {
+        lastName: commaParts[0] || '',
+        firstName: commaParts[1] || '',
+        middleName: commaParts[2] || '',
+        suffix: commaParts[3] || suffix,
+      };
+    }
+    const [lastName, remainder = ''] = commaParts;
     const givenParts = remainder.split(' ').filter(Boolean);
     return { lastName, firstName: givenParts.shift() || '', middleName: givenParts.join(' '), suffix };
   }
@@ -165,9 +196,10 @@ export default function ViolationsScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 10;
+  const initialDate = formatDateValue(new Date());
+  const initialTime = formatTimeValue(new Date());
 
   const [formData, setFormData] = useState({
-    ticket_number: '',
     driver_name: '',
     driver_last_name: '',
     driver_first_name: '',
@@ -188,23 +220,32 @@ export default function ViolationsScreen() {
     vehicle_type: 'Car',
     violation_type: '',
     location: '',
-    violation_date: new Date().toISOString().slice(0, 10),
-    violation_time: new Date().toTimeString().slice(0, 5),
+    violation_date: initialDate,
+    violation_time: initialTime,
     penalty_amount: '',
     offense_number: '1',
     ticket_remarks: '',
     apprehending_officer_name: '',
     apprehending_officer_position: '',
-    apprehension_datetime: '',
+    apprehension_date: initialDate,
+    apprehension_time: initialTime,
   });
   const [submitting, setSubmitting] = useState(false);
   const [hasNoLicense, setHasNoLicense] = useState(false);
   const [licenseConfiscated, setLicenseConfiscated] = useState(false);
   const [hasNoPlate, setHasNoPlate] = useState(false);
+  const [vehicleOwnerNotApplicable, setVehicleOwnerNotApplicable] = useState(false);
   const [registrationNotApplicable, setRegistrationNotApplicable] = useState(false);
+  const [vehicleColorNotApplicable, setVehicleColorNotApplicable] = useState(false);
+  const [insuranceNotApplicable, setInsuranceNotApplicable] = useState(false);
   const [officerAgency, setOfficerAgency] = useState<'police' | 'tmo'>('police');
   const [selectedTmoOfficerId, setSelectedTmoOfficerId] = useState<number | null>(null);
   const [scanning, setScanning] = useState(false);
+  const [cameraVisible, setCameraVisible] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
+  const [capturingTicket, setCapturingTicket] = useState(false);
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const ticketCameraRef = useRef<CameraView>(null);
   const [inputMethod, setInputMethod] = useState<'manual' | 'ocr'>('manual');
   const [ocrNotice, setOcrNotice] = useState('');
   const [selectedViolations, setSelectedViolations] = useState<SelectedViolation[]>([]);
@@ -217,12 +258,45 @@ export default function ViolationsScreen() {
   const [offenseAnalyses, setOffenseAnalyses] = useState<Record<string, OffenseAnalysis>>({});
   const [analyzingOffense, setAnalyzingOffense] = useState(false);
   const [offenseFloor, setOffenseFloor] = useState(1);
+  const [activeDateTimePicker, setActiveDateTimePicker] = useState<TicketDateTimeField | null>(null);
   const currentDriverName = buildStructuredDriverName(
     formData.driver_last_name,
     formData.driver_first_name,
     formData.driver_middle_name,
     formData.driver_suffix,
   );
+  const pickerMode = activeDateTimePicker?.endsWith('_time') ? 'time' : 'date';
+  const activePickerValue = activeDateTimePicker ? formData[activeDateTimePicker] : '';
+
+  const handleDateTimeChange = (event: DateTimePickerEvent, selected?: Date) => {
+    if (Platform.OS === 'android') setActiveDateTimePicker(null);
+    if (event.type === 'dismissed' || !selected || !activeDateTimePicker) return;
+    const nextValue = pickerMode === 'date' ? formatDateValue(selected) : formatTimeValue(selected);
+    setFormData(current => ({ ...current, [activeDateTimePicker]: nextValue }));
+  };
+
+  const renderDateTimeField = (field: TicketDateTimeField, placeholder: string, optional = false) => {
+    const value = formData[field];
+    const isTime = field.endsWith('_time');
+    return (
+      <View style={styles.dateTimeFieldRow}>
+        <TouchableOpacity
+          style={styles.dateTimeField}
+          onPress={() => setActiveDateTimePicker(field)}
+          accessibilityRole="button"
+          accessibilityLabel={`${placeholder}${value ? `: ${value}` : ''}`}
+        >
+          <Text style={[styles.dateTimeFieldText, !value && styles.dateTimeFieldPlaceholder]}>{value || placeholder}</Text>
+          <Ionicons name={isTime ? 'time-outline' : 'calendar-outline'} size={19} color={COLORS.primary} />
+        </TouchableOpacity>
+        {optional && value ? (
+          <TouchableOpacity style={styles.dateTimeClearButton} onPress={() => setFormData(current => ({ ...current, [field]: '' }))} accessibilityLabel={`Clear ${placeholder}`}>
+            <Ionicons name="close" size={18} color={COLORS.textSecondary} />
+          </TouchableOpacity>
+        ) : null}
+      </View>
+    );
+  };
 
   useEffect(() => {
     if (open !== 'ocr') return;
@@ -248,8 +322,10 @@ export default function ViolationsScreen() {
   useEffect(() => {
     const selectedTypes = selectedTypeKey ? selectedTypeKey.split('|').filter(type => violationTypes.includes(type)) : [];
     if (!selectedTypes.length) {
-      setFormData(current => ({ ...current, offense_number: String(offenseFloor) }));
-      return;
+      const resetTimer = setTimeout(() => {
+        setFormData(current => ({ ...current, offense_number: String(offenseFloor) }));
+      }, 0);
+      return () => clearTimeout(resetTimer);
     }
     let cancelled = false;
     const timer = setTimeout(async () => {
@@ -331,29 +407,16 @@ export default function ViolationsScreen() {
     setHasNoPlate(value => !value);
   };
 
-  const scanTicket = async (source: 'camera' | 'gallery') => {
-    const permission = source === 'camera'
-      ? await ImagePicker.requestCameraPermissionsAsync()
-      : await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert('Permission required', `Allow ${source === 'camera' ? 'camera' : 'photo library'} access to scan a ticket.`);
-      return;
-    }
-    const result = source === 'camera'
-      ? await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 1, allowsEditing: false })
-      : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 1, allowsEditing: false });
-    if (result.canceled || !result.assets[0]) return;
-
+  const processTicketAsset = async (asset: { uri: string; fileName?: string | null; mimeType?: string | null }) => {
     setScanning(true);
     setOcrNotice('Reading ticket…');
     try {
-      const asset = result.assets[0];
       const body = new FormData();
       body.append('ticket', { uri: asset.uri, name: asset.fileName || 'ticket.jpg', type: asset.mimeType || 'image/jpeg' } as any);
-      const response = await api.post('scan_ticket.php', body, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 60000 });
+      const response = await api.post('scan_ticket.php', body, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 });
       const fields = response.data.fields || {};
       const fieldConfidences = response.data.field_confidences || {};
-      const minimumFieldConfidence = 0.55;
+      const minimumFieldConfidence = 0.68;
       const trustedField = (name: string) => String(fields[name] || '').trim() && Number(fieldConfidences[name] || 0) >= minimumFieldConfidence;
       const checked = Array.isArray(response.data.checked_violations) ? response.data.checked_violations : [];
       const detectedTypes: SelectedViolation[] = checked
@@ -364,16 +427,21 @@ export default function ViolationsScreen() {
       const noLicenseDetected = detectedTypes.some((item: any) => item.violation_type === "No Driver's License");
       const recognizedPlate = String(fields.plate_number || '').trim().toUpperCase();
       const noPlateDetected = Boolean(trustedField('plate_number') && ['NO PLATE', 'NOPLATE', 'NONE', 'N/A', 'NA'].includes(recognizedPlate));
+      const recognizedVehicleColor = String(fields.vehicle_color || '').trim().toUpperCase();
+      const vehicleColorNotApplicableDetected = Boolean(trustedField('vehicle_color') && ['NOT APPLICABLE', 'NOT SPECIFIED', 'NONE', 'N/A', 'NA'].includes(recognizedVehicleColor));
       const scannedDriverName = trustedField('driver_name') ? splitScannedDriverName(String(fields.driver_name)) : null;
       setOffenseAnalyses({});
       setSelectedViolations(detectedTypes);
       setHasNoLicense(noLicenseDetected);
       setHasNoPlate(noPlateDetected);
+      setVehicleOwnerNotApplicable(false);
+      setRegistrationNotApplicable(false);
+      setVehicleColorNotApplicable(vehicleColorNotApplicableDetected);
+      setInsuranceNotApplicable(false);
       const detectedVehicleType = trustedField('vehicle_type') ? String(fields.vehicle_type) : formData.vehicle_type;
       const isDetectedPampasadaTricycle = detectedVehicleType === 'Tricycle';
       setFormData(current => ({
         ...current,
-        ticket_number: trustedField('ticket_number') ? fields.ticket_number : current.ticket_number,
         driver_name: scannedDriverName
           ? buildStructuredDriverName(scannedDriverName.lastName, scannedDriverName.firstName, scannedDriverName.middleName, scannedDriverName.suffix)
           : current.driver_name,
@@ -387,10 +455,10 @@ export default function ViolationsScreen() {
         license_expiry_date: noLicenseDetected ? '' : (trustedField('license_expiry_date') ? fields.license_expiry_date : current.license_expiry_date),
         license_remarks: trustedField('license_remarks') ? fields.license_remarks : current.license_remarks,
         plate_number: noPlateDetected ? '' : (trustedField('plate_number') ? fields.plate_number : current.plate_number),
-        vehicle_owner: trustedField('vehicle_owner') ? fields.vehicle_owner : current.vehicle_owner,
-        vehicle_registration_number: trustedField('vehicle_registration_number') ? fields.vehicle_registration_number : current.vehicle_registration_number,
-        vehicle_color: trustedField('vehicle_color') ? fields.vehicle_color : current.vehicle_color,
-        insurance_policy_number: trustedField('insurance_policy_number') ? fields.insurance_policy_number : current.insurance_policy_number,
+        vehicle_owner: trustedField('vehicle_owner') ? fields.vehicle_owner : '',
+        vehicle_registration_number: trustedField('vehicle_registration_number') ? fields.vehicle_registration_number : '',
+        vehicle_color: vehicleColorNotApplicableDetected ? '' : (trustedField('vehicle_color') ? fields.vehicle_color : ''),
+        insurance_policy_number: trustedField('insurance_policy_number') ? fields.insurance_policy_number : '',
         coding_sticker_number: isDetectedPampasadaTricycle && trustedField('coding_sticker_number') ? fields.coding_sticker_number : '',
         vehicle_toda: isDetectedPampasadaTricycle && trustedField('vehicle_toda') ? fields.vehicle_toda : '',
         vehicle_type: detectedVehicleType,
@@ -405,7 +473,7 @@ export default function ViolationsScreen() {
       }));
       setInputMethod('ocr');
       const warning = String(response.data.warning || '').trim();
-      const lowConfidenceFields = Object.keys(fields).filter(name => fields[name] && !trustedField(name));
+      const lowConfidenceFields = Object.keys(fields).filter(name => name !== 'ticket_number' && fields[name] && !trustedField(name));
       const confidenceWarning = lowConfidenceFields.length ? ` Low-confidence fields were left blank: ${lowConfidenceFields.join(', ').replaceAll('_', ' ')}.` : '';
       const documentNotice = response.data.document_detected
         ? 'Document edges detected and perspective corrected. '
@@ -415,6 +483,61 @@ export default function ViolationsScreen() {
       setOcrNotice('');
       Alert.alert('Ticket scan failed', error.response?.data?.error || 'The ticket could not be read. Try a clearer, well-lit photo.');
     } finally { setScanning(false); }
+  };
+
+  const openTicketCamera = async () => {
+    let permission = cameraPermission;
+    if (!permission?.granted) {
+      permission = await requestCameraPermission();
+    }
+    if (!permission.granted) {
+      if (permission.canAskAgain) {
+        Alert.alert('Permission required', 'Allow camera access to photograph a traffic ticket, then try again.');
+      } else {
+        Alert.alert(
+          'Camera permission required',
+          'Camera access is disabled for TRAVIS. Open App Settings and allow Camera access.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Open App Settings', onPress: () => Linking.openSettings() },
+          ],
+        );
+      }
+      return;
+    }
+    setCameraReady(false);
+    setCameraVisible(true);
+  };
+
+  const captureGuidedTicket = async () => {
+    if (!ticketCameraRef.current || !cameraReady || capturingTicket) return;
+    setCapturingTicket(true);
+    try {
+      const photo = await ticketCameraRef.current.takePictureAsync({ quality: 1, skipProcessing: false });
+      if (!photo?.uri) throw new Error('The camera did not return a photo.');
+      setCameraVisible(false);
+      setCameraReady(false);
+      await processTicketAsset({ uri: photo.uri, fileName: 'ticket.jpg', mimeType: 'image/jpeg' });
+    } catch (error: any) {
+      Alert.alert('Camera error', error?.message || 'The ticket photo could not be captured.');
+    } finally {
+      setCapturingTicket(false);
+    }
+  };
+
+  const scanTicket = async (source: 'camera' | 'gallery') => {
+    if (source === 'camera') {
+      await openTicketCamera();
+      return;
+    }
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Permission required', 'Allow photo library access to scan a saved ticket.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 1, allowsEditing: false });
+    if (result.canceled || !result.assets[0]) return;
+    await processTicketAsset(result.assets[0]);
   };
 
   // ===== FETCH VIOLATIONS =====
@@ -543,6 +666,10 @@ export default function ViolationsScreen() {
       Alert.alert('Error', 'Please fill in all required fields.');
       return;
     }
+    if (!formData.violation_date || !formData.violation_time || !formData.apprehension_date || !formData.apprehension_time) {
+      Alert.alert('Date and time required', 'Select the violation and apprehension dates and times.');
+      return;
+    }
     if (!selectedViolations.length || selectedViolations.some(item => !violationTypes.includes(item.violation_type))) {
       Alert.alert('Invalid violation', 'Select at least one violation from the official list.');
       return;
@@ -574,8 +701,14 @@ export default function ViolationsScreen() {
         license_confiscated: licenseConfiscated,
         plate_number: hasNoPlate ? 'NO PLATE' : plate_number,
         has_no_plate: hasNoPlate,
+        vehicle_owner_not_applicable: vehicleOwnerNotApplicable,
+        vehicle_owner: vehicleOwnerNotApplicable ? 'NOT APPLICABLE' : formData.vehicle_owner,
         registration_not_applicable: registrationNotApplicable,
         vehicle_registration_number: registrationNotApplicable ? 'NOT APPLICABLE' : formData.vehicle_registration_number,
+        vehicle_color_not_applicable: vehicleColorNotApplicable,
+        vehicle_color: vehicleColorNotApplicable ? 'NOT APPLICABLE' : formData.vehicle_color,
+        insurance_policy_not_applicable: insuranceNotApplicable,
+        insurance_policy_number: insuranceNotApplicable ? 'NOT APPLICABLE' : formData.insurance_policy_number,
         vehicle_type,
         coding_sticker_number: vehicle_type === 'Tricycle' ? formData.coding_sticker_number : '',
         vehicle_toda: vehicle_type === 'Tricycle' ? formData.vehicle_toda : '',
@@ -584,6 +717,7 @@ export default function ViolationsScreen() {
         offense_number: Number(formData.offense_number),
         apprehending_officer_agency: officerAgency,
         tmo_officer_id: officerAgency === 'tmo' ? selectedTmoOfficerId : null,
+        apprehension_datetime: `${formData.apprehension_date} ${formData.apprehension_time}:00`,
         input_method: inputMethod,
       });
       if (response.data.success) {
@@ -592,12 +726,18 @@ export default function ViolationsScreen() {
           ? `${response.data.ticket_number} was recorded as suggested offense #${offense.suggested_offense}. ${offense.previous_offenses} previous matching offense(s) found.`
           : `${response.data.ticket_number} was recorded as a first offense.`);
         setModalVisible(false);
-        setFormData({ ticket_number: '', driver_name: '', driver_last_name: '', driver_first_name: '', driver_middle_name: '', driver_suffix: '', driver_address: '', date_of_birth: '', license_number: '', license_expiry_date: '', license_remarks: '', plate_number: '', vehicle_owner: '', vehicle_registration_number: '', vehicle_color: '', insurance_policy_number: '', coding_sticker_number: '', vehicle_toda: '', vehicle_type: 'Car', violation_type: '', location: '', violation_date: new Date().toISOString().slice(0, 10), violation_time: new Date().toTimeString().slice(0, 5), penalty_amount: '', offense_number: '1', ticket_remarks: '', apprehending_officer_name: '', apprehending_officer_position: '', apprehension_datetime: '' });
+        setActiveDateTimePicker(null);
+        const resetDate = formatDateValue(new Date());
+        const resetTime = formatTimeValue(new Date());
+        setFormData({ driver_name: '', driver_last_name: '', driver_first_name: '', driver_middle_name: '', driver_suffix: '', driver_address: '', date_of_birth: '', license_number: '', license_expiry_date: '', license_remarks: '', plate_number: '', vehicle_owner: '', vehicle_registration_number: '', vehicle_color: '', insurance_policy_number: '', coding_sticker_number: '', vehicle_toda: '', vehicle_type: 'Car', violation_type: '', location: '', violation_date: resetDate, violation_time: resetTime, penalty_amount: '', offense_number: '1', ticket_remarks: '', apprehending_officer_name: '', apprehending_officer_position: '', apprehension_date: resetDate, apprehension_time: resetTime });
         setSelectedViolations([]);
         setHasNoLicense(false);
         setLicenseConfiscated(false);
         setHasNoPlate(false);
+        setVehicleOwnerNotApplicable(false);
         setRegistrationNotApplicable(false);
+        setVehicleColorNotApplicable(false);
+        setInsuranceNotApplicable(false);
         setOfficerAgency('police');
         setSelectedTmoOfficerId(null);
         setInputMethod('manual');
@@ -628,11 +768,15 @@ export default function ViolationsScreen() {
     const normalizedPlate = latest.plateNumber.trim().toUpperCase();
     const noPlate = ['NO PLATE', 'NOPLATE', 'NONE', 'N/A', 'NA'].includes(normalizedPlate);
     const registrationIsNotApplicable = latest.vehicleRegistrationNumber.trim().toUpperCase() === 'NOT APPLICABLE';
+    const ownerIsNotApplicable = latest.vehicleOwner.trim().toUpperCase() === 'NOT APPLICABLE';
+    const insuranceIsNotApplicable = latest.insurancePolicyNumber.trim().toUpperCase() === 'NOT APPLICABLE';
+    const colorIsNotApplicable = ['NOT APPLICABLE', 'NOT SPECIFIED'].includes(latest.vehicleColor.trim().toUpperCase());
+    const currentDate = formatDateValue(new Date());
+    const currentTime = formatTimeValue(new Date());
 
     const nextOffense = Math.min(4, violator.records.length + 1);
     setOffenseFloor(nextOffense);
     setFormData({
-      ticket_number: '',
       driver_name: violator.driverName,
       driver_last_name: latest.driverLastName || '',
       driver_first_name: latest.driverFirstName || '',
@@ -644,28 +788,32 @@ export default function ViolationsScreen() {
       license_expiry_date: noLicense ? '' : (latest.licenseExpiryDate || ''),
       license_remarks: latest.licenseRemarks || '',
       plate_number: noPlate ? '' : latest.plateNumber,
-      vehicle_owner: latest.vehicleOwner || '',
+      vehicle_owner: ownerIsNotApplicable ? '' : (latest.vehicleOwner || ''),
       vehicle_registration_number: registrationIsNotApplicable ? '' : (latest.vehicleRegistrationNumber || ''),
-      vehicle_color: latest.vehicleColor || '',
-      insurance_policy_number: latest.insurancePolicyNumber || '',
+      vehicle_color: colorIsNotApplicable ? '' : (latest.vehicleColor || ''),
+      insurance_policy_number: insuranceIsNotApplicable ? '' : (latest.insurancePolicyNumber || ''),
       coding_sticker_number: latest.vehicleType === 'Tricycle' ? (latest.codingStickerNumber || '') : '',
       vehicle_toda: latest.vehicleType === 'Tricycle' ? (latest.vehicleToda || '') : '',
       vehicle_type: latest.vehicleType,
       violation_type: '',
       location: '',
-      violation_date: new Date().toISOString().slice(0, 10),
-      violation_time: new Date().toTimeString().slice(0, 5),
+      violation_date: currentDate,
+      violation_time: currentTime,
       penalty_amount: '',
       offense_number: String(nextOffense),
       ticket_remarks: '',
       apprehending_officer_name: '',
       apprehending_officer_position: '',
-      apprehension_datetime: '',
+      apprehension_date: currentDate,
+      apprehension_time: currentTime,
     });
     setHasNoLicense(noLicense);
     setLicenseConfiscated(latest.licenseConfiscated);
     setHasNoPlate(noPlate);
+    setVehicleOwnerNotApplicable(ownerIsNotApplicable);
     setRegistrationNotApplicable(registrationIsNotApplicable);
+    setVehicleColorNotApplicable(colorIsNotApplicable);
+    setInsuranceNotApplicable(insuranceIsNotApplicable);
     setOfficerAgency('police');
     setSelectedTmoOfficerId(null);
     setSelectedViolations([]);
@@ -704,42 +852,28 @@ export default function ViolationsScreen() {
   );
 
   const renderViolatorItem = ({ item }: { item: Violator }) => (
-    <View style={styles.violationCard}>
-      <View style={styles.violationRow}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.driverInfo}>{item.driverName}</Text>
-          <Text style={styles.vehicleInfo}>{item.licenseNumber}</Text>
-        </View>
-        <View style={[styles.statusBadge, { backgroundColor: (item.unpaidCount ? COLORS.warning : COLORS.success) + '1A' }]}>
-          <Text style={[styles.statusText, { color: item.unpaidCount ? COLORS.warning : COLORS.success }]}>
-            {item.records.length} RECORD{item.records.length === 1 ? '' : 'S'}
-          </Text>
-        </View>
+    <View style={styles.tableRow}>
+      <View style={styles.tableDriverCell}>
+        <Text style={styles.tablePrimary} numberOfLines={1}>{item.driverName}</Text>
+        <Text style={styles.tableSecondary} numberOfLines={1}>{item.licenseNumber || 'NO LICENSE'}</Text>
       </View>
-
-      <View style={styles.violationMetaRow}>
-        <View style={{ flex: 1 }}><Text style={styles.violationType}>{item.latest.violationType}</Text><Text style={styles.location}>Latest: {item.latest.ticketNumber}</Text></View>
-        <Text style={styles.location}>{item.latest.plateNumber} · {item.latest.vehicleType}</Text>
+      <View style={styles.tableLatestCell}>
+        <Text style={styles.tablePrimary} numberOfLines={1}>{item.latest.violationType}</Text>
+        <Text style={styles.tableSecondary} numberOfLines={1}>{item.latest.plateNumber} · {item.latest.date}</Text>
       </View>
-
-      <View style={styles.violationDivider} />
-
-      <View style={styles.violationFooter}>
-        <View><Text style={styles.dateTime}>LAST RECORDED · {item.latest.date}</Text><Text style={styles.dateTime}>{item.unpaidCount} unpaid ticket{item.unpaidCount === 1 ? '' : 's'}</Text></View>
-        <View style={{ alignItems: 'flex-end' }}><Text style={styles.penalty}>{formatCurrency(item.totalPenalties)}</Text><Text style={styles.location}>Total fines</Text></View>
+      <View style={styles.tableCountCell}>
+        <Text style={styles.tableCount}>{item.records.length}</Text>
+        <Text style={[styles.tableSecondary, { color: item.unpaidCount ? COLORS.warning : COLORS.success }]}>{item.unpaidCount} unpaid</Text>
       </View>
-
-      <View style={styles.actionRow}>
-        <TouchableOpacity style={[styles.actionButtonOutline, { flex: 1, alignItems: 'center' }]} onPress={() => setSelectedViolator(item)}>
-          <Text style={styles.actionTextOutline}>View Record</Text>
-        </TouchableOpacity>
-      </View>
+      <TouchableOpacity style={styles.tableViewButton} onPress={() => setSelectedViolator(item)} accessibilityLabel={`View ${item.driverName} record`}>
+        <Ionicons name="eye-outline" size={16} color={COLORS.primary} />
+      </TouchableOpacity>
     </View>
   );
 
   // ===== COMPUTE COUNTS =====
   const counts = {
-    today: violations.filter(v => v.date === new Date().toISOString().slice(0, 10)).length,
+    today: violations.filter(v => v.date === formatDateValue(new Date())).length,
     awaiting: violations.filter(v => v.status === 'pending' || v.status === 'overdue').length,
     paid: violations.filter(v => v.status === 'paid').length,
     cancelled: violations.filter(v => v.status === 'cancelled').length,
@@ -756,7 +890,7 @@ export default function ViolationsScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
+      <StatusBar barStyle="dark-content" />
 
       <ScrollView
         style={styles.container}
@@ -824,24 +958,32 @@ export default function ViolationsScreen() {
         <Text style={styles.resultCount}>{filteredViolators.length} violator{filteredViolators.length === 1 ? '' : 's'} found · {violations.length} total ticket records</Text>
 
         {/* Violations list */}
-        <FlatList
-          data={visibleViolators}
-          renderItem={renderViolatorItem}
-          keyExtractor={item => item.key}
-          scrollEnabled={false}
-          ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
-          ListEmptyComponent={
-            <View style={styles.emptyState}>
-              <Ionicons name="document-text-outline" size={28} color={COLORS.textTertiary} />
-              <Text style={styles.emptyText}>No violation records matched your search or filter.</Text>
-              {(search.trim() || statusFilter) && (
-                <TouchableOpacity onPress={clearFilters} style={styles.emptyClearButton}>
-                  <Text style={styles.emptyClearButtonText}>Clear filters</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          }
-        />
+        <View style={styles.tableShell}>
+          <View style={styles.tableHeader}>
+            <Text style={[styles.tableHeaderText, styles.tableDriverCell]}>VIOLATOR</Text>
+            <Text style={[styles.tableHeaderText, styles.tableLatestCell]}>LATEST</Text>
+            <Text style={[styles.tableHeaderText, styles.tableCountCell]}>RECORDS</Text>
+            <Text style={[styles.tableHeaderText, styles.tableActionCell]}>VIEW</Text>
+          </View>
+          <FlatList
+            data={visibleViolators}
+            renderItem={renderViolatorItem}
+            keyExtractor={item => item.key}
+            scrollEnabled={false}
+            ItemSeparatorComponent={() => <View style={styles.tableDivider} />}
+            ListEmptyComponent={
+              <View style={styles.emptyState}>
+                <Ionicons name="document-text-outline" size={28} color={COLORS.textTertiary} />
+                <Text style={styles.emptyText}>No violation records matched your search or filter.</Text>
+                {(search.trim() || statusFilter) && (
+                  <TouchableOpacity onPress={clearFilters} style={styles.emptyClearButton}>
+                    <Text style={styles.emptyClearButtonText}>Clear filters</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            }
+          />
+        </View>
         {filteredViolators.length > PAGE_SIZE && (
           <View style={styles.pagination}>
             <TouchableOpacity disabled={page === 1} onPress={() => setPage(value => Math.max(1, value - 1))} style={[styles.pageButton, page === 1 && styles.pageButtonDisabled]}>
@@ -863,8 +1005,79 @@ export default function ViolationsScreen() {
         <Text style={styles.fabText}>Add Violation</Text>
       </TouchableOpacity>
 
+      {/* Guided in-app camera keeps the long paper ticket inside one frame. */}
+      <Modal
+        animationType="fade"
+        presentationStyle="fullScreen"
+        statusBarTranslucent
+        visible={cameraVisible}
+        onRequestClose={() => setCameraVisible(false)}
+      >
+        <View style={styles.cameraScreen}>
+          <CameraView
+            ref={ticketCameraRef}
+            style={StyleSheet.absoluteFill}
+            facing="back"
+            onCameraReady={() => setCameraReady(true)}
+          />
+          <SafeAreaView style={styles.cameraSafeArea}>
+            <View style={styles.cameraHeader}>
+              <TouchableOpacity
+                style={styles.cameraCloseButton}
+                onPress={() => setCameraVisible(false)}
+                accessibilityLabel="Close ticket camera"
+              >
+                <Ionicons name="close" size={26} color="#FFF" />
+              </TouchableOpacity>
+              <View style={styles.cameraInstruction}>
+                <Text style={styles.cameraInstructionTitle}>Align the traffic ticket</Text>
+                <Text style={styles.cameraInstructionText}>Keep the whole paper flat and inside the rectangle</Text>
+              </View>
+              <View style={styles.cameraHeaderSpacer} />
+            </View>
+
+            <View pointerEvents="none" style={styles.cameraGuideArea}>
+              <View style={styles.ticketGuide}>
+                <View style={[styles.guideCorner, styles.guideTopLeft]} />
+                <View style={[styles.guideCorner, styles.guideTopRight]} />
+                <View style={[styles.guideCorner, styles.guideBottomLeft]} />
+                <View style={[styles.guideCorner, styles.guideBottomRight]} />
+                <View style={styles.guideCenterBadge}>
+                  <Ionicons name="document-text-outline" size={16} color="#FFF" />
+                  <Text style={styles.guideCenterText}>TICKET AREA</Text>
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.cameraControls}>
+              <Text style={styles.cameraTip}>Avoid glare and hold the phone steady</Text>
+              <TouchableOpacity
+                disabled={!cameraReady || capturingTicket}
+                style={[styles.shutterOuter, (!cameraReady || capturingTicket) && styles.shutterDisabled]}
+                onPress={captureGuidedTicket}
+                accessibilityLabel="Capture traffic ticket"
+              >
+                {capturingTicket
+                  ? <ActivityIndicator color={COLORS.primary} />
+                  : <View style={styles.shutterInner} />}
+              </TouchableOpacity>
+            </View>
+          </SafeAreaView>
+        </View>
+      </Modal>
+
+      {activeDateTimePicker && Platform.OS === 'android' ? (
+        <DateTimePicker
+          value={pickerDateValue(activePickerValue, pickerMode)}
+          mode={pickerMode}
+          display="default"
+          onChange={handleDateTimeChange}
+          maximumDate={activeDateTimePicker === 'date_of_birth' ? new Date() : undefined}
+        />
+      ) : null}
+
       {/* Add Violation Modal */}
-      <Modal animationType="slide" transparent visible={modalVisible} onRequestClose={() => setModalVisible(false)}>
+      <Modal animationType="slide" transparent visible={modalVisible} onRequestClose={() => { setActiveDateTimePicker(null); setModalVisible(false); }}>
         <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeaderRow}>
@@ -872,7 +1085,7 @@ export default function ViolationsScreen() {
                 <Text style={styles.modalTitle}>Add Violation</Text>
                 <Text style={styles.modalSub}>Scan a paper ticket or enter the details manually.</Text>
               </View>
-              <TouchableOpacity onPress={() => setModalVisible(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <TouchableOpacity onPress={() => { setActiveDateTimePicker(null); setModalVisible(false); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                 <Ionicons name="close" size={22} color={COLORS.textTertiary} />
               </TouchableOpacity>
             </View>
@@ -908,7 +1121,7 @@ export default function ViolationsScreen() {
               <Text style={styles.modalLabel}>Driver Address</Text>
               <TextInput style={styles.modalInput} placeholder="Complete address" placeholderTextColor={COLORS.textTertiary} value={formData.driver_address} onChangeText={text => setFormData({ ...formData, driver_address: text })} />
               <Text style={styles.modalLabel}>Date of Birth</Text>
-              <TextInput style={styles.modalInput} placeholder="YYYY-MM-DD" placeholderTextColor={COLORS.textTertiary} value={formData.date_of_birth} onChangeText={text => setFormData({ ...formData, date_of_birth: text })} />
+              {renderDateTimeField('date_of_birth', 'Select date of birth', true)}
               <FormSection number="3" title="License information" subtitle="License status, expiry, and remarks" icon="card-outline" />
               <Text style={styles.modalLabel}>License Number</Text>
               <TextInput
@@ -935,7 +1148,7 @@ export default function ViolationsScreen() {
                   <Text style={styles.analysisText}>Not applicable — driver has no license</Text>
                 </View>
               ) : (
-                <TextInput style={styles.modalInput} placeholder="YYYY-MM-DD" placeholderTextColor={COLORS.textTertiary} value={formData.license_expiry_date} onChangeText={text => setFormData({ ...formData, license_expiry_date: text })} />
+                renderDateTimeField('license_expiry_date', 'Select license expiry date', true)
               )}
               <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }} onPress={() => setLicenseConfiscated(value => !value)} accessibilityRole="checkbox" accessibilityState={{ checked: licenseConfiscated }}>
                 <Ionicons name={licenseConfiscated ? 'checkbox' : 'square-outline'} size={22} color={COLORS.primary} />
@@ -961,15 +1174,30 @@ export default function ViolationsScreen() {
                 <Ionicons name={hasNoPlate ? 'checkbox' : 'square-outline'} size={22} color={COLORS.primary} />
                 <Text style={{ color: COLORS.textSecondary }}>Vehicle has no plate number</Text>
               </TouchableOpacity>
-              <Text style={styles.modalLabel}>Vehicle Details</Text>
-              <TextInput style={styles.modalInput} placeholder="Owner of vehicle" placeholderTextColor={COLORS.textTertiary} value={formData.vehicle_owner} onChangeText={text => setFormData({ ...formData, vehicle_owner: text })} />
-              <TextInput style={[styles.modalInput, registrationNotApplicable && { opacity: 0.55 }]} placeholder={registrationNotApplicable ? 'NOT APPLICABLE' : 'Vehicle registration number'} placeholderTextColor={COLORS.textTertiary} value={registrationNotApplicable ? 'NOT APPLICABLE' : formData.vehicle_registration_number} onChangeText={text => setFormData({ ...formData, vehicle_registration_number: text })} autoCapitalize="characters" editable={!registrationNotApplicable} />
+              <Text style={styles.modalLabel}>Owner of Vehicle</Text>
+              <TextInput style={[styles.modalInput, vehicleOwnerNotApplicable && styles.disabledInput]} placeholder={vehicleOwnerNotApplicable ? 'NOT APPLICABLE' : 'Full name of registered owner'} placeholderTextColor={COLORS.textTertiary} value={vehicleOwnerNotApplicable ? 'NOT APPLICABLE' : formData.vehicle_owner} onChangeText={text => setFormData({ ...formData, vehicle_owner: text })} editable={!vehicleOwnerNotApplicable} />
+              <TouchableOpacity style={styles.checkRow} onPress={() => setVehicleOwnerNotApplicable(value => !value)} accessibilityRole="checkbox" accessibilityState={{ checked: vehicleOwnerNotApplicable }}>
+                <Ionicons name={vehicleOwnerNotApplicable ? 'checkbox' : 'square-outline'} size={22} color={COLORS.primary} />
+                <Text style={styles.checkRowText}>Owner information is not applicable</Text>
+              </TouchableOpacity>
+              <Text style={styles.modalLabel}>Vehicle Registration Number</Text>
+              <TextInput style={[styles.modalInput, registrationNotApplicable && styles.disabledInput]} placeholder={registrationNotApplicable ? 'NOT APPLICABLE' : 'Registration / MV file number'} placeholderTextColor={COLORS.textTertiary} value={registrationNotApplicable ? 'NOT APPLICABLE' : formData.vehicle_registration_number} onChangeText={text => setFormData({ ...formData, vehicle_registration_number: text })} autoCapitalize="characters" editable={!registrationNotApplicable} />
               <TouchableOpacity style={styles.checkRow} onPress={() => setRegistrationNotApplicable(value => !value)} accessibilityRole="checkbox" accessibilityState={{ checked: registrationNotApplicable }}>
                 <Ionicons name={registrationNotApplicable ? 'checkbox' : 'square-outline'} size={22} color={COLORS.primary} />
                 <Text style={styles.checkRowText}>Registration number is not applicable</Text>
               </TouchableOpacity>
-              <TextInput style={styles.modalInput} placeholder="Vehicle color" placeholderTextColor={COLORS.textTertiary} value={formData.vehicle_color} onChangeText={text => setFormData({ ...formData, vehicle_color: text })} />
-              <TextInput style={styles.modalInput} placeholder="Insurance policy number" placeholderTextColor={COLORS.textTertiary} value={formData.insurance_policy_number} onChangeText={text => setFormData({ ...formData, insurance_policy_number: text })} />
+              <Text style={styles.modalLabel}>Vehicle Color</Text>
+              <TextInput style={[styles.modalInput, vehicleColorNotApplicable && styles.disabledInput]} placeholder={vehicleColorNotApplicable ? 'NOT APPLICABLE' : 'Example: Blue'} placeholderTextColor={COLORS.textTertiary} value={vehicleColorNotApplicable ? 'NOT APPLICABLE' : formData.vehicle_color} onChangeText={text => setFormData({ ...formData, vehicle_color: text })} editable={!vehicleColorNotApplicable} />
+              <TouchableOpacity style={styles.checkRow} onPress={() => setVehicleColorNotApplicable(value => !value)} accessibilityRole="checkbox" accessibilityState={{ checked: vehicleColorNotApplicable }}>
+                <Ionicons name={vehicleColorNotApplicable ? 'checkbox' : 'square-outline'} size={22} color={COLORS.primary} />
+                <Text style={styles.checkRowText}>Vehicle color is not applicable</Text>
+              </TouchableOpacity>
+              <Text style={styles.modalLabel}>Insurance Policy Number</Text>
+              <TextInput style={[styles.modalInput, insuranceNotApplicable && styles.disabledInput]} placeholder={insuranceNotApplicable ? 'NOT APPLICABLE' : 'Insurance policy number'} placeholderTextColor={COLORS.textTertiary} value={insuranceNotApplicable ? 'NOT APPLICABLE' : formData.insurance_policy_number} onChangeText={text => setFormData({ ...formData, insurance_policy_number: text })} editable={!insuranceNotApplicable} />
+              <TouchableOpacity style={styles.checkRow} onPress={() => setInsuranceNotApplicable(value => !value)} accessibilityRole="checkbox" accessibilityState={{ checked: insuranceNotApplicable }}>
+                <Ionicons name={insuranceNotApplicable ? 'checkbox' : 'square-outline'} size={22} color={COLORS.primary} />
+                <Text style={styles.checkRowText}>Insurance policy is not applicable</Text>
+              </TouchableOpacity>
               <Text style={styles.modalLabel}>Vehicle Type</Text>
               <View style={styles.optionWrap}>
                 {vehicleTypes.map(type => <TouchableOpacity key={type} style={[styles.optionChip, formData.vehicle_type === type && styles.optionChipActive]} onPress={() => setFormData(current => ({ ...current, vehicle_type: type, coding_sticker_number: type === 'Tricycle' ? current.coding_sticker_number : '', vehicle_toda: type === 'Tricycle' ? current.vehicle_toda : '' }))}><Text style={[styles.optionChipText, formData.vehicle_type === type && styles.optionChipTextActive]}>{type === 'Tricycle' ? 'Tricycle (Pampasada)' : type}</Text></TouchableOpacity>)}
@@ -1053,8 +1281,8 @@ export default function ViolationsScreen() {
                 onChangeText={text => setFormData({ ...formData, location: text })}
               />
               <Text style={styles.modalLabel}>Date and Time of Violation</Text>
-              <TextInput style={styles.modalInput} placeholder="YYYY-MM-DD" placeholderTextColor={COLORS.textTertiary} value={formData.violation_date} onChangeText={text => setFormData({ ...formData, violation_date: text })} />
-              <TextInput style={styles.modalInput} placeholder="HH:MM" placeholderTextColor={COLORS.textTertiary} value={formData.violation_time} onChangeText={text => setFormData({ ...formData, violation_time: text })} />
+              {renderDateTimeField('violation_date', 'Select violation date')}
+              {renderDateTimeField('violation_time', 'Select violation time')}
               <Text style={styles.modalLabel}>Offense Level</Text>
               <View style={styles.analysisCard}><Ionicons name="analytics-outline" size={20} color={COLORS.primary} /><Text style={styles.analysisText}>Automatically calculated: {['First', 'Second', 'Third', 'Fourth'][Math.max(0, Number(formData.offense_number) - 1)] || 'First'} offense</Text></View>
               <Text style={styles.modalLabel}>Ticket Remarks</Text>
@@ -1069,25 +1297,50 @@ export default function ViolationsScreen() {
                 <TextInput style={styles.modalInput} placeholder="Position" placeholderTextColor={COLORS.textTertiary} value={formData.apprehending_officer_position} onChangeText={text => setFormData({ ...formData, apprehending_officer_position: text })} />
               </> : <>
                 <Text style={styles.modalLabel}>Active TMO Officer</Text>
-                <View style={styles.officerList}>
-                  {tmoOfficers.length ? tmoOfficers.map(officer => {
-                    const selected = selectedTmoOfficerId === Number(officer.officer_id);
-                    const details = [officer.badge_number, officer.rank, officer.zone_name || 'Unassigned'].filter(Boolean).join(' · ');
-                    return <TouchableOpacity key={officer.officer_id} style={[styles.officerOption, selected && styles.officerOptionSelected]} onPress={() => setSelectedTmoOfficerId(Number(officer.officer_id))}>
-                      <Ionicons name={selected ? 'radio-button-on' : 'radio-button-off'} size={20} color={selected ? COLORS.primary : COLORS.textTertiary} />
-                      <View style={{ flex: 1 }}><Text style={styles.officerName}>{officer.last_name}, {officer.first_name}</Text>{!!details && <Text style={styles.officerMeta}>{details}</Text>}</View>
-                    </TouchableOpacity>;
-                  }) : <Text style={styles.officerEmpty}>No active TMO officers are available.</Text>}
-                </View>
+                {tmoOfficers.length ? (
+                  <View style={styles.officerPickerWrap}>
+                    <Picker
+                      selectedValue={selectedTmoOfficerId ?? 0}
+                      onValueChange={(value) => setSelectedTmoOfficerId(Number(value) || null)}
+                      style={styles.officerPicker}
+                      dropdownIconColor={COLORS.primary}
+                      mode="dropdown"
+                    >
+                      <Picker.Item label="Select an active TMO officer" value={0} color={COLORS.textTertiary} />
+                      {tmoOfficers.map(officer => {
+                        const details = [officer.badge_number, officer.rank, officer.zone_name || 'Unassigned'].filter(Boolean).join(' · ');
+                        return <Picker.Item key={officer.officer_id} label={`${officer.last_name}, ${officer.first_name}${details ? ` · ${details}` : ''}`} value={Number(officer.officer_id)} />;
+                      })}
+                    </Picker>
+                  </View>
+                ) : <Text style={styles.officerEmpty}>No active TMO officers are available.</Text>}
               </>}
-              <TextInput style={styles.modalInput} placeholder="Apprehension date/time: YYYY-MM-DD HH:MM" placeholderTextColor={COLORS.textTertiary} value={formData.apprehension_datetime} onChangeText={text => setFormData({ ...formData, apprehension_datetime: text })} />
+              <Text style={styles.modalLabel}>Apprehension Date and Time</Text>
+              {renderDateTimeField('apprehension_date', 'Select apprehension date')}
+              {renderDateTimeField('apprehension_time', 'Select apprehension time')}
               {!!selectedViolations.length && <Text style={styles.modalSub}>Total penalty: ₱{selectedViolations.reduce((sum, item) => sum + Number(item.penalty_amount || 0), 0).toLocaleString()}</Text>}
             </ScrollView>
+
+            {activeDateTimePicker && Platform.OS === 'ios' ? (
+              <View style={styles.pickerModalCard}>
+                <View style={styles.pickerModalHeader}>
+                  <Text style={styles.pickerModalTitle}>{pickerMode === 'date' ? 'Select Date' : 'Select Time'}</Text>
+                  <TouchableOpacity onPress={() => setActiveDateTimePicker(null)}><Text style={styles.pickerDoneText}>Done</Text></TouchableOpacity>
+                </View>
+                <DateTimePicker
+                  value={pickerDateValue(activePickerValue, pickerMode)}
+                  mode={pickerMode}
+                  display="spinner"
+                  onChange={handleDateTimeChange}
+                  maximumDate={activeDateTimePicker === 'date_of_birth' ? new Date() : undefined}
+                />
+              </View>
+            ) : null}
 
             <View style={styles.modalActions}>
               <TouchableOpacity
                 style={styles.cancelModalButton}
-                onPress={() => setModalVisible(false)}
+                onPress={() => { setActiveDateTimePicker(null); setModalVisible(false); }}
                 disabled={submitting}
               >
                 <Text style={styles.cancelModalButtonText}>Cancel</Text>
@@ -1201,6 +1454,20 @@ const styles = StyleSheet.create({
 
   resultCount: { fontSize: 12, color: COLORS.textTertiary, marginBottom: 12 },
 
+  tableShell: { overflow: 'hidden', backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: 14, ...softShadow },
+  tableHeader: { minHeight: 38, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, backgroundColor: '#EDF4F2', borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  tableHeaderText: { color: COLORS.textSecondary, fontSize: 8, fontWeight: '900', letterSpacing: .35 },
+  tableRow: { minHeight: 68, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 10 },
+  tableDriverCell: { flex: 1.1, paddingRight: 7 },
+  tableLatestCell: { flex: 1.15, paddingRight: 7 },
+  tableCountCell: { width: 48, alignItems: 'center' },
+  tableActionCell: { width: 38, textAlign: 'center' },
+  tablePrimary: { color: COLORS.textPrimary, fontSize: 10, lineHeight: 14, fontWeight: '800' },
+  tableSecondary: { color: COLORS.textTertiary, fontSize: 8, lineHeight: 12, marginTop: 2 },
+  tableCount: { color: COLORS.textPrimary, fontSize: 14, fontWeight: '900' },
+  tableViewButton: { width: 36, height: 34, marginLeft: 2, borderWidth: 1, borderColor: COLORS.primary + '55', backgroundColor: COLORS.primary + '0D', borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
+  tableDivider: { height: 1, backgroundColor: COLORS.border, marginHorizontal: 10 },
+
   violationCard: {
     backgroundColor: COLORS.surface, borderRadius: 16, padding: 16,
     borderWidth: 1, borderColor: COLORS.border, ...softShadow,
@@ -1253,6 +1520,29 @@ const styles = StyleSheet.create({
   },
   fabText: { fontSize: 14, fontWeight: '700', color: '#FFFFFF', marginLeft: 6 },
 
+  cameraScreen: { flex: 1, backgroundColor: '#000' },
+  cameraSafeArea: { flex: 1, backgroundColor: 'rgba(0,0,0,0.18)' },
+  cameraHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 8 },
+  cameraCloseButton: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.58)' },
+  cameraInstruction: { flex: 1, alignItems: 'center', paddingHorizontal: 8 },
+  cameraInstructionTitle: { color: '#FFF', fontSize: 16, fontWeight: '900', textAlign: 'center' },
+  cameraInstructionText: { color: 'rgba(255,255,255,0.86)', fontSize: 11, lineHeight: 15, textAlign: 'center', marginTop: 2 },
+  cameraHeaderSpacer: { width: 44 },
+  cameraGuideArea: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 12 },
+  ticketGuide: { width: '82%', maxWidth: 390, aspectRatio: 0.62, maxHeight: '96%', borderWidth: 1, borderStyle: 'dashed', borderColor: 'rgba(255,255,255,0.72)', backgroundColor: 'rgba(0,0,0,0.05)', alignItems: 'center', justifyContent: 'center' },
+  guideCorner: { position: 'absolute', width: 34, height: 34, borderColor: '#55E8C7' },
+  guideTopLeft: { top: -2, left: -2, borderTopWidth: 4, borderLeftWidth: 4, borderTopLeftRadius: 8 },
+  guideTopRight: { top: -2, right: -2, borderTopWidth: 4, borderRightWidth: 4, borderTopRightRadius: 8 },
+  guideBottomLeft: { bottom: -2, left: -2, borderBottomWidth: 4, borderLeftWidth: 4, borderBottomLeftRadius: 8 },
+  guideBottomRight: { bottom: -2, right: -2, borderBottomWidth: 4, borderRightWidth: 4, borderBottomRightRadius: 8 },
+  guideCenterBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 11, paddingVertical: 7, borderRadius: 18, backgroundColor: 'rgba(0,0,0,0.52)' },
+  guideCenterText: { color: '#FFF', fontSize: 10, fontWeight: '900', letterSpacing: 1 },
+  cameraControls: { minHeight: 126, alignItems: 'center', justifyContent: 'center', paddingBottom: 12 },
+  cameraTip: { color: '#FFF', fontSize: 11, fontWeight: '700', textAlign: 'center', marginBottom: 12, textShadowColor: '#000', textShadowRadius: 4 },
+  shutterOuter: { width: 76, height: 76, borderRadius: 38, borderWidth: 5, borderColor: '#FFF', backgroundColor: 'rgba(255,255,255,0.22)', alignItems: 'center', justifyContent: 'center' },
+  shutterInner: { width: 58, height: 58, borderRadius: 29, backgroundColor: '#FFF', borderWidth: 2, borderColor: 'rgba(0,0,0,0.15)' },
+  shutterDisabled: { opacity: 0.48 },
+
   modalOverlay: { flex: 1, backgroundColor: 'rgba(15,23,42,0.66)', justifyContent: 'flex-end', alignItems: 'center' },
   modalContent: {
     backgroundColor: '#FFFEFA', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 18, paddingTop: 18, paddingBottom: 12, width: '100%', maxHeight: '94%', borderWidth: 1, borderColor: COLORS.border,
@@ -1290,15 +1580,22 @@ const styles = StyleSheet.create({
     minHeight: 46, backgroundColor: '#FFF', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10,
     borderWidth: 1, borderColor: COLORS.border, fontSize: 14, color: COLORS.textPrimary, marginBottom: 2,
   },
+  dateTimeFieldRow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 2 },
+  dateTimeField: { flex: 1, minHeight: 46, paddingHorizontal: 12, borderRadius: 10, borderWidth: 1, borderColor: COLORS.border, backgroundColor: '#FFF', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  dateTimeFieldText: { color: COLORS.textPrimary, fontSize: 14 },
+  dateTimeFieldPlaceholder: { color: COLORS.textTertiary },
+  dateTimeClearButton: { width: 42, height: 46, borderRadius: 10, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.bg, alignItems: 'center', justifyContent: 'center' },
+  pickerModalCard: { padding: 16, paddingBottom: 28, borderTopLeftRadius: 20, borderTopRightRadius: 20, backgroundColor: '#FFF' },
+  pickerModalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 8 },
+  pickerModalTitle: { color: COLORS.textPrimary, fontSize: 16, fontWeight: '800' },
+  pickerDoneText: { color: COLORS.primary, fontSize: 14, fontWeight: '800' },
+  disabledInput: { opacity: 0.55, backgroundColor: 'rgba(16, 47, 73, 0.06)' },
   structuredNamePreview: { color: COLORS.primary, fontSize: 11, fontWeight: '700', marginTop: 7, marginBottom: 2 },
   checkRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8, marginBottom: 4 },
   checkRowText: { flex: 1, color: COLORS.textSecondary, fontSize: 12 },
-  officerList: { marginTop: 2, borderWidth: 1, borderColor: COLORS.border, borderRadius: 10, overflow: 'hidden', backgroundColor: '#FFF' },
-  officerOption: { minHeight: 50, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 9, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border },
-  officerOptionSelected: { backgroundColor: '#EAF6F5' },
-  officerName: { color: COLORS.textPrimary, fontSize: 12, fontWeight: '800' },
-  officerMeta: { color: COLORS.textSecondary, fontSize: 10, marginTop: 2 },
-  officerEmpty: { color: COLORS.danger, fontSize: 11, padding: 12 },
+  officerPickerWrap: { height: 58, marginTop: 2, borderWidth: 1, borderColor: COLORS.border, borderRadius: 10, overflow: 'hidden', backgroundColor: '#FFF', justifyContent: 'center' },
+  officerPicker: { height: 58, color: COLORS.textPrimary, fontSize: 13, fontFamily: Platform.select({ android: 'sans-serif', default: undefined }) },
+  officerEmpty: { color: COLORS.danger, fontSize: 11, paddingVertical: 12 },
   violationDropdownButton: { minHeight: 46, paddingHorizontal: 12, borderRadius: 10, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.bg, flexDirection: 'row', alignItems: 'center', gap: 9 },
   violationDropdownButtonOpen: { borderColor: COLORS.primary, borderBottomLeftRadius: 0, borderBottomRightRadius: 0 },
   violationDropdownText: { flex: 1, color: COLORS.textPrimary, fontSize: 13, fontWeight: '700' },

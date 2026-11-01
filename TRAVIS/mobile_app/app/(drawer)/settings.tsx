@@ -151,7 +151,8 @@ export default function SettingsScreen() {
   };
 
   useEffect(() => {
-    fetchSettings();
+    const timer = setTimeout(() => { void fetchSettings(); }, 0);
+    return () => clearTimeout(timer);
   }, []);
 
   // ===== SAVE SETTINGS =====
@@ -229,7 +230,7 @@ export default function SettingsScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.header} />
+      <StatusBar barStyle="light-content" />
       <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Hero */}
         <View style={styles.heroCard}>

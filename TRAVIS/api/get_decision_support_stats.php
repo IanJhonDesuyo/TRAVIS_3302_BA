@@ -21,8 +21,12 @@ try {
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $day) || !$parsedDay || $parsedDay->format('Y-m-d') !== $day) $day = date('Y-m-d');
     if (!preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $month)) $month = date('Y-m');
     if (!preg_match('/^\d{4}$/', $year) || (int)$year < 2000 || (int)$year > 2100) $year = date('Y');
+    $selectedDate = new DateTimeImmutable($day);
+    $weekStart = $selectedDate->modify('monday this week')->format('Y-m-d');
+    $weekEnd = $selectedDate->modify('sunday this week')->format('Y-m-d');
     $periods = [
         'day' => ["record.violation_date = '{$day}'", date('F j, Y', strtotime($day))],
+        'week' => ["record.violation_date BETWEEN '{$weekStart}' AND '{$weekEnd}'", date('M j', strtotime($weekStart)) . ' - ' . date('M j, Y', strtotime($weekEnd))],
         'month' => ["DATE_FORMAT(record.violation_date, '%Y-%m') = '{$month}'", date('F Y', strtotime($month . '-01'))],
         'year' => ["YEAR(record.violation_date) = {$year}", $year],
         'all' => ['1=1', 'All Records'],
@@ -34,6 +38,7 @@ try {
     $activeCondition = "({$dateCondition}) AND record.status <> 'cancelled'";
     $paymentPeriods = [
         'day' => "DATE(payment_date) = '{$day}'",
+        'week' => "DATE(payment_date) BETWEEN '{$weekStart}' AND '{$weekEnd}'",
         'month' => "DATE_FORMAT(payment_date, '%Y-%m') = '{$month}'",
         'year' => "YEAR(payment_date) = {$year}",
         'all' => '1=1',

@@ -374,7 +374,7 @@ export default function PublicWebsiteScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.header} />
+      <StatusBar barStyle="light-content" />
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.scrollContent}

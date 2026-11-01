@@ -251,6 +251,7 @@ function CustomDrawerContent(props: any & { user: TravisUser }) {
 // ========== MAIN DRAWER LAYOUT ==========
 export default function DrawerLayout() {
   const [user, setUser] = useState<TravisUser | null | undefined>(undefined);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   useEffect(() => { getStoredUser().then(setUser); }, []);
   if (user === undefined) return <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.header }} />;
   if (!user) return <Redirect href="/" />;
@@ -264,6 +265,13 @@ export default function DrawerLayout() {
       <View pointerEvents="none" style={styles.appOverlay} />
       <Drawer
       drawerContent={(props) => <CustomDrawerContent {...props} user={user} />}
+      screenListeners={{
+        state: (event: any) => {
+          const history = event.data?.state?.history || [];
+          const drawerEntry = [...history].reverse().find((entry: any) => entry?.type === 'drawer');
+          setDrawerOpen(drawerEntry?.status === 'open');
+        },
+      }}
       screenOptions={{
         headerShown: true,
         headerStyle: { backgroundColor: '#F3F1EA' },
@@ -333,8 +341,8 @@ export default function DrawerLayout() {
         }}
       />
       </Drawer>
-      <MajorFunctionBar />
-      <ActionableAlertCard />
+      {!drawerOpen && <MajorFunctionBar />}
+      {!drawerOpen && <ActionableAlertCard />}
     </ImageBackground>
   );
 }

@@ -94,6 +94,55 @@ function report_pdf_escape(string $text): string
     return str_replace(['\\', '(', ')'], ['\\\\', '\\(', '\\)'], $text);
 }
 
+function report_pdf_fit_text(mixed $value, float $width, float $fontSize, int $maxLines = 2): array
+{
+    $text = trim((string)preg_replace('/\s+/', ' ', report_pdf_text($value)));
+    if ($text === '') return [''];
+
+    $maxChars = max(3, (int)floor(($width - 7) / max(1, $fontSize * 0.49)));
+    $lines = [];
+    while ($text !== '' && count($lines) < $maxLines) {
+        if (mb_strlen($text) <= $maxChars) {
+            $lines[] = $text;
+            $text = '';
+            break;
+        }
+
+        $candidate = mb_substr($text, 0, $maxChars + 1);
+        $breakAt = mb_strrpos($candidate, ' ');
+        if ($breakAt === false || $breakAt < (int)floor($maxChars * 0.55)) {
+            $breakAt = $maxChars;
+        }
+        $lines[] = rtrim(mb_substr($text, 0, $breakAt));
+        $text = ltrim(mb_substr($text, $breakAt));
+    }
+
+    if ($text !== '' && $lines) {
+        $last = count($lines) - 1;
+        $lines[$last] = rtrim(mb_strimwidth($lines[$last], 0, max(1, $maxChars - 3), '')) . '...';
+    }
+    return $lines ?: [''];
+}
+
+function report_pdf_text_command(
+    float $x,
+    float $y,
+    string $text,
+    float $size = 6,
+    string $font = 'F1',
+    string $color = '0.08 0.14 0.18'
+): string {
+    return sprintf(
+        "BT /%s %.2F Tf %s rg %.2F %.2F Td (%s) Tj ET\n",
+        $font,
+        $size,
+        $color,
+        $x,
+        $y,
+        report_pdf_escape(report_pdf_text($text))
+    );
+}
+
 function build_report_pdf(
     string $title,
     string $dateFrom,
@@ -104,57 +153,124 @@ function build_report_pdf(
     string $preparedBy
 ): string {
     $columnKeys = array_keys($columns);
-    $columnWidth = max(8, (int)floor((126 - max(0, count($columns) - 1) * 3) / max(1, count($columns))));
-    $formatRow = static function (array $values) use ($columnWidth): string {
-        return implode(' | ', array_map(
-            static fn($value): string => str_pad(mb_strimwidth(report_pdf_text($value), 0, $columnWidth, '~'), $columnWidth),
-            $values
-        ));
-    };
+    $pageWidth = 842.0;
+    $pageHeight = 595.0;
+    $marginX = 24.0;
+    $tableWidth = $pageWidth - ($marginX * 2);
+    $headerHeight = 27.0;
+    $rowHeight = 21.0;
+    $rowsPerPage = 20;
 
-    $tableHeader = $formatRow(array_values($columns));
-    $tableDivider = str_repeat('-', min(150, strlen($tableHeader)));
-    $reportLines = [];
-    foreach ($summary as $label => $value) {
-        $reportLines[] = report_pdf_text($label . ': ' . $value);
-    }
-    $reportLines[] = '';
-    $reportLines[] = $tableHeader;
-    $reportLines[] = $tableDivider;
-    foreach ($rows as $row) {
-        $values = [];
-        foreach ($columnKeys as $key) {
-            $value = $row[$key] ?? '';
-            if (in_array($key, ['penalty_amount', 'amount_paid'], true)) {
-                $value = number_format((float)$value, 2, '.', ',');
-            }
-            $values[] = $value;
-        }
-        $reportLines[] = $formatRow($values);
-    }
-    if (!$rows) $reportLines[] = 'No records matched the selected filters.';
+    $widthWeights = [
+        'ticket_number' => 1.45, 'payment_reference' => 1.25,
+        'driver_name' => 1.35, 'plate_number' => 0.78,
+        'vehicle_type' => 0.78, 'violation_type' => 1.40,
+        'violation_location' => 1.20, 'location' => 1.18,
+        'violation_date' => 0.84, 'violation_time' => 0.70,
+        'penalty_amount' => 0.88, 'amount_paid' => 0.88,
+        'status' => 0.70, 'payment_status' => 0.76,
+        'payment_method' => 0.92, 'payment_date' => 1.15,
+        'received_by_name' => 1.10, 'camera_name' => 1.05,
+        'vehicle_count' => 0.78, 'inbound_count' => 0.68,
+        'outbound_count' => 0.72, 'congestion_level' => 0.88,
+        'officer_presence' => 0.92, 'potential_collision' => 1.00,
+        'recorded_at' => 1.18,
+    ];
+    $weights = [];
+    foreach ($columnKeys as $key) $weights[$key] = $widthWeights[$key] ?? 1.0;
+    $weightTotal = max(1.0, array_sum($weights));
+    $columnWidths = [];
+    foreach ($weights as $key => $weight) $columnWidths[$key] = $tableWidth * ($weight / $weightTotal);
 
-    $chunks = array_chunk($reportLines, 48);
-    if (!$chunks) $chunks = [[]];
-    $objects = [1 => '', 2 => '', 3 => '<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>'];
+    $chunks = $rows ? array_chunk($rows, $rowsPerPage) : [[]];
+    $pageCount = count($chunks);
+    $objects = [
+        1 => '',
+        2 => '',
+        3 => '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+        4 => '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>',
+    ];
     $pageIds = [];
-    $nextId = 4;
-    foreach ($chunks as $pageIndex => $lines) {
+    $nextId = 5;
+    foreach ($chunks as $pageIndex => $pageRows) {
         $pageId = $nextId++;
         $contentId = $nextId++;
         $pageIds[] = $pageId;
-        $pageHeader = [
-            'TRAVIS - ' . report_pdf_text($title),
-            'Period: ' . $dateFrom . ' to ' . $dateTo . ' | Prepared by: ' . report_pdf_text($preparedBy),
-            'Generated: ' . date('F j, Y g:i A') . ' | Page ' . ($pageIndex + 1) . ' of ' . count($chunks),
-            ''
-        ];
-        $commands = "BT\n/F1 6 Tf\n28 568 Td\n9 TL\n";
-        foreach (array_merge($pageHeader, $lines) as $line) {
-            $commands .= '(' . report_pdf_escape(mb_strimwidth($line, 0, 150, '~')) . ") Tj\nT*\n";
+
+        $commands = "q 1 1 1 rg 0 0 {$pageWidth} {$pageHeight} re f Q\n";
+        $commands .= report_pdf_text_command($marginX, 566, 'TRAVIS', 8, 'F2', '0.04 0.48 0.45');
+        $commands .= report_pdf_text_command($marginX, 546, $title, 16, 'F2');
+        $commands .= report_pdf_text_command(
+            $marginX,
+            531,
+            'Period: ' . $dateFrom . ' to ' . $dateTo . '   |   Prepared by: ' . $preparedBy . '   |   Generated: ' . date('M j, Y g:i A'),
+            7,
+            'F1',
+            '0.32 0.40 0.43'
+        );
+        $commands .= "q 0.04 0.48 0.45 RG 1 w {$marginX} 523 m " . ($pageWidth - $marginX) . " 523 l S Q\n";
+
+        $summaryCount = max(1, count($summary));
+        $summaryGap = 8.0;
+        $summaryWidth = ($tableWidth - (($summaryCount - 1) * $summaryGap)) / $summaryCount;
+        $summaryX = $marginX;
+        foreach ($summary as $label => $value) {
+            $commands .= sprintf("q 0.94 0.98 0.97 rg %.2F 484 %.2F 31 re f Q\n", $summaryX, $summaryWidth);
+            $commands .= sprintf("q 0.72 0.84 0.82 RG 0.6 w %.2F 484 %.2F 31 re S Q\n", $summaryX, $summaryWidth);
+            $commands .= report_pdf_text_command($summaryX + 7, 503, strtoupper((string)$label), 5.4, 'F2', '0.28 0.39 0.38');
+            $commands .= report_pdf_text_command($summaryX + 7, 490, (string)$value, 8.5, 'F2');
+            $summaryX += $summaryWidth + $summaryGap;
         }
-        $commands .= "ET";
-        $objects[$pageId] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 842 595] /Resources << /Font << /F1 3 0 R >> >> /Contents {$contentId} 0 R >>";
+
+        $tableTop = 470.0;
+        $headerBottom = $tableTop - $headerHeight;
+        $commands .= sprintf("q 0.04 0.25 0.30 rg %.2F %.2F %.2F %.2F re f Q\n", $marginX, $headerBottom, $tableWidth, $headerHeight);
+        $x = $marginX;
+        foreach ($columns as $key => $label) {
+            $width = $columnWidths[$key];
+            $commands .= sprintf("q 0.72 0.82 0.84 RG 0.45 w %.2F %.2F %.2F %.2F re S Q\n", $x, $headerBottom, $width, $headerHeight);
+            $headerLines = report_pdf_fit_text($label, $width, 5.7, 2);
+            $firstY = count($headerLines) > 1 ? $headerBottom + 16 : $headerBottom + 10;
+            foreach ($headerLines as $lineIndex => $line) {
+                $commands .= report_pdf_text_command($x + 4, $firstY - ($lineIndex * 7), $line, 5.7, 'F2', '1 1 1');
+            }
+            $x += $width;
+        }
+
+        if (!$pageRows) {
+            $commands .= sprintf("q 0.98 0.99 0.99 rg %.2F %.2F %.2F %.2F re f Q\n", $marginX, $headerBottom - 35, $tableWidth, 35.0);
+            $commands .= sprintf("q 0.72 0.82 0.84 RG 0.45 w %.2F %.2F %.2F %.2F re S Q\n", $marginX, $headerBottom - 35, $tableWidth, 35.0);
+            $commands .= report_pdf_text_command($marginX + 8, $headerBottom - 21, 'No records matched the selected filters.', 7, 'F1', '0.32 0.40 0.43');
+        }
+
+        foreach ($pageRows as $rowIndex => $row) {
+            $rowTop = $headerBottom - ($rowIndex * $rowHeight);
+            $rowBottom = $rowTop - $rowHeight;
+            if ($rowIndex % 2 === 1) {
+                $commands .= sprintf("q 0.96 0.98 0.98 rg %.2F %.2F %.2F %.2F re f Q\n", $marginX, $rowBottom, $tableWidth, $rowHeight);
+            }
+            $x = $marginX;
+            foreach ($columnKeys as $key) {
+                $width = $columnWidths[$key];
+                $commands .= sprintf("q 0.72 0.78 0.80 RG 0.35 w %.2F %.2F %.2F %.2F re S Q\n", $x, $rowBottom, $width, $rowHeight);
+                $value = $row[$key] ?? '';
+                if (in_array($key, ['penalty_amount', 'amount_paid'], true)) {
+                    $value = 'PHP ' . number_format((float)$value, 2, '.', ',');
+                } elseif (in_array($key, ['status', 'payment_status', 'congestion_level'], true)) {
+                    $value = ucfirst(strtolower((string)$value));
+                }
+                $cellLines = report_pdf_fit_text($value, $width, 5.5, 2);
+                $firstY = count($cellLines) > 1 ? $rowBottom + 12.5 : $rowBottom + 7.5;
+                foreach ($cellLines as $lineIndex => $line) {
+                    $commands .= report_pdf_text_command($x + 3.5, $firstY - ($lineIndex * 7), $line, 5.5);
+                }
+                $x += $width;
+            }
+        }
+
+        $footer = 'TRAVIS Report  |  Page ' . ($pageIndex + 1) . ' of ' . $pageCount;
+        $commands .= report_pdf_text_command($pageWidth - 150, 18, $footer, 6, 'F1', '0.36 0.43 0.45');
+        $objects[$pageId] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 842 595] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents {$contentId} 0 R >>";
         $objects[$contentId] = "<< /Length " . strlen($commands) . ">>\nstream\n{$commands}\nendstream";
     }
     $objects[1] = '<< /Type /Catalog /Pages 2 0 R >>';
@@ -870,6 +986,31 @@ div[style*="border-radius: 999px"]:not(.tag){
     border:1px solid var(--border-glass) !important;
 }
 
+.report-preview-modal .modal-dialog{max-width:min(1280px,calc(100vw - 2rem));}
+.report-preview-modal .modal-content{height:calc(100vh - 2rem);overflow:hidden;background:#f8fafc!important;color:#10202c!important;border:1px solid rgba(16,47,73,.2)!important;border-radius:18px;box-shadow:0 24px 70px rgba(8,28,43,.32);}
+.report-preview-modal .modal-header,.report-preview-modal .modal-footer{flex:0 0 auto;background:#fff;border-color:#dbe5e8;}
+.report-preview-modal .modal-header{padding:1rem 1.25rem;}
+.report-preview-modal .modal-title{color:#10202c;font-weight:800;}
+.report-preview-modal .modal-body{min-height:0;overflow:auto;padding:1.25rem;background:#edf3f4;}
+.report-preview-modal .modal-footer{padding:.8rem 1.25rem;}
+.report-preview-sheet{min-width:900px;padding:1.25rem;background:#fff;border:1px solid #d8e3e6;border-radius:14px;box-shadow:0 8px 24px rgba(16,47,73,.08);}
+.report-preview-meta{display:flex;flex-wrap:wrap;gap:.35rem 1.5rem;margin-bottom:1rem;color:#60716d;font-size:.78rem;}
+.report-preview-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.75rem;margin-bottom:1rem;}
+.report-preview-metric{padding:.8rem .9rem;border:1px solid #cfe0df;border-radius:10px;background:#f2faf8;color:#10202c!important;}
+.report-preview-metric small{display:block;margin-bottom:.25rem;color:#617570!important;font-size:.66rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase;}
+.report-preview-metric strong{font-size:1rem;color:#10202c!important;}
+.report-preview-table-wrap{overflow:auto;border:1px solid #cad7da;border-radius:10px;}
+.report-preview-table{width:100%;margin:0;border-collapse:collapse;font-size:.72rem;color:#20333d;}
+.report-preview-table th{position:sticky;top:0;z-index:1;padding:.65rem .7rem;background:#0b404b;color:#fff;white-space:nowrap;border-right:1px solid rgba(255,255,255,.18);}
+.report-preview-table td{padding:.58rem .7rem;border-right:1px solid #dce5e7;border-bottom:1px solid #dce5e7;vertical-align:top;}
+.report-preview-table tbody tr:nth-child(even){background:#f5f8f8;}
+.report-preview-table tbody tr:last-child td{border-bottom:0;}
+.report-preview-empty{padding:2.5rem;text-align:center;color:#647670;}
+@media(max-width:767.98px){
+  .report-preview-modal .modal-dialog{max-width:none;height:100%;margin:0;}
+  .report-preview-modal .modal-content{height:100%;border-radius:0;}
+}
+
 /* Print styles */
 .official-print-header,.official-print-footer{display:none}
 @media print {
@@ -1024,8 +1165,20 @@ div[style*="border-radius: 999px"]:not(.tag){
       </div>
 
       <div class="d-flex flex-wrap gap-2 no-print">
-        <a class="btn btn-primary btn-sm" href="<?= esc(app_url('reports.php?' . http_build_query(array_merge($queryBase, ['action' => 'excel'])))) ?>"><i class="bi bi-file-earmark-excel me-1"></i>Download Excel</a>
-        <a class="btn btn-danger btn-sm" href="<?= esc(app_url('reports.php?' . http_build_query(array_merge($queryBase, ['action' => 'pdf'])))) ?>"><i class="bi bi-file-earmark-pdf me-1"></i>Download PDF</a>
+        <button
+          class="btn btn-success btn-sm report-format-preview-button"
+          type="button"
+          data-bs-toggle="modal"
+          data-bs-target="#reportExportPreviewModal"
+          data-export-format="excel"
+        ><i class="bi bi-file-earmark-excel me-1"></i>Preview Excel</button>
+        <button
+          class="btn btn-danger btn-sm report-format-preview-button"
+          type="button"
+          data-bs-toggle="modal"
+          data-bs-target="#reportExportPreviewModal"
+          data-export-format="pdf"
+        ><i class="bi bi-file-earmark-pdf me-1"></i>Preview PDF</button>
       </div>
     </div>
 
@@ -1073,6 +1226,72 @@ div[style*="border-radius: 999px"]:not(.tag){
       <p>I certify that this report was generated from the official TRAVIS records for the period stated above.</p>
       <div class="official-signatures"><div>Prepared by / Date</div><div>Reviewed and Approved by / Date</div></div>
     </footer>
+  </div>
+
+  <div class="modal fade report-preview-modal no-print" id="reportExportPreviewModal" tabindex="-1" aria-labelledby="reportExportPreviewTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-xl">
+      <div class="modal-content">
+        <div class="modal-header">
+          <div>
+            <h5 class="modal-title mb-1" id="reportExportPreviewTitle">Report Preview</h5>
+            <small class="text-muted" id="reportExportPreviewDescription">Review the report before downloading it.</small>
+          </div>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="report-preview-sheet">
+            <div class="d-flex justify-content-between align-items-start gap-3 mb-2">
+              <div>
+                <small class="dashboard-eyebrow">TRAVIS REPORT</small>
+                <h5 class="mb-1"><?= esc($reportTitle) ?></h5>
+              </div>
+              <span class="tag"><?= num(count($previewRows)) ?> records</span>
+            </div>
+            <div class="report-preview-meta">
+              <span><strong>Period:</strong> <?= esc($dateFrom) ?> to <?= esc($dateTo) ?></span>
+              <span><strong>Prepared by:</strong> <?= esc($_SESSION['full_name'] ?? 'TRAVIS Administrator') ?></span>
+              <?php if ($statusFilter !== ''): ?><span><strong>Filter:</strong> <?= esc(ucwords(str_replace('_', ' ', $statusFilter))) ?></span><?php endif; ?>
+              <?php if ($locationFilter !== '' && $reportType !== 'payments'): ?><span><strong>Location:</strong> <?= esc($locationFilter) ?></span><?php endif; ?>
+            </div>
+            <div class="report-preview-summary">
+              <?php foreach ($summary as $label => $value): ?>
+                <div class="report-preview-metric"><small><?= esc($label) ?></small><strong><?= esc((string)$value) ?></strong></div>
+              <?php endforeach; ?>
+            </div>
+            <div class="report-preview-table-wrap">
+              <?php if (!$previewRows): ?>
+                <div class="report-preview-empty">No records matched the selected report filters.</div>
+              <?php else: ?>
+                <table class="report-preview-table">
+                  <thead><tr><?php foreach ($previewColumns as $label): ?><th><?= esc($label) ?></th><?php endforeach; ?></tr></thead>
+                  <tbody>
+                    <?php foreach ($previewRows as $row): ?><tr>
+                      <?php foreach ($previewColumns as $key => $label): ?><td>
+                        <?php if (in_array($key, ['penalty_amount', 'amount_paid'], true)): ?>
+                          <?= peso($row[$key] ?? 0) ?>
+                        <?php elseif (in_array($key, ['status', 'payment_status', 'congestion_level'], true)): ?>
+                          <span class="tag <?= tag_class($row[$key] ?? '') ?>"><?= esc(ucwords(str_replace('_', ' ', (string)($row[$key] ?? '')))) ?></span>
+                        <?php elseif ($key === 'payment_method'): ?>
+                          <?= esc(ucwords(str_replace('_', ' ', (string)($row[$key] ?? '')))) ?>
+                        <?php else: ?>
+                          <?= esc((string)($row[$key] ?? '')) ?>
+                        <?php endif; ?>
+                      </td><?php endforeach; ?>
+                    </tr><?php endforeach; ?>
+                  </tbody>
+                </table>
+              <?php endif; ?>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-light" data-bs-dismiss="modal">Close</button>
+          <button type="button" class="btn btn-outline-primary format-pdf-action d-none" id="printReportButton"><i class="bi bi-printer me-1"></i>Print</button>
+          <a class="btn btn-success format-excel-action d-none" href="<?= esc(app_url('reports.php?' . http_build_query(array_merge($queryBase, ['action' => 'excel'])))) ?>"><i class="bi bi-download me-1"></i>Download Excel</a>
+          <a class="btn btn-danger format-pdf-action d-none" href="<?= esc(app_url('reports.php?' . http_build_query(array_merge($queryBase, ['action' => 'pdf'])))) ?>"><i class="bi bi-download me-1"></i>Download PDF</a>
+        </div>
+      </div>
+    </div>
   </div>
 <?php endif; ?>
 
@@ -1143,6 +1362,33 @@ function rebuildStatusOptions() {
 }
 
 reportTypeSelect.addEventListener('change', rebuildStatusOptions);
+
+const printReportButton = document.getElementById('printReportButton');
+if (printReportButton) printReportButton.addEventListener('click', () => window.print());
+
+const reportExportPreviewModal = document.getElementById('reportExportPreviewModal');
+if (reportExportPreviewModal) {
+  reportExportPreviewModal.addEventListener('show.bs.modal', (event) => {
+    const trigger = event.relatedTarget;
+    const format = trigger?.dataset?.exportFormat === 'excel' ? 'excel' : 'pdf';
+    const title = document.getElementById('reportExportPreviewTitle');
+    const description = document.getElementById('reportExportPreviewDescription');
+
+    if (title) title.textContent = format === 'excel' ? 'Excel Report Preview' : 'PDF Report Preview';
+    if (description) {
+      description.textContent = format === 'excel'
+        ? 'Review the table before downloading the Excel workbook.'
+        : 'Review the report before printing or downloading the PDF.';
+    }
+
+    reportExportPreviewModal.querySelectorAll('.format-excel-action').forEach((element) => {
+      element.classList.toggle('d-none', format !== 'excel');
+    });
+    reportExportPreviewModal.querySelectorAll('.format-pdf-action').forEach((element) => {
+      element.classList.toggle('d-none', format !== 'pdf');
+    });
+  });
+}
 </script>
 
 <?php page_end(); ?>

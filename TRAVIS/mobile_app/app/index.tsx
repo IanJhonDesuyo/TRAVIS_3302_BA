@@ -1,9 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Href, useRouter } from 'expo-router';
-import React from 'react';
-import { Image, ImageBackground, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, Image, ImageBackground, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { APP_ROOT_URL } from '../api/axiosConfig';
+import { APP_ROOT_URL, refreshMobileSession } from '../api/axiosConfig';
+import { clearStoredUser, getStoredRefreshToken, getStoredUser, isTreasurerRole } from '../utils/session';
 
 const Stat = ({ value, label, icon }: { value: string; label: string; icon: any }) => (
   <View style={s.stat}>
@@ -15,6 +16,33 @@ const Stat = ({ value, label, icon }: { value: string; label: string; icon: any 
 
 export default function Index() {
   const router = useRouter();
+  const [restoringSession, setRestoringSession] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const [user, token] = await Promise.all([getStoredUser(), getStoredRefreshToken()]);
+      if (!user || !token) {
+        if (user || token) await clearStoredUser();
+        if (active) setRestoringSession(false);
+        return;
+      }
+      try {
+        const verifiedUser = await refreshMobileSession();
+        if (!active) return;
+        const destination = isTreasurerRole(verifiedUser.role) ? '/(treasurer)/dashboard' : '/(drawer)/dashboard';
+        router.replace(destination as Href);
+      } catch {
+        await clearStoredUser();
+        if (active) setRestoringSession(false);
+      }
+    })();
+    return () => { active = false; };
+  }, [router]);
+
+  if (restoringSession) {
+    return <View style={s.restoring}><ActivityIndicator size="large" color="#087D78" /><Text style={s.restoringText}>Restoring secure session...</Text></View>;
+  }
 
   return (
     <ImageBackground
@@ -48,6 +76,7 @@ export default function Index() {
 }
 
 const s = StyleSheet.create({
+  restoring:{flex:1,alignItems:'center',justifyContent:'center',backgroundColor:'#EEF4F5'},restoringText:{marginTop:12,color:'#526B64',fontSize:12,fontWeight:'700'},
   background:{flex:1},safe:{flex:1},wash:{position:'absolute',inset:0,backgroundColor:'rgba(238,244,247,.78)'},content:{flexGrow:1,justifyContent:'center',paddingHorizontal:22,paddingTop:22,paddingBottom:30},
   live:{position:'absolute',top:20,right:22,flexDirection:'row',alignItems:'center',gap:6,height:29,paddingHorizontal:11,borderRadius:15,backgroundColor:'rgba(19,45,68,.62)',borderWidth:1,borderColor:'rgba(255,255,255,.26)'},liveDot:{width:6,height:6,borderRadius:3,backgroundColor:'#2ED66F'},liveText:{color:'#fff',fontSize:9,fontWeight:'900',letterSpacing:.7},
   brandRow:{flexDirection:'row',alignItems:'center',marginTop:50,marginBottom:28},seal:{width:50,height:50,borderRadius:25,borderWidth:3,borderColor:'#fff',marginRight:11},brand:{color:'#102F49',fontSize:15,fontWeight:'900'},brandSub:{color:'#526B64',fontSize:10,marginTop:3},

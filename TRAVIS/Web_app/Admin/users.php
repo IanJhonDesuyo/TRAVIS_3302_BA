@@ -458,6 +458,26 @@ header.topbar,
 }
 .btn-success:hover{filter:brightness(1.08);color:#fff !important}
 
+/* User table action color coding */
+.user-action-btn{
+    background:#fff !important;
+    border-color:#ccd8dc !important;
+    box-shadow:none !important;
+    transition:background-color .16s ease,border-color .16s ease,transform .16s ease !important;
+}
+.user-action-btn i{color:var(--action-color) !important;}
+.user-action-btn:hover{
+    background:var(--action-soft) !important;
+    border-color:var(--action-border) !important;
+    transform:translateY(-1px);
+}
+.user-action-edit{--action-color:#2563eb;--action-soft:#eff6ff;--action-border:#93c5fd;}
+.user-action-reset{--action-color:#b77905;--action-soft:#fffbeb;--action-border:#f6c75b;}
+.user-action-deactivate{--action-color:#ea580c;--action-soft:#fff7ed;--action-border:#fdba74;}
+.user-action-activate{--action-color:#059669;--action-soft:#ecfdf5;--action-border:#6ee7b7;}
+.user-action-suspend{--action-color:#dc2626;--action-soft:#fef2f2;--action-border:#fca5a5;}
+.user-action-delete{--action-color:#991b1b;--action-soft:#fff1f2;--action-border:#fb7185;}
+
 .stat-card,.dashboard-stat-card{
     background:rgba(255,255,255,.03) !important;
     border:1px solid var(--border-glass) !important;
@@ -811,7 +831,7 @@ div[style*="border-radius: 999px"]:not(.tag){
 
               <td class="text-end text-nowrap">
                 <button
-                  class="btn btn-sm btn-light"
+                  class="btn btn-sm btn-light user-action-btn user-action-edit"
                   data-bs-toggle="modal"
                   data-bs-target="#editUser<?= (int)$user['user_id'] ?>"
                   title="Edit user"
@@ -820,7 +840,7 @@ div[style*="border-radius: 999px"]:not(.tag){
                 </button>
 
                 <button
-                  class="btn btn-sm btn-light"
+                  class="btn btn-sm btn-light user-action-btn user-action-reset"
                   data-bs-toggle="modal"
                   data-bs-target="#resetPassword<?= (int)$user['user_id'] ?>"
                   title="Reset password"
@@ -833,7 +853,7 @@ div[style*="border-radius: 999px"]:not(.tag){
                     <input type="hidden" name="action" value="change_status">
                     <input type="hidden" name="user_id" value="<?= (int)$user['user_id'] ?>">
                     <input type="hidden" name="status" value="inactive">
-                    <button class="btn btn-sm btn-light text-warning" title="Deactivate">
+                    <button class="btn btn-sm btn-light user-action-btn user-action-deactivate" title="Deactivate">
                       <i class="bi bi-person-dash"></i>
                     </button>
                   </form>
@@ -842,7 +862,7 @@ div[style*="border-radius: 999px"]:not(.tag){
                     <input type="hidden" name="action" value="change_status">
                     <input type="hidden" name="user_id" value="<?= (int)$user['user_id'] ?>">
                     <input type="hidden" name="status" value="active">
-                    <button class="btn btn-sm btn-light text-success" title="Activate">
+                    <button class="btn btn-sm btn-light user-action-btn user-action-activate" title="Activate">
                       <i class="bi bi-person-check"></i>
                     </button>
                   </form>
@@ -853,7 +873,7 @@ div[style*="border-radius: 999px"]:not(.tag){
                     <input type="hidden" name="action" value="change_status">
                     <input type="hidden" name="user_id" value="<?= (int)$user['user_id'] ?>">
                     <input type="hidden" name="status" value="suspended">
-                    <button class="btn btn-sm btn-light text-danger" title="Suspend">
+                    <button class="btn btn-sm btn-light user-action-btn user-action-suspend" title="Suspend">
                       <i class="bi bi-person-x"></i>
                     </button>
                   </form>
@@ -861,7 +881,7 @@ div[style*="border-radius: 999px"]:not(.tag){
 
                 <?php if ((int)$user['user_id'] !== (int)($_SESSION['user']['id'] ?? 0)): ?>
                   <button
-                    class="btn btn-sm btn-light text-danger"
+                    class="btn btn-sm btn-light user-action-btn user-action-delete"
                     type="button"
                     data-bs-toggle="modal"
                     data-bs-target="#deleteUser<?= (int)$user['user_id'] ?>"

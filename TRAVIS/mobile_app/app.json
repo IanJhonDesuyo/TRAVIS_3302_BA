@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "mobile_app",
-    "slug": "mobile_app",
-    "version": "1.0.0",
+    "name": "TRAVIS",
+    "slug": "travis-mobile",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "mobileapp",
@@ -11,13 +11,17 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "tech.travisnasugbu.mobile",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.CAMERA"
+      ]
     },
     "web": {
       "output": "static",
@@ -42,14 +46,41 @@
         "expo-image-picker",
         {
           "photosPermission": "Allow TRAVIS to select a traffic ticket for OCR scanning.",
-          "cameraPermission": "Allow TRAVIS to photograph a traffic ticket for OCR scanning."
+          "cameraPermission": "Allow TRAVIS to photograph a traffic ticket for OCR scanning.",
+          "microphonePermission": false
         }
       ],
-      "@react-native-community/datetimepicker"
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow TRAVIS to photograph a traffic ticket for OCR scanning.",
+          "recordAudioAndroid": false,
+          "barcodeScannerEnabled": false
+        }
+      ],
+      "@react-native-community/datetimepicker",
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "44c45531-671f-4f56-a011-c5fce1ee6c37"
+      }
+    },
+    "owner": "iandesuyopogi",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/44c45531-671f-4f56-a011-c5fce1ee6c37"
     }
   }
 }

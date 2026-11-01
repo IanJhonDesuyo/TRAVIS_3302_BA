@@ -1,7 +1,13 @@
 import axios from "axios";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import { notifySessionExpired } from "../utils/sessionEvents";
+import {
+  clearStoredUser,
+  getStoredRefreshToken,
+  getStoredSessionId,
+  saveMobileSession,
+  TravisUser,
+} from "../utils/session";
 
 const FALLBACK_APP_HOST = "192.168.1.40";
 const expoHostUri = Constants.expoConfig?.hostUri || Constants.expoGoConfig?.debuggerHost;
@@ -44,7 +50,14 @@ export const mlApi = axios.create({
 // ============================================================
 // REQUEST INTERCEPTOR
 // ============================================================
-api.interceptors.request.use((config) => {
+api.interceptors.request.use(async (config) => {
+
+  const [sessionId, refreshToken] = await Promise.all([
+    getStoredSessionId(),
+    getStoredRefreshToken(),
+  ]);
+  if (sessionId) config.headers.Cookie = `PHPSESSID=${sessionId}`;
+  if (refreshToken) config.headers['X-TRAVIS-Mobile-Token'] = refreshToken;
 
   const method = config.method?.toUpperCase() || 'UNKNOWN';
   const url = config.url || 'unknown-url';
@@ -57,6 +70,31 @@ api.interceptors.request.use((config) => {
   console.log("==================================");
   return config;
 });
+
+let refreshPromise: Promise<TravisUser> | null = null;
+
+export async function refreshMobileSession(): Promise<TravisUser> {
+  if (refreshPromise) return refreshPromise;
+  refreshPromise = (async () => {
+    const refreshToken = await getStoredRefreshToken();
+    if (!refreshToken) throw new Error('No saved mobile session');
+    const response = await axios.post(`${BASE_URL}mobile_refresh.php`, {}, {
+      timeout: 10000,
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'X-TRAVIS-Mobile-Token': refreshToken,
+      },
+    });
+    const payload = response.data;
+    if (!payload?.success || !payload?.session_id || !payload?.refresh_token || !payload?.user) {
+      throw new Error('Invalid mobile session response');
+    }
+    await saveMobileSession(payload.user, payload.session_id, payload.refresh_token);
+    return payload.user as TravisUser;
+  })().finally(() => { refreshPromise = null; });
+  return refreshPromise;
+}
 
 // =================================================
 // RESPONSE INTERCEPTOR
@@ -80,9 +118,19 @@ api.interceptors.response.use(
     const requestPath = String(error.config?.url || '').toLowerCase();
     const isAuthenticationRequest = requestPath.includes('login.php');
 
-    if (error.response?.status === 401 && !isAuthenticationRequest) {
-      await AsyncStorage.removeItem('travis_user');
-      notifySessionExpired();
+    const isRefreshRequest = requestPath.includes('mobile_refresh.php');
+    const originalRequest = error.config as typeof error.config & { _travisRetried?: boolean };
+    if (error.response?.status === 401 && !isAuthenticationRequest && !isRefreshRequest && !originalRequest?._travisRetried) {
+      try {
+        originalRequest._travisRetried = true;
+        await refreshMobileSession();
+        const sessionId = await getStoredSessionId();
+        if (sessionId) originalRequest.headers.Cookie = `PHPSESSID=${sessionId}`;
+        return api.request(originalRequest);
+      } catch {
+        await clearStoredUser();
+        notifySessionExpired();
+      }
     }
     
     return Promise.reject(error);

@@ -1,0 +1,80 @@
+{
+    "profile_name": "nice one",
+    "road_roi": [
+        [
+            0,
+            0
+        ],
+        [
+            1,
+            0
+        ],
+        [
+            1,
+            1
+        ],
+        [
+            0,
+            1
+        ]
+    ],
+    "inbound_line": [
+        [
+            0.12676306862487305,
+            0.5757053841364473
+        ],
+        [
+            0.33218886290892935,
+            0.4517064174611696
+        ]
+    ],
+    "outbound_line": [
+        [
+            0.6246594852794501,
+            0.4579063657949335
+        ],
+        [
+            0.2706771843944944,
+            0.8712362547125259
+        ]
+    ],
+    "officer_zone": [
+        [
+            0.11631768925449731,
+            0.6253049708065583
+        ],
+        [
+            0.11863888467013638,
+            0.7307040924805445
+        ],
+        [
+            0.18595355172366895,
+            0.7286374430359565
+        ],
+        [
+            0.19407773567840564,
+            0.6067051258052667
+        ]
+    ],
+    "officer": {
+        "enabled": true,
+        "presence_frames": 3,
+        "absence_frames": 15
+    },
+    "collision": {
+        "enabled": true,
+        "ttc_warning_seconds": 2.5,
+        "maximum_pair_distance": 2.6,
+        "contact_iou": 0.08,
+        "confirmation_iou": 0.04,
+        "possible_frames": 3,
+        "confirmed_frames": 4,
+        "risk_memory_seconds": 4,
+        "minimum_track_confidence": 0.45,
+        "minimum_motorcycle_confidence": 0.25,
+        "occlusion_confirmation_frames": 3,
+        "occlusion_window_seconds": 2,
+        "occlusion_max_distance": 1.5,
+        "cooldown_seconds": 30
+    }
+}
