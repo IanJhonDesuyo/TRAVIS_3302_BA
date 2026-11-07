@@ -48,8 +48,19 @@ function calibration_analysis_is_active(): bool
     $analysisUpdated = (int)($analysisStatus['updated_at_epoch'] ?? 0);
     $latestUpdated = (int)($latestStatus['updated_at_epoch'] ?? 0);
 
+    // A fresh stop/error heartbeat takes precedence over the last video frame.
+    // Without this, Edit/Delete remains blocked for several seconds after the
+    // worker has already stopped because latest_status.json is still recent.
+    if (in_array($analysisState, ['idle', 'stopped', 'completed', 'error'], true)
+        && $analysisUpdated > 0
+        && time() - $analysisUpdated <= 30) {
+        return false;
+    }
+
     return ($latestUpdated > 0 && time() - $latestUpdated <= 6)
-        || ($analysisState === 'starting' && $analysisUpdated > 0 && time() - $analysisUpdated <= 30);
+        || (in_array($analysisState, ['running', 'starting'], true)
+            && $analysisUpdated > 0
+            && time() - $analysisUpdated <= 30);
 }
 
 function calibration_archive_path(string $directory, string $file): ?string
@@ -168,16 +179,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'DELETE') {
         exit;
     }
 
-    if (!@rename($path, $archivePath)) {
+    require_once __DIR__ . '/../Admin/db_connect.php';
+    $fallbackProfile = 'example.json';
+    $reassignedCameraCount = 0;
+    $fileArchived = false;
+
+    try {
+        $conn->begin_transaction();
+        $reassign = $conn->prepare('UPDATE cameras SET calibration_profile=? WHERE calibration_profile=?');
+        $reassign->bind_param('ss', $fallbackProfile, $file);
+        $reassign->execute();
+        $reassignedCameraCount = max(0, (int)$reassign->affected_rows);
+
+        if (!@rename($path, $archivePath)) {
+            throw new RuntimeException('Unable to archive the configuration file.');
+        }
+        $fileArchived = true;
+        $conn->commit();
+    } catch (Throwable $error) {
+        $conn->rollback();
+        if ($fileArchived && is_file($archivePath)) {
+            @rename($archivePath, $path);
+        }
         http_response_code(500);
-        echo json_encode(['success' => false, 'message' => 'Unable to remove the configuration.']);
+        echo json_encode(['success' => false, 'message' => 'Unable to remove the configuration safely.']);
         exit;
     }
 
     echo json_encode([
         'success' => true,
-        'message' => 'Intersection configuration deleted. A recovery copy was archived.',
+        'message' => $reassignedCameraCount > 0
+            ? "Line configuration deleted and {$reassignedCameraCount} assigned camera(s) were moved to the default configuration. A recovery copy was archived."
+            : 'Line configuration deleted. A recovery copy was archived.',
         'profile' => ['file' => $file, 'name' => $name],
+        'fallback_profile' => $fallbackProfile,
+        'reassigned_camera_count' => $reassignedCameraCount,
     ]);
     exit;
 }
@@ -219,12 +255,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'PUT') {
         echo json_encode(['success' => false, 'message' => 'Select a valid intersection configuration.']);
         exit;
     }
-    if (calibration_analysis_is_active()) {
-        http_response_code(409);
-        echo json_encode(['success' => false, 'message' => 'Stop the active analysis before editing a configuration.']);
-        exit;
-    }
-
     $path = $directory . DIRECTORY_SEPARATOR . $file;
     if (!is_file($path)) {
         http_response_code(404);

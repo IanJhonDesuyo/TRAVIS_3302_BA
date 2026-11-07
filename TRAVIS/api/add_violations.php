@@ -150,8 +150,19 @@ foreach ($submittedItems as $submittedItem) {
     if ($itemType === '' && $hasNoLicense) {
         continue;
     }
-    if (!in_array($itemType, travis_violation_types(), true)) {
+    if (!travis_is_allowed_violation_type($itemType)) {
         http_response_code(422); echo json_encode(['success' => false, 'error' => 'Every violation must come from the official list']); exit;
+    }
+    if (travis_base_violation_type($itemType) === 'Other Traffic Violation') {
+        $otherNotSpecified = filter_var($submittedItem['other_violation_not_specified'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        $otherSpecification = trim((string)($submittedItem['other_violation_specification'] ?? ''));
+        if (!$otherNotSpecified && $otherSpecification === '') {
+            http_response_code(422); echo json_encode(['success' => false, 'error' => 'Specify the other traffic violation or select Not specified']); exit;
+        }
+        if (mb_strlen($otherSpecification) > 80) {
+            http_response_code(422); echo json_encode(['success' => false, 'error' => 'Other traffic violation details must not exceed 80 characters']); exit;
+        }
+        $itemType = 'Other Traffic Violation: ' . ($otherNotSpecified ? 'Not specified' : $otherSpecification);
     }
     if ($itemPenalty === false || (float)$itemPenalty <= 0 || (float)$itemPenalty > 99999999.99) {
         http_response_code(422); echo json_encode(['success' => false, 'error' => "Enter a valid positive penalty for {$itemType}"]); exit;

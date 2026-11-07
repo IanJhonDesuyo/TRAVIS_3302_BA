@@ -683,7 +683,7 @@ body.municipal-portal #cctvVideoInput::-webkit-file-upload-button{
 .camera-registry-card.is-selected{border-color:#0b8f89!important;box-shadow:0 0 0 2px rgba(8,125,120,.12),0 7px 18px rgba(16,47,73,.08)}
 .camera-monitor-screen canvas{position:absolute;inset:0;z-index:1;width:100%;height:100%;object-fit:cover}.camera-monitor-placeholder{z-index:0}
 .camera-monitor-screen{position:relative;aspect-ratio:16/9;overflow:hidden;background:linear-gradient(145deg,#07111f,#102f49);color:#d9e8e3}.camera-monitor-screen img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}.camera-monitor-placeholder{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:7px;background:radial-gradient(circle at 50% 30%,rgba(56,189,248,.12),transparent 45%)}.camera-monitor-placeholder i{font-size:1.45rem;color:#65d5ce}.camera-monitor-placeholder small{color:#9db4ad!important;font-size:.65rem}.camera-monitor-open{position:absolute;inset:0;z-index:3;border:0;background:transparent;cursor:zoom-in}.camera-monitor-open:focus-visible{outline:3px solid #38bdf8;outline-offset:-4px}.camera-monitor-live{position:absolute;top:9px;left:9px;z-index:4;display:inline-flex;align-items:center;gap:5px;padding:4px 8px;border-radius:999px;background:rgba(6,15,30,.78);color:#fff;font-size:.61rem;font-weight:800;text-transform:uppercase}.camera-monitor-live::before{content:"";width:6px;height:6px;border-radius:50%;background:#34d399;box-shadow:0 0 0 3px rgba(52,211,153,.2)}
-.camera-registry-card-foot{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px;padding:11px 12px}.camera-registry-card h6{margin:0;color:#10202c!important;font-size:.8rem;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.camera-registry-card p{margin:2px 0 0;color:#667a74!important;font-size:.64rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.camera-registry-actions{display:flex;align-items:center;gap:6px}.camera-registry-actions .btn{position:relative;z-index:5;min-height:32px!important;height:32px!important;border-radius:8px!important;box-shadow:none!important}.camera-registry-actions .camera-join-btn{width:auto!important;padding:0 10px!important;background:#087d78!important}.camera-registry-actions .camera-settings-btn{width:34px!important;padding:0!important;color:#405b54!important;background:#fff!important;border:1px solid rgba(16,47,73,.2)!important}
+.camera-registry-card-foot{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px;padding:11px 12px}.camera-registry-card h6{margin:0;color:#10202c!important;font-size:.8rem;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.camera-registry-card p{margin:2px 0 0;color:#667a74!important;font-size:.64rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.camera-registry-actions{display:flex;align-items:center;gap:6px}.camera-registry-actions .btn{position:relative;z-index:5;min-height:32px!important;height:32px!important;border-radius:8px!important;box-shadow:none!important}.camera-registry-actions .camera-join-btn{width:auto!important;padding:0 10px!important;background:#087d78!important}.camera-registry-actions .camera-settings-btn{width:34px!important;padding:0!important;color:#405b54!important;background:#fff!important;border:1px solid rgba(16,47,73,.2)!important}.assigned-calibration-row{display:grid;grid-template-columns:minmax(0,1fr) 44px;gap:8px}.assigned-calibration-row .btn{width:44px;min-height:43px!important;padding:0!important;border-radius:11px!important}
 .camera-registry-card.is-empty{border-style:dashed!important;background:rgba(247,250,249,.8)!important;box-shadow:none}.camera-registry-card.is-empty .camera-monitor-screen{background:#eef4f2}.camera-registry-card.is-empty .camera-monitor-placeholder{color:#6b7f79;background:none}.camera-registry-card.is-empty .camera-monitor-placeholder i{color:#8da39d}.camera-registry-card.is-empty .camera-monitor-placeholder small{color:#758a84!important}.camera-slot-add{position:absolute;inset:0;z-index:3;border:0;background:transparent;cursor:pointer}
 .camera-registry-empty{grid-column:1/-1;padding:18px;border:1px dashed rgba(16,47,73,.2);border-radius:12px;color:#667a74;text-align:center}
 body.municipal-portal .camera-settings-modal .modal-content{border:1px solid rgba(16,47,73,.16)!important;border-radius:18px!important;background:#fff!important;color:#10202c!important;box-shadow:0 22px 60px rgba(16,47,73,.22)!important}body.municipal-portal .camera-settings-modal .modal-header,body.municipal-portal .camera-settings-modal .modal-footer{border-color:rgba(16,47,73,.1)!important}body.municipal-portal .camera-settings-modal .modal-title{color:#10202c!important}body.municipal-portal .camera-settings-modal .btn-close{filter:none!important}
@@ -754,6 +754,7 @@ body.municipal-portal .camera-settings-modal .modal-content{border:1px solid rgb
         id="cameraStage"
         data-webrtc-url="<?= esc($webrtcStreamUrl) ?>"
         data-camera-id="<?= $selectedCameraId ?>"
+        data-calibration-profile="<?= esc($cameraProfile) ?>"
       >
         <iframe
           id="webrtcLiveStream"
@@ -1088,7 +1089,7 @@ body.municipal-portal .camera-settings-modal .modal-content{border:1px solid rgb
           <div class="col-md-6"><label class="form-label" for="registryCameraUsername">Tapo camera account</label><input class="form-control" id="registryCameraUsername" maxlength="120" autocomplete="username"></div>
           <div class="col-md-6"><label class="form-label" for="registryCameraPassword">Camera password</label><input class="form-control" id="registryCameraPassword" type="password" autocomplete="new-password" placeholder="Leave blank to reuse saved edge password"></div>
           <div class="col-md-6"><label class="form-label" for="registryCameraStream">Stream quality</label><select class="form-select" id="registryCameraStream"><option value="stream2">Standard quality (recommended)</option><option value="stream1">High quality</option></select></div>
-          <div class="col-md-6"><label class="form-label" for="registryCameraCalibration">Assigned line configuration</label><select class="form-select" id="registryCameraCalibration"><option value="">No profile assigned</option><?php foreach ($calibrationProfiles as $profile): ?><option value="<?= esc($profile['file']) ?>"><?= esc($profile['name']) ?></option><?php endforeach; ?></select><small class="text-muted">Select the configuration used by this camera.</small></div>
+          <div class="col-md-6"><label class="form-label" for="registryCameraCalibration">Assigned line configuration</label><div class="assigned-calibration-row"><select class="form-select" id="registryCameraCalibration"><option value="">No profile assigned</option><?php foreach ($calibrationProfiles as $profile): ?><option value="<?= esc($profile['file']) ?>"><?= esc($profile['name']) ?></option><?php endforeach; ?></select><button class="btn btn-outline-primary" type="button" id="refreshAssignedCalibrationBtn" aria-label="Reload the assigned line configuration" title="Reload edited lines in the active monitoring feed"><i class="bi bi-arrow-clockwise"></i></button></div><small class="text-muted">Save Camera when changing the assignment. Use refresh to reload edits made to the currently assigned profile.</small></div>
           <div class="col-md-6"><label class="form-label" for="registryCameraWorker">Gate worker ID</label><input class="form-control" id="registryCameraWorker" maxlength="100" placeholder="GATE-LAPTOP-cv"><small class="text-muted">Optional until multiple gate workers are installed.</small></div>
           <div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" id="registryCameraEnabled" checked><label class="form-check-label" for="registryCameraEnabled">Camera enabled for monitoring</label></div></div>
           <div class="col-12"><div class="camera-line-settings" id="cameraLineSettings"><div class="camera-line-settings-head"><i class="bi bi-bezier2"></i><div><strong>Line configurations</strong><small>Create, edit, or remove counting-line profiles.</small></div></div><div id="cameraLineConfigurationControls"></div></div></div>
@@ -1153,12 +1154,12 @@ document.addEventListener('DOMContentLoaded', () => {
     uploadSourceCard.parentElement?.insertBefore(calibrationEditor, uploadSourceCard);
   }
 
-  ['newCalibrationBtn', 'editCalibrationBtn'].forEach(id => {
-    document.getElementById(id)?.addEventListener('click', () => {
-      modal?.hide();
-      window.setTimeout(() => document.getElementById('monitoringDetailPanel')?.scrollIntoView({behavior: 'smooth', block: 'start'}), 180);
-    });
-  });
+  const revealCalibrationEditor = () => {
+    modal?.hide();
+    window.setTimeout(() => document.getElementById('monitoringDetailPanel')?.scrollIntoView({behavior: 'smooth', block: 'start'}), 180);
+  };
+  document.getElementById('newCalibrationBtn')?.addEventListener('click', revealCalibrationEditor);
+  document.addEventListener('travis:calibration-editor-opened', revealCalibrationEditor);
 
   const fields = {
     id: document.getElementById('registryCameraId'),
@@ -1174,12 +1175,30 @@ document.addEventListener('DOMContentLoaded', () => {
   };
   const message = document.getElementById('cameraSettingsMessage');
   const saveButton = document.getElementById('saveCameraSettingsBtn');
+  const refreshAssignedCalibrationButton = document.getElementById('refreshAssignedCalibrationBtn');
+  let originalCamera = {};
+
+  function syncManagedCalibrationToAssigned() {
+    if (!calibrationProfile || !fields.calibration) return;
+    const assignedFile = String(fields.calibration.value || '');
+    if (Array.from(calibrationProfile.options).some(option => option.value === assignedFile)) {
+      calibrationProfile.value = assignedFile;
+    }
+  }
+
+  function updateAssignedCalibrationRefreshState() {
+    if (!refreshAssignedCalibrationButton) return;
+    const hasCamera = Number(fields.id.value || 0) > 0;
+    const hasProfile = String(fields.calibration.value || '') !== '';
+    refreshAssignedCalibrationButton.disabled = !hasCamera || !hasProfile;
+  }
 
   function readCamera(card) {
     try { return JSON.parse(card?.dataset.camera || '{}'); } catch (_) { return {}; }
   }
 
   function populate(camera = {}) {
+    originalCamera = {...camera};
     fields.id.value = camera.camera_id || 0;
     fields.name.value = camera.camera_name || '';
     fields.location.value = camera.location || '';
@@ -1193,9 +1212,67 @@ document.addEventListener('DOMContentLoaded', () => {
     fields.calibration.value = camera.calibration_profile || '';
     fields.worker.value = camera.edge_worker_id || '';
     fields.enabled.checked = String(camera.is_enabled ?? '1') !== '0';
+    syncManagedCalibrationToAssigned();
+    updateAssignedCalibrationRefreshState();
     message.textContent = '';
     document.getElementById('cameraSettingsTitle').textContent = camera.camera_id ? 'Camera Settings' : 'Register Camera';
   }
+
+  fields.calibration?.addEventListener('change', () => {
+    syncManagedCalibrationToAssigned();
+    updateAssignedCalibrationRefreshState();
+  });
+
+  refreshAssignedCalibrationButton?.addEventListener('click', async () => {
+    const cameraId = Number(fields.id.value || 0);
+    const activeCameraId = Number(document.getElementById('cameraStage')?.dataset.cameraId || 0);
+    const assignedProfile = String(fields.calibration.value || '');
+    const savedAssignment = String(originalCamera.calibration_profile || '');
+
+    if (!cameraId || !assignedProfile) {
+      message.className = 'small mt-3 text-danger';
+      message.textContent = 'Select a saved line configuration first.';
+      return;
+    }
+    if (assignedProfile !== savedAssignment) {
+      message.className = 'small mt-3 text-warning';
+      message.textContent = 'This assignment has not been saved yet. Click Save Camera before reloading it.';
+      return;
+    }
+    if (activeCameraId !== cameraId) {
+      message.className = 'small mt-3 text-warning';
+      message.textContent = 'Open or join this camera first, then reload its assigned lines.';
+      return;
+    }
+    if (typeof window.travisApplyCameraConfiguration !== 'function') {
+      message.className = 'small mt-3 text-danger';
+      message.textContent = 'The monitoring controller is not ready. Refresh the page and try again.';
+      return;
+    }
+
+    refreshAssignedCalibrationButton.disabled = true;
+    message.className = 'small mt-3 text-info';
+    message.textContent = 'Reloading the edited line configuration...';
+    document.getElementById('cameraStage').dataset.calibrationProfile = assignedProfile;
+    try {
+      const result = await window.travisApplyCameraConfiguration({
+        calibrationProfile: assignedProfile,
+        previousCalibrationProfile: assignedProfile
+      });
+      if (result?.success !== true) {
+        throw new Error(result?.message || 'Unable to reload the assigned line configuration.');
+      }
+      message.className = 'small mt-3 text-success';
+      message.textContent = result.restarted
+        ? 'The edited lines were applied. Computer Vision is reconnecting to the feed.'
+        : 'The edited profile is ready and will be loaded when monitoring starts.';
+    } catch (error) {
+      message.className = 'small mt-3 text-danger';
+      message.textContent = error.message || 'Unable to reload the assigned line configuration.';
+    } finally {
+      updateAssignedCalibrationRefreshState();
+    }
+  });
 
   function selectCamera(camera, card) {
     document.querySelectorAll('.camera-registry-card.is-selected').forEach(item => item.classList.remove('is-selected'));
@@ -1204,6 +1281,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('activeCameraLocation').textContent = camera.location || '';
     document.getElementById('sessionCameraName').textContent = camera.camera_name || 'No camera selected';
     document.getElementById('cameraStage').dataset.cameraId = camera.camera_id || 0;
+    document.getElementById('cameraStage').dataset.calibrationProfile = camera.calibration_profile || '';
     document.getElementById('tapoHost').value = camera.ip_address || '';
     document.getElementById('tapoUsername').value = camera.camera_username || '';
     document.getElementById('tapoStream').value = camera.stream_quality === 'stream1' ? 'stream1' : 'stream2';
@@ -1269,6 +1347,19 @@ document.addEventListener('DOMContentLoaded', () => {
       edge_worker_id: fields.worker.value.trim(),
       is_enabled: fields.enabled.checked
     };
+    const previousCamera = {...originalCamera};
+    const activeCameraId = Number(document.getElementById('cameraStage').dataset.cameraId || 0);
+    const runtimeSettingsChanged = Number(payload.camera_id) > 0 && (
+      String(previousCamera.calibration_profile || '') !== String(payload.calibration_profile || '')
+      || String(previousCamera.ip_address || '') !== String(payload.ip_address || '')
+      || String(previousCamera.camera_username || '') !== String(payload.camera_username || '')
+      || String(previousCamera.stream_quality || 'stream2') !== String(payload.stream_quality || 'stream2')
+      || (String(previousCamera.is_enabled ?? '1') !== '0') !== Boolean(payload.is_enabled)
+      || payload.camera_password !== ''
+    );
+    const appliesToActiveCamera = Number(payload.camera_id) > 0
+      && activeCameraId === Number(payload.camera_id);
+    let runtimeRestarted = false;
     try {
       const response = await fetch('../api/cameras.php', {
         method: 'POST',
@@ -1284,15 +1375,62 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('tapoPassword').value = fields.password.value;
       document.getElementById('tapoStream').value = payload.stream_quality;
       document.getElementById('calibrationProfile').value = payload.calibration_profile;
+
+      if (appliesToActiveCamera) {
+        document.getElementById('cameraStage').dataset.calibrationProfile = payload.calibration_profile;
+      }
+
+      if (runtimeSettingsChanged && appliesToActiveCamera && typeof window.travisApplyCameraConfiguration === 'function') {
+        message.className = 'small mt-3 text-info';
+        message.textContent = 'Camera saved. Applying the assigned line configuration...';
+        const applyResult = await window.travisApplyCameraConfiguration({
+          calibrationProfile: payload.calibration_profile,
+          previousCalibrationProfile: previousCamera.calibration_profile || ''
+        });
+
+        if (applyResult?.success !== true) {
+          const rollbackPayload = {
+            csrf_token: document.getElementById('cameraRegistryCsrf').value,
+            camera_id: Number(previousCamera.camera_id || payload.camera_id),
+            camera_name: previousCamera.camera_name || payload.camera_name,
+            location: previousCamera.location || payload.location,
+            ip_address: previousCamera.ip_address || payload.ip_address,
+            camera_username: previousCamera.camera_username || payload.camera_username,
+            camera_password: '',
+            stream_quality: previousCamera.stream_quality || payload.stream_quality,
+            calibration_profile: previousCamera.calibration_profile || '',
+            edge_worker_id: previousCamera.edge_worker_id || '',
+            is_enabled: String(previousCamera.is_enabled ?? '1') !== '0'
+          };
+          const rollbackResponse = await fetch('../api/cameras.php', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(rollbackPayload)
+          });
+          const rollbackResult = await rollbackResponse.json();
+          if (!rollbackResponse.ok || rollbackResult.success !== true) {
+            throw new Error(`${applyResult.message || 'Unable to apply the selected configuration.'} The previous database assignment could not be restored automatically.`);
+          }
+          fields.calibration.value = rollbackPayload.calibration_profile;
+          document.getElementById('cameraStage').dataset.calibrationProfile = rollbackPayload.calibration_profile;
+          throw new Error(`${applyResult.message || 'Unable to apply the selected configuration.'} The previous assignment${applyResult.restored ? ' and feed were' : ' was'} restored.`);
+        }
+        runtimeRestarted = applyResult.restarted === true;
+      }
+
       message.className = 'small mt-3 text-success';
       if (fields.password.value) {
-        message.textContent = result.message + ' Connecting once now to securely store the credential on the gate laptop.';
+        message.textContent = runtimeRestarted
+          ? result.message + ' The monitoring worker is reconnecting with the updated camera credential.'
+          : result.message + ' Connecting once now to securely store the credential on the gate laptop.';
         const source = document.getElementById('monitoringSource');
         source.value = 'tapo_camera';
         source.dispatchEvent(new Event('change', { bubbles: true }));
         window.setTimeout(() => {
           modal?.hide();
-          if (typeof window.travisJoinMonitoringFeed === 'function') {
+          if (runtimeRestarted) {
+            window.location.assign(`monitoring.php?camera_id=${result.camera_id}`);
+          } else if (typeof window.travisJoinMonitoringFeed === 'function') {
             window.travisJoinMonitoringFeed();
           } else {
             document.getElementById('startAnalysisBtn')?.click();

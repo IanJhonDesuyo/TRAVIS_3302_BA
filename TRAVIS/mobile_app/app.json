@@ -2,8 +2,8 @@
   "expo": {
     "name": "TRAVIS",
     "slug": "travis-mobile",
-    "version": "1.0.2",
-    "orientation": "portrait",
+    "version": "1.0.3",
+    "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "mobileapp",
     "userInterfaceStyle": "automatic",
@@ -45,21 +45,27 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow TRAVIS to select a traffic ticket for OCR scanning.",
-          "cameraPermission": "Allow TRAVIS to photograph a traffic ticket for OCR scanning.",
+          "photosPermission": "Allow TRAVIS to select a driver's license for OCR scanning.",
+          "cameraPermission": "Allow TRAVIS to photograph a driver's license for OCR scanning.",
           "microphonePermission": false
         }
       ],
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow TRAVIS to photograph a traffic ticket for OCR scanning.",
+          "cameraPermission": "Allow TRAVIS to photograph a driver's license for OCR scanning.",
           "recordAudioAndroid": false,
           "barcodeScannerEnabled": false
         }
       ],
       "@react-native-community/datetimepicker",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-screen-orientation",
+        {
+          "initialOrientation": "PORTRAIT_UP"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

@@ -3,7 +3,7 @@ import numpy as np
 
 from ticket_ocr import (
     OCRItem, deskew_ticket, detect_checked_violations, document_warp, extract, label_match,
-    normalize_date, normalize_time, violation_section_bounds,
+    normalize_date, normalize_time, parse_person_name, violation_section_bounds,
 )
 
 
@@ -26,9 +26,9 @@ def test_two_column_ticket_does_not_cross_assign_values():
     assert fields["license_number"] == "NO LICENSE"
     assert fields["plate_number"] == "QWDQW123"
     assert fields["vehicle_type"] == "Motorcycle"
-    assert fields["violation_type"] == "No Driver's License"
     assert fields["location"] == "BUCANA"
-    assert fields["penalty_amount"] == "300"
+    assert "violation_type" not in fields
+    assert "penalty_amount" not in fields
 
 
 def test_official_driver_apostrophe_label_is_supported():
@@ -133,7 +133,7 @@ def test_combined_violation_datetime_populates_both_fields():
     assert normalize_time("October 29, 2026 07:05 a.m.") == "07:05"
 
 
-def test_officer_name_and_position_are_limited_to_officer_section():
+def test_officer_name_and_position_are_not_part_of_ocr_output():
     fields = extract([
         item("DRIVER'S NAME:", 20, 10, 150, 30), item("JUAN DELA CRUZ", 170, 10, 330, 30),
         item("Apprehending / Arresting Officer", 20, 500, 300, 525),
@@ -142,8 +142,8 @@ def test_officer_name_and_position_are_limited_to_officer_section():
     ])
 
     assert fields["driver_name"] == "JUAN DELA CRUZ"
-    assert fields["apprehending_officer_name"] == "PEDRO SANTOS"
-    assert fields["apprehending_officer_position"] == "TMO II"
+    assert "apprehending_officer_name" not in fields
+    assert "apprehending_officer_position" not in fields
 
 
 def test_blank_remarks_does_not_capture_the_printed_legal_instruction():
@@ -153,29 +153,56 @@ def test_blank_remarks_does_not_capture_the_printed_legal_instruction():
         item("You are hereby directed to report to Municipal Treasurer's Office", 20, 550, 620, 575),
         item("within 72 hours from the date hereof", 20, 580, 380, 605),
     ])
-    assert fields["ticket_remarks"] == ""
+    assert "ticket_remarks" not in fields
 
 
-def test_officer_rows_do_not_capture_the_apprehension_date_and_time():
+def test_officer_rows_are_ignored_even_when_handwriting_is_present():
     fields = extract([
         item("Apprehending / Arresting Officer", 20, 500, 300, 525),
         item("Name:", 20, 550, 80, 570), item("Ian Desuyo", 100, 550, 220, 570),
         item("Position:", 20, 590, 100, 610), item("Patrolman", 120, 590, 220, 610),
         item("Date and Time:", 20, 630, 150, 650), item("09-04-2026 2:00PM", 170, 630, 350, 650),
     ])
-    assert fields["apprehending_officer_name"] == "Ian Desuyo"
-    assert fields["apprehending_officer_position"] == "Patrolman"
+    assert "apprehending_officer_name" not in fields
+    assert "apprehending_officer_position" not in fields
 
 
-def test_missing_officer_handwriting_does_not_use_date_as_name_or_position():
+def test_missing_officer_handwriting_is_not_exposed_as_an_ocr_field():
     fields = extract([
         item("Apprehending / Arresting Officer", 20, 500, 300, 525),
         item("Name:", 20, 550, 80, 570),
         item("Position:", 20, 590, 100, 610),
         item("Date and Time:", 20, 630, 150, 650), item("09-04-2026 2:00PM", 170, 630, 350, 650),
     ])
-    assert fields["apprehending_officer_name"] == ""
-    assert fields["apprehending_officer_position"] == ""
+    assert "apprehending_officer_name" not in fields
+    assert "apprehending_officer_position" not in fields
+
+
+def test_full_name_is_split_but_raw_value_is_preserved():
+    parsed = parse_person_name("Dave Masambal")
+    assert parsed == {
+        "driver_name": "Dave Masambal",
+        "driver_first_name": "Dave",
+        "driver_middle_name": "",
+        "driver_last_name": "Masambal",
+        "driver_suffix": "",
+    }
+
+
+def test_comma_name_and_suffix_are_split_conservatively():
+    parsed = parse_person_name("Ramos, Juan Dela Cruz Jr.")
+    assert parsed["driver_name"] == "Ramos, Juan Dela Cruz Jr."
+    assert parsed["driver_first_name"] == "Juan"
+    assert parsed["driver_middle_name"] == "Dela Cruz"
+    assert parsed["driver_last_name"] == "Ramos"
+    assert parsed["driver_suffix"] == "Jr"
+
+
+def test_compound_surname_is_kept_together_without_a_comma():
+    parsed = parse_person_name("Juan Dela Cruz")
+    assert parsed["driver_first_name"] == "Juan"
+    assert parsed["driver_middle_name"] == ""
+    assert parsed["driver_last_name"] == "Dela Cruz"
 
 
 def test_document_photo_is_detected_and_perspective_corrected():
@@ -249,3 +276,37 @@ def test_supplied_nasugbu_ticket_layout_keeps_each_value_in_its_own_field():
     assert fields["plate_number"] == "25MA2"
     assert fields["vehicle_color"] == "Blue"
     assert fields["vehicle_type"] == "Motorcycle"
+
+
+def test_adjacent_date_and_address_rows_cannot_become_driver_name():
+    fields = extract([
+        item("DATE:", 20, 10, 80, 30), item("September 29, 2026", 100, 10, 270, 30),
+        item("DRIVER'S NAME:", 20, 40, 155, 60), item("Dave Masambal", 175, 40, 320, 60),
+        item("ADDRESS:", 20, 70, 105, 90), item("BUCANA, NASUGBU", 125, 70, 300, 90),
+    ])
+
+    assert fields["driver_name"] == "Dave Masambal"
+    assert fields["driver_first_name"] == "Dave"
+    assert fields["driver_last_name"] == "Masambal"
+    assert fields["driver_address"] == "BUCANA, NASUGBU"
+
+
+def test_missing_name_is_left_blank_instead_of_using_an_adjacent_address():
+    fields = extract([
+        item("DATE:", 20, 10, 80, 30), item("September 29, 2026", 100, 10, 270, 30),
+        item("DRIVER'S NAME:", 20, 40, 155, 60),
+        item("ADDRESS:", 20, 70, 105, 90), item("BUCANA, NASUGBU", 125, 70, 300, 90),
+    ])
+
+    assert fields["driver_name"] == ""
+    assert fields["driver_first_name"] == ""
+    assert fields["driver_address"] == "BUCANA, NASUGBU"
+
+
+def test_others_specify_checklist_text_cannot_become_location():
+    fields = extract([
+        item("OTHERS (Specify)", 400, 450, 560, 470),
+        item("Place of Violation:", 390, 500, 530, 520), item("JP Laurel St.", 550, 500, 670, 520),
+    ])
+
+    assert fields["location"] == "JP Laurel St."

@@ -2,6 +2,7 @@ import { Stack, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import React, { useEffect, useState } from "react";
+import * as ScreenOrientation from "expo-screen-orientation";
 import SessionExpiredModal from "../components/SessionExpiredModal";
 import { registerSessionExpiredListener } from "../utils/sessionEvents";
 
@@ -10,6 +11,10 @@ export default function RootLayout() {
   const [sessionExpired, setSessionExpired] = useState(false);
 
   useEffect(() => registerSessionExpiredListener(() => setSessionExpired(true)), []);
+
+  useEffect(() => {
+    void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => undefined);
+  }, []);
 
   const returnToLogin = () => {
     setSessionExpired(false);

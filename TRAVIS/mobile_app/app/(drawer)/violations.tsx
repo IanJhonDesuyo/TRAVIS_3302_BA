@@ -15,16 +15,17 @@ import {
   Linking,
   Platform,
   KeyboardAvoidingView,
+  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Href, useLocalSearchParams, useRouter, useSegments } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router/react-navigation';
 import api from '../../api/axiosConfig';
-import * as ImagePicker from 'expo-image-picker';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { Picker } from '@react-native-picker/picker';
+import * as ScreenOrientation from 'expo-screen-orientation';
 
 // ========== COLOR TOKENS ==========
 const COLORS = {
@@ -90,7 +91,15 @@ interface Violator {
 
 type StatusFilter = '' | 'pending' | 'overdue' | 'paid' | 'cancelled';
 type OffenseAnalysis = { previous_offenses: number; suggested_offense: number; maximum_offense: number; at_maximum: boolean; matched_by: string | null; last_violation_date: string | null; last_ticket_number: string | null; suggested_penalty: number; penalty_schedule: number[] };
-type SelectedViolation = { violation_type: string; penalty_amount: string; ocr_confidence?: number; penalty_overridden?: boolean; auto_added?: boolean };
+type SelectedViolation = {
+  violation_type: string;
+  penalty_amount: string;
+  ocr_confidence?: number;
+  penalty_overridden?: boolean;
+  auto_added?: boolean;
+  other_violation_specification?: string;
+  other_violation_not_specified?: boolean;
+};
 type TmoOfficer = { officer_id: number; first_name: string; last_name: string; badge_number?: string; rank?: string; zone_name?: string };
 type TicketDateTimeField = 'date_of_birth' | 'license_expiry_date' | 'violation_date' | 'violation_time' | 'apprehension_date' | 'apprehension_time';
 
@@ -132,14 +141,80 @@ const buildStructuredDriverName = (lastName: string, firstName: string, middleNa
   return parts[0] && parts[1] ? parts.filter(Boolean).join(', ') : '';
 };
 
+const createEmptyViolationForm = () => {
+  const now = new Date();
+  const currentDate = formatDateValue(now);
+  const currentTime = formatTimeValue(now);
+  return {
+    driver_name: '', driver_last_name: '', driver_first_name: '', driver_middle_name: '', driver_suffix: '',
+    driver_address: '', date_of_birth: '', license_number: '', license_expiry_date: '', license_remarks: '',
+    plate_number: '', vehicle_owner: '', vehicle_registration_number: '', vehicle_color: '',
+    insurance_policy_number: '', coding_sticker_number: '', vehicle_toda: '', vehicle_type: 'Car',
+    violation_type: '', location: '', violation_date: currentDate, violation_time: currentTime,
+    penalty_amount: '', offense_number: '1', ticket_remarks: '', apprehending_officer_name: '',
+    apprehending_officer_position: '', apprehension_date: currentDate, apprehension_time: currentTime,
+  };
+};
+
+const normalizedOcrText = (value: unknown): string => safeText(value)
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, ' ')
+  .trim();
+
+const rejectedLicenseNamePhrases = [
+  'republic of the philippines', 'department of transportation', 'land transportation office',
+  'driver s license', 'assistant secretary', 'signature of licensee', 'nationality',
+  'date of birth', 'weight kg', 'height m', 'agency code', 'blood type', 'eyes color',
+  'restrictions', 'conditions', 'license no', 'expiration date',
+];
+
+const rejectedLicenseAddressPhrases = [
+  'republic of the philippines', 'department of transportation', 'land transportation office',
+  'driver s license', 'assistant secretary', 'signature of licensee',
+  'last name first name middle name',
+];
+
+const isPlausibleScannedName = (value: unknown): boolean => {
+  const normalized = normalizedOcrText(value);
+  if (!normalized || rejectedLicenseNamePhrases.some(phrase => normalized.includes(phrase))) return false;
+  if (/\d/.test(normalized)) return false;
+  const words = normalized.split(/\s+/).filter(Boolean);
+  return words.length >= 2 && words.length <= 8 && words.every(word => word.length >= 2);
+};
+
+const isPlausibleScannedAddress = (value: unknown): boolean => {
+  const raw = normalizeNamePart(safeText(value));
+  const normalized = normalizedOcrText(raw);
+  if (!normalized || raw.length > 180 || rejectedLicenseAddressPhrases.some(phrase => normalized.includes(phrase))) return false;
+  const words = normalized.split(/\s+/).filter(Boolean);
+  return words.length >= 2 && words.length <= 20;
+};
+
 const splitScannedDriverName = (value: string) => {
-  const normalizedName = normalizeNamePart(value);
+  let normalizedName = normalizeNamePart(value);
   if (!normalizedName) return { lastName: '', firstName: '', middleName: '', suffix: '' };
 
-  const suffixPattern = /\b(JR\.?|SR\.?|II|III|IV|V)$/i;
+  if (!normalizedName.includes(',')) {
+    normalizedName = normalizedName.replace(/^([A-Z][A-Z '\-]{1,38})[.;:]\s+(.+)$/i, '$1, $2');
+  }
+  const surnameSeed = normalizedName.split(',', 1)[0]?.trim();
+  if (surnameSeed) {
+    const remainderStart = normalizedName.indexOf(',') + 1;
+    const remainder = normalizedName.slice(remainderStart);
+    const repeatedSurname = remainder.toUpperCase().indexOf(surnameSeed.toUpperCase());
+    if (repeatedSurname > 0) {
+      normalizedName = normalizedName.slice(0, remainderStart + repeatedSurname).trim().replace(/[, ]+$/, '');
+    }
+  }
+
+  const suffixPattern = /\b(JR\.?|IR\.?|SR\.?|II|III|IV|V)\b/i;
   const suffixMatch = normalizedName.match(suffixPattern);
-  const suffix = suffixMatch?.[1] || '';
-  const withoutSuffix = suffixMatch ? normalizeNamePart(normalizedName.slice(0, suffixMatch.index)) : normalizedName;
+  const suffix = suffixMatch?.[1]?.toUpperCase().replace('.', '') === 'IR' ? 'JR' : (suffixMatch?.[1] || '');
+  const withoutSuffix = suffixMatch
+    ? normalizeNamePart(
+        `${normalizedName.slice(0, suffixMatch.index)} ${normalizedName.slice((suffixMatch.index || 0) + suffixMatch[0].length)}`,
+      )
+    : normalizedName;
 
   if (withoutSuffix.includes(',')) {
     const commaParts = withoutSuffix.split(',').map(normalizeNamePart);
@@ -186,6 +261,9 @@ const STATUS_FILTERS: { label: string; value: StatusFilter }[] = [
 // ========== SCREEN ==========
 export default function ViolationsScreen() {
   const router = useRouter();
+  const { width: cameraViewportWidth, height: cameraViewportHeight } = useWindowDimensions();
+  const licenseGuideWidth = Math.min(cameraViewportWidth * 0.92, cameraViewportHeight * 0.84 * 1.586, 760);
+  const licenseGuideHeight = licenseGuideWidth / 1.586;
   const segments = useSegments();
   const { open, nonce } = useLocalSearchParams<{ open?: string; nonce?: string }>();
   const [loading, setLoading] = useState(true);
@@ -196,40 +274,7 @@ export default function ViolationsScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 10;
-  const initialDate = formatDateValue(new Date());
-  const initialTime = formatTimeValue(new Date());
-
-  const [formData, setFormData] = useState({
-    driver_name: '',
-    driver_last_name: '',
-    driver_first_name: '',
-    driver_middle_name: '',
-    driver_suffix: '',
-    driver_address: '',
-    date_of_birth: '',
-    license_number: '',
-    license_expiry_date: '',
-    license_remarks: '',
-    plate_number: '',
-    vehicle_owner: '',
-    vehicle_registration_number: '',
-    vehicle_color: '',
-    insurance_policy_number: '',
-    coding_sticker_number: '',
-    vehicle_toda: '',
-    vehicle_type: 'Car',
-    violation_type: '',
-    location: '',
-    violation_date: initialDate,
-    violation_time: initialTime,
-    penalty_amount: '',
-    offense_number: '1',
-    ticket_remarks: '',
-    apprehending_officer_name: '',
-    apprehending_officer_position: '',
-    apprehension_date: initialDate,
-    apprehension_time: initialTime,
-  });
+  const [formData, setFormData] = useState(createEmptyViolationForm);
   const [submitting, setSubmitting] = useState(false);
   const [hasNoLicense, setHasNoLicense] = useState(false);
   const [licenseConfiscated, setLicenseConfiscated] = useState(false);
@@ -259,6 +304,35 @@ export default function ViolationsScreen() {
   const [analyzingOffense, setAnalyzingOffense] = useState(false);
   const [offenseFloor, setOffenseFloor] = useState(1);
   const [activeDateTimePicker, setActiveDateTimePicker] = useState<TicketDateTimeField | null>(null);
+  const resetViolationForm = () => {
+    setFormData(createEmptyViolationForm());
+    setSelectedViolations([]);
+    setHasNoLicense(false);
+    setLicenseConfiscated(false);
+    setHasNoPlate(false);
+    setVehicleOwnerNotApplicable(false);
+    setRegistrationNotApplicable(false);
+    setVehicleColorNotApplicable(false);
+    setInsuranceNotApplicable(false);
+    setOfficerAgency('police');
+    setSelectedTmoOfficerId(null);
+    setInputMethod('manual');
+    setOcrNotice('');
+    setOffenseAnalyses({});
+    setOffenseFloor(1);
+    setViolationDropdownOpen(false);
+    setActiveDateTimePicker(null);
+  };
+  const confirmClearViolationForm = () => {
+    Alert.alert(
+      'Clear violation form?',
+      'All scanned and manually entered information will be removed.',
+      [
+        { text: 'Keep Editing', style: 'cancel' },
+        { text: 'Clear Form', style: 'destructive', onPress: resetViolationForm },
+      ],
+    );
+  };
   const currentDriverName = buildStructuredDriverName(
     formData.driver_last_name,
     formData.driver_first_name,
@@ -302,7 +376,7 @@ export default function ViolationsScreen() {
     if (open !== 'ocr') return;
     const frame = requestAnimationFrame(() => {
       setInputMethod('ocr');
-      setOcrNotice('Choose Take Photo or Gallery to scan a traffic ticket.');
+      setOcrNotice("Use Take Photo to scan the driver's license.");
       setModalVisible(true);
     });
     return () => cancelAnimationFrame(frame);
@@ -364,7 +438,14 @@ export default function ViolationsScreen() {
     if (type === "No Driver's License") setHasNoLicense(!selected);
     setSelectedViolations(current => selected
       ? current.filter(item => item.violation_type !== type)
-      : [...current, { violation_type: type, penalty_amount: '', ocr_confidence: confidence, penalty_overridden: false }]);
+      : [...current, {
+        violation_type: type,
+        penalty_amount: '',
+        ocr_confidence: confidence,
+        penalty_overridden: false,
+        other_violation_specification: type === 'Other Traffic Violation' ? '' : undefined,
+        other_violation_not_specified: false,
+      }]);
     if (selected) {
       setOffenseAnalyses(current => {
         const next = { ...current };
@@ -377,6 +458,16 @@ export default function ViolationsScreen() {
   const setViolationPenalty = (type: string, penalty: number | string) => {
     setSelectedViolations(current => current.map(item => item.violation_type === type
       ? { ...item, penalty_amount: String(penalty), penalty_overridden: true }
+      : item));
+  };
+
+  const updateOtherViolation = (specification: string, notSpecified: boolean) => {
+    setSelectedViolations(current => current.map(item => item.violation_type === 'Other Traffic Violation'
+      ? {
+        ...item,
+        other_violation_specification: notSpecified ? '' : specification,
+        other_violation_not_specified: notSpecified,
+      }
       : item));
   };
 
@@ -407,92 +498,98 @@ export default function ViolationsScreen() {
     setHasNoPlate(value => !value);
   };
 
-  const processTicketAsset = async (asset: { uri: string; fileName?: string | null; mimeType?: string | null }) => {
+  const processLicenseAsset = async (asset: {
+    uri: string;
+    fileName?: string | null;
+    mimeType?: string | null;
+    cropFrame?: Record<string, number | string>;
+  }) => {
     setScanning(true);
-    setOcrNotice('Reading ticket…');
+    setOcrNotice("Reading driver's license…");
     try {
       const body = new FormData();
-      body.append('ticket', { uri: asset.uri, name: asset.fileName || 'ticket.jpg', type: asset.mimeType || 'image/jpeg' } as any);
-      const response = await api.post('scan_ticket.php', body, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 });
+      body.append('license', { uri: asset.uri, name: asset.fileName || 'license.jpg', type: asset.mimeType || 'image/jpeg' } as any);
+      if (asset.cropFrame) body.append('crop_frame', JSON.stringify(asset.cropFrame));
+      const response = await api.post('scan_license.php', body, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 });
       const fields = response.data.fields || {};
       const fieldConfidences = response.data.field_confidences || {};
-      const minimumFieldConfidence = 0.68;
-      const trustedField = (name: string) => String(fields[name] || '').trim() && Number(fieldConfidences[name] || 0) >= minimumFieldConfidence;
-      const checked = Array.isArray(response.data.checked_violations) ? response.data.checked_violations : [];
-      const detectedTypes: SelectedViolation[] = checked
-        .filter((item: any) => Number(item.confidence || 0) >= minimumFieldConfidence && violationTypes.includes(String(item.violation_type || '')))
-        .map((item: any) => ({ violation_type: String(item.violation_type), penalty_amount: '', ocr_confidence: Number(item.confidence || 0) }));
-      // Printed violation text alone is never enough: only a positively
-      // detected checkbox may populate the recorded violation list.
-      const noLicenseDetected = detectedTypes.some((item: any) => item.violation_type === "No Driver's License");
-      const recognizedPlate = String(fields.plate_number || '').trim().toUpperCase();
-      const noPlateDetected = Boolean(trustedField('plate_number') && ['NO PLATE', 'NOPLATE', 'NONE', 'N/A', 'NA'].includes(recognizedPlate));
-      const recognizedVehicleColor = String(fields.vehicle_color || '').trim().toUpperCase();
-      const vehicleColorNotApplicableDetected = Boolean(trustedField('vehicle_color') && ['NOT APPLICABLE', 'NOT SPECIFIED', 'NONE', 'N/A', 'NA'].includes(recognizedVehicleColor));
-      const scannedDriverName = trustedField('driver_name') ? splitScannedDriverName(String(fields.driver_name)) : null;
-      setOffenseAnalyses({});
-      setSelectedViolations(detectedTypes);
-      setHasNoLicense(noLicenseDetected);
-      setHasNoPlate(noPlateDetected);
-      setVehicleOwnerNotApplicable(false);
-      setRegistrationNotApplicable(false);
-      setVehicleColorNotApplicable(vehicleColorNotApplicableDetected);
-      setInsuranceNotApplicable(false);
-      const detectedVehicleType = trustedField('vehicle_type') ? String(fields.vehicle_type) : formData.vehicle_type;
-      const isDetectedPampasadaTricycle = detectedVehicleType === 'Tricycle';
+      // Structured fields still undergo strict server-side format validation,
+      // so faint but valid card text should not be discarded unnecessarily.
+      const minimumFieldConfidence = 0.28;
+      const trustedField = (name: string) => {
+        const value = String(fields[name] || '').trim();
+        if (!value) return false;
+        // Older hosted OCR responses did not always include per-field
+        // confidence. Values returned here already passed server validation.
+        if (!Object.prototype.hasOwnProperty.call(fieldConfidences, name)) return true;
+        return Number(fieldConfidences[name] || 0) >= minimumFieldConfidence;
+      };
+      const nameIsPlausible = trustedField('driver_name') && isPlausibleScannedName(fields.driver_name);
+      const addressIsPlausible = trustedField('driver_address') && isPlausibleScannedAddress(fields.driver_address);
+      const scannedDriverName = {
+        lastName: trustedField('driver_last_name') ? String(fields.driver_last_name).trim() : '',
+        firstName: trustedField('driver_first_name') ? String(fields.driver_first_name).trim() : '',
+        middleName: trustedField('driver_middle_name') ? String(fields.driver_middle_name).trim() : '',
+        suffix: trustedField('driver_suffix') ? String(fields.driver_suffix).trim() : '',
+      };
+      const structuredNameIsPlausible = isPlausibleScannedName(
+        `${scannedDriverName.lastName} ${scannedDriverName.firstName} ${scannedDriverName.middleName}`,
+      );
+      // The standard LTO card prints one authoritative full-name line. Parse
+      // that first so alternate OCR passes cannot mix duplicate component text.
+      const parsedFullName = nameIsPlausible ? splitScannedDriverName(String(fields.driver_name)) : null;
+      const parsedDriverName = parsedFullName?.firstName || parsedFullName?.lastName
+        ? parsedFullName
+        : (structuredNameIsPlausible ? scannedDriverName : null);
+      setHasNoLicense(false);
       setFormData(current => ({
         ...current,
-        driver_name: scannedDriverName
-          ? buildStructuredDriverName(scannedDriverName.lastName, scannedDriverName.firstName, scannedDriverName.middleName, scannedDriverName.suffix)
+        driver_name: parsedDriverName
+          ? buildStructuredDriverName(parsedDriverName.lastName, parsedDriverName.firstName, parsedDriverName.middleName, parsedDriverName.suffix)
           : current.driver_name,
-        driver_last_name: scannedDriverName?.lastName || current.driver_last_name,
-        driver_first_name: scannedDriverName?.firstName || current.driver_first_name,
-        driver_middle_name: scannedDriverName?.middleName || current.driver_middle_name,
-        driver_suffix: scannedDriverName?.suffix || current.driver_suffix,
-        driver_address: trustedField('driver_address') ? fields.driver_address : current.driver_address,
+        driver_last_name: parsedDriverName?.lastName || current.driver_last_name,
+        driver_first_name: parsedDriverName?.firstName || current.driver_first_name,
+        driver_middle_name: parsedDriverName?.middleName || current.driver_middle_name,
+        driver_suffix: parsedDriverName?.suffix || current.driver_suffix,
+        driver_address: addressIsPlausible ? fields.driver_address : current.driver_address,
         date_of_birth: trustedField('date_of_birth') ? fields.date_of_birth : current.date_of_birth,
-        license_number: noLicenseDetected ? '' : (trustedField('license_number') ? fields.license_number : current.license_number),
-        license_expiry_date: noLicenseDetected ? '' : (trustedField('license_expiry_date') ? fields.license_expiry_date : current.license_expiry_date),
-        license_remarks: trustedField('license_remarks') ? fields.license_remarks : current.license_remarks,
-        plate_number: noPlateDetected ? '' : (trustedField('plate_number') ? fields.plate_number : current.plate_number),
-        vehicle_owner: trustedField('vehicle_owner') ? fields.vehicle_owner : '',
-        vehicle_registration_number: trustedField('vehicle_registration_number') ? fields.vehicle_registration_number : '',
-        vehicle_color: vehicleColorNotApplicableDetected ? '' : (trustedField('vehicle_color') ? fields.vehicle_color : ''),
-        insurance_policy_number: trustedField('insurance_policy_number') ? fields.insurance_policy_number : '',
-        coding_sticker_number: isDetectedPampasadaTricycle && trustedField('coding_sticker_number') ? fields.coding_sticker_number : '',
-        vehicle_toda: isDetectedPampasadaTricycle && trustedField('vehicle_toda') ? fields.vehicle_toda : '',
-        vehicle_type: detectedVehicleType,
-        violation_type: '',
-        location: trustedField('location') ? fields.location : current.location,
-        violation_date: trustedField('violation_date') ? fields.violation_date : current.violation_date,
-        violation_time: trustedField('violation_time') ? fields.violation_time : current.violation_time,
-        penalty_amount: trustedField('penalty_amount') ? fields.penalty_amount : current.penalty_amount,
-        ticket_remarks: trustedField('ticket_remarks') ? fields.ticket_remarks : current.ticket_remarks,
-        apprehending_officer_name: trustedField('apprehending_officer_name') ? fields.apprehending_officer_name : current.apprehending_officer_name,
-        apprehending_officer_position: trustedField('apprehending_officer_position') ? fields.apprehending_officer_position : current.apprehending_officer_position,
+        license_number: trustedField('license_number') ? fields.license_number : current.license_number,
+        license_expiry_date: trustedField('license_expiry_date') ? fields.license_expiry_date : current.license_expiry_date,
       }));
       setInputMethod('ocr');
       const warning = String(response.data.warning || '').trim();
-      const lowConfidenceFields = Object.keys(fields).filter(name => name !== 'ticket_number' && fields[name] && !trustedField(name));
+      const ocrVersion = String(response.data.ocr_version || 'unverified');
+      const gatewayVersion = String(response.data.ocr_gateway_version || 'unverified');
+      const executionMode = String(response.data.ocr_execution_mode || 'unknown-mode');
+      const lowConfidenceFields = Object.keys(fields).filter(name => fields[name] && !trustedField(name));
+      const rejectedFields = [
+        ...(trustedField('driver_name') && !nameIsPlausible ? ['driver name'] : []),
+        ...(trustedField('driver_address') && !addressIsPlausible ? ['driver address'] : []),
+      ];
       const confidenceWarning = lowConfidenceFields.length ? ` Low-confidence fields were left blank: ${lowConfidenceFields.join(', ').replaceAll('_', ' ')}.` : '';
-      const documentNotice = response.data.document_detected
-        ? 'Document edges detected and perspective corrected. '
-        : 'Full ticket edges were not detected; keep the entire paper visible on a contrasting background. ';
-      setOcrNotice(`${documentNotice}${warning || `${response.data.recognized_fields || 0} fields detected.`}${confidenceWarning} Review all values before saving.`);
+      const validationWarning = rejectedFields.length ? ` Suspicious OCR values were left blank: ${rejectedFields.join(', ')}.` : '';
+      const documentNotice = response.data.guide_crop_applied
+        ? (response.data.full_frame_fallback_used
+          ? 'The guide area was scanned, then the full photo produced a stronger result. '
+          : 'Only the padded license guide area was processed. ')
+        : (response.data.document_detected
+          ? 'License aligned and perspective corrected. '
+          : 'Visible labeled fields were scanned without requiring every card edge. ');
+      setOcrNotice(`[OCR ${ocrVersion} | Gateway ${gatewayVersion} | ${executionMode}] ${documentNotice}${warning || `${response.data.recognized_fields || 0} fields detected.`}${confidenceWarning}${validationWarning} Review all values before saving.`);
     } catch (error: any) {
       setOcrNotice('');
-      Alert.alert('Ticket scan failed', error.response?.data?.error || 'The ticket could not be read. Try a clearer, well-lit photo.');
+      Alert.alert('License scan failed', error.response?.data?.error || "The driver's license could not be read. Try a clearer, well-lit photo.");
     } finally { setScanning(false); }
   };
 
-  const openTicketCamera = async () => {
+  const openLicenseCamera = async () => {
     let permission = cameraPermission;
     if (!permission?.granted) {
       permission = await requestCameraPermission();
     }
     if (!permission.granted) {
       if (permission.canAskAgain) {
-        Alert.alert('Permission required', 'Allow camera access to photograph a traffic ticket, then try again.');
+        Alert.alert('Permission required', "Allow camera access to photograph the driver's license, then try again.");
       } else {
         Alert.alert(
           'Camera permission required',
@@ -505,39 +602,52 @@ export default function ViolationsScreen() {
       }
       return;
     }
-    setCameraReady(false);
-    setCameraVisible(true);
+    try {
+      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE_RIGHT);
+      setCameraReady(false);
+      setCameraVisible(true);
+    } catch {
+      Alert.alert('Orientation error', 'The license camera could not switch to landscape mode. Please try again.');
+    }
   };
 
-  const captureGuidedTicket = async () => {
+  const closeLicenseCamera = async () => {
+    setCameraVisible(false);
+    setCameraReady(false);
+    await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => undefined);
+  };
+
+  const captureGuidedLicense = async () => {
     if (!ticketCameraRef.current || !cameraReady || capturingTicket) return;
     setCapturingTicket(true);
     try {
       const photo = await ticketCameraRef.current.takePictureAsync({ quality: 1, skipProcessing: false });
       if (!photo?.uri) throw new Error('The camera did not return a photo.');
-      setCameraVisible(false);
-      setCameraReady(false);
-      await processTicketAsset({ uri: photo.uri, fileName: 'ticket.jpg', mimeType: 'image/jpeg' });
+      await closeLicenseCamera();
+      await processLicenseAsset({
+        uri: photo.uri,
+        fileName: 'license.jpg',
+        mimeType: 'image/jpeg',
+        cropFrame: {
+          preview_width: cameraViewportWidth,
+          preview_height: cameraViewportHeight,
+          left: (cameraViewportWidth - licenseGuideWidth) / 2,
+          top: (cameraViewportHeight - licenseGuideHeight) / 2,
+          width: licenseGuideWidth,
+          height: licenseGuideHeight,
+          padding_ratio: 0.04,
+          resize_mode: 'cover',
+        },
+      });
     } catch (error: any) {
-      Alert.alert('Camera error', error?.message || 'The ticket photo could not be captured.');
+      Alert.alert('Camera error', error?.message || "The driver's license photo could not be captured.");
     } finally {
       setCapturingTicket(false);
     }
   };
 
-  const scanTicket = async (source: 'camera' | 'gallery') => {
-    if (source === 'camera') {
-      await openTicketCamera();
-      return;
-    }
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert('Permission required', 'Allow photo library access to scan a saved ticket.');
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 1, allowsEditing: false });
-    if (result.canceled || !result.assets[0]) return;
-    await processTicketAsset(result.assets[0]);
+  const scanLicense = async () => {
+    await openLicenseCamera();
   };
 
   // ===== FETCH VIOLATIONS =====
@@ -674,6 +784,19 @@ export default function ViolationsScreen() {
       Alert.alert('Invalid violation', 'Select at least one violation from the official list.');
       return;
     }
+    const incompleteOtherViolation = selectedViolations.find(item =>
+      item.violation_type === 'Other Traffic Violation'
+      && !item.other_violation_not_specified
+      && !item.other_violation_specification?.trim()
+    );
+    if (incompleteOtherViolation) {
+      Alert.alert('Specify violation', 'Enter the other traffic violation or select Not specified.');
+      return;
+    }
+    if (selectedViolations.some(item => (item.other_violation_specification?.trim().length || 0) > 80)) {
+      Alert.alert('Details too long', 'Other traffic violation details must not exceed 80 characters.');
+      return;
+    }
     if (!vehicleTypes.includes(vehicle_type)) {
       Alert.alert('Invalid vehicle', 'Select a valid vehicle type.');
       return;
@@ -727,23 +850,7 @@ export default function ViolationsScreen() {
           : `${response.data.ticket_number} was recorded as a first offense.`);
         setModalVisible(false);
         setActiveDateTimePicker(null);
-        const resetDate = formatDateValue(new Date());
-        const resetTime = formatTimeValue(new Date());
-        setFormData({ driver_name: '', driver_last_name: '', driver_first_name: '', driver_middle_name: '', driver_suffix: '', driver_address: '', date_of_birth: '', license_number: '', license_expiry_date: '', license_remarks: '', plate_number: '', vehicle_owner: '', vehicle_registration_number: '', vehicle_color: '', insurance_policy_number: '', coding_sticker_number: '', vehicle_toda: '', vehicle_type: 'Car', violation_type: '', location: '', violation_date: resetDate, violation_time: resetTime, penalty_amount: '', offense_number: '1', ticket_remarks: '', apprehending_officer_name: '', apprehending_officer_position: '', apprehension_date: resetDate, apprehension_time: resetTime });
-        setSelectedViolations([]);
-        setHasNoLicense(false);
-        setLicenseConfiscated(false);
-        setHasNoPlate(false);
-        setVehicleOwnerNotApplicable(false);
-        setRegistrationNotApplicable(false);
-        setVehicleColorNotApplicable(false);
-        setInsuranceNotApplicable(false);
-        setOfficerAgency('police');
-        setSelectedTmoOfficerId(null);
-        setInputMethod('manual');
-        setOcrNotice('');
-        setOffenseAnalyses({});
-        setOffenseFloor(1);
+        resetViolationForm();
         fetchViolations();
       } else {
         Alert.alert('Error', response.data.error || 'Failed to add violation.');
@@ -1005,13 +1112,13 @@ export default function ViolationsScreen() {
         <Text style={styles.fabText}>Add Violation</Text>
       </TouchableOpacity>
 
-      {/* Guided in-app camera keeps the long paper ticket inside one frame. */}
+      {/* Guided in-app camera keeps the landscape driver's license inside one frame. */}
       <Modal
         animationType="fade"
         presentationStyle="fullScreen"
         statusBarTranslucent
         visible={cameraVisible}
-        onRequestClose={() => setCameraVisible(false)}
+        onRequestClose={() => { void closeLicenseCamera(); }}
       >
         <View style={styles.cameraScreen}>
           <CameraView
@@ -1024,38 +1131,46 @@ export default function ViolationsScreen() {
             <View style={styles.cameraHeader}>
               <TouchableOpacity
                 style={styles.cameraCloseButton}
-                onPress={() => setCameraVisible(false)}
-                accessibilityLabel="Close ticket camera"
+                onPress={() => { void closeLicenseCamera(); }}
+                accessibilityLabel="Close license camera"
               >
                 <Ionicons name="close" size={26} color="#FFF" />
               </TouchableOpacity>
               <View style={styles.cameraInstruction}>
-                <Text style={styles.cameraInstructionTitle}>Align the traffic ticket</Text>
-                <Text style={styles.cameraInstructionText}>Keep the whole paper flat and inside the rectangle</Text>
+                <Text style={styles.cameraInstructionTitle}>Align the driver&apos;s license</Text>
+                <Text style={styles.cameraInstructionText}>The area inside the rectangle will be cropped and scanned with a small safety margin.</Text>
               </View>
               <View style={styles.cameraHeaderSpacer} />
             </View>
 
             <View pointerEvents="none" style={styles.cameraGuideArea}>
-              <View style={styles.ticketGuide}>
+              <View
+                style={[
+                  styles.licenseGuide,
+                  {
+                    width: licenseGuideWidth,
+                    height: licenseGuideHeight,
+                  },
+                ]}
+              >
                 <View style={[styles.guideCorner, styles.guideTopLeft]} />
                 <View style={[styles.guideCorner, styles.guideTopRight]} />
                 <View style={[styles.guideCorner, styles.guideBottomLeft]} />
                 <View style={[styles.guideCorner, styles.guideBottomRight]} />
                 <View style={styles.guideCenterBadge}>
                   <Ionicons name="document-text-outline" size={16} color="#FFF" />
-                  <Text style={styles.guideCenterText}>TICKET AREA</Text>
+                  <Text style={styles.guideCenterText}>LICENSE AREA</Text>
                 </View>
               </View>
             </View>
 
             <View style={styles.cameraControls}>
-              <Text style={styles.cameraTip}>Avoid glare and hold the phone steady</Text>
+              <Text style={styles.cameraTip}>Keep important text inside the frame and avoid glare. A small margin outside the guide is retained automatically.</Text>
               <TouchableOpacity
                 disabled={!cameraReady || capturingTicket}
                 style={[styles.shutterOuter, (!cameraReady || capturingTicket) && styles.shutterDisabled]}
-                onPress={captureGuidedTicket}
-                accessibilityLabel="Capture traffic ticket"
+                onPress={captureGuidedLicense}
+                accessibilityLabel="Capture driver's license"
               >
                 {capturingTicket
                   ? <ActivityIndicator color={COLORS.primary} />
@@ -1083,22 +1198,25 @@ export default function ViolationsScreen() {
             <View style={styles.modalHeaderRow}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.modalTitle}>Add Violation</Text>
-                <Text style={styles.modalSub}>Scan a paper ticket or enter the details manually.</Text>
+                <Text style={styles.modalSub}>Scan a driver&apos;s license or enter the details manually.</Text>
               </View>
+              <TouchableOpacity style={styles.clearFormButton} onPress={confirmClearViolationForm} disabled={submitting} accessibilityLabel="Clear violation form">
+                <Ionicons name="trash-outline" size={15} color={COLORS.danger} />
+                <Text style={styles.clearFormButtonText}>Clear Form</Text>
+              </TouchableOpacity>
               <TouchableOpacity onPress={() => { setActiveDateTimePicker(null); setModalVisible(false); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                 <Ionicons name="close" size={22} color={COLORS.textTertiary} />
               </TouchableOpacity>
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.formScrollContent}>
-              <FormSection number="1" title="Ticket capture" subtitle="Scan the ticket or continue with manual entry" icon="scan-outline" />
+              <FormSection number="1" title="License capture" subtitle="Scan the driver&apos;s license or continue with manual entry" icon="scan-outline" />
               <View style={styles.scanPanel}>
-                <View style={{ flex: 1 }}><Text style={styles.scanTitle}>OCR Ticket Scanner</Text><Text style={styles.scanSub}>Use a flat, well-lit image with the full ticket visible.</Text></View>
+                <View style={{ flex: 1 }}><Text style={styles.scanTitle}>Driver&apos;s License Scanner</Text><Text style={styles.scanSub}>Scans the driver&apos;s name, address, license number, birth date, and expiration date. Violation and vehicle details remain manual.</Text></View>
                 {scanning && <ActivityIndicator color={COLORS.primary} />}
               </View>
               <View style={styles.scanActions}>
-                <TouchableOpacity disabled={scanning} style={styles.scanPrimary} onPress={() => scanTicket('camera')}><Ionicons name="camera-outline" size={17} color="#FFF" /><Text style={styles.scanPrimaryText}>Take Photo</Text></TouchableOpacity>
-                <TouchableOpacity disabled={scanning} style={styles.scanSecondary} onPress={() => scanTicket('gallery')}><Ionicons name="images-outline" size={17} color={COLORS.primary} /><Text style={styles.scanSecondaryText}>Gallery</Text></TouchableOpacity>
+                <TouchableOpacity disabled={scanning} style={styles.scanPrimary} onPress={scanLicense}><Ionicons name="camera-outline" size={17} color="#FFF" /><Text style={styles.scanPrimaryText}>Take Photo</Text></TouchableOpacity>
               </View>
               {!!ocrNotice && <View style={styles.ocrNotice}><Ionicons name="warning-outline" size={16} color={COLORS.warning} /><Text style={styles.ocrNoticeText}>{ocrNotice}</Text></View>}
               <FormSection number="2" title="Driver information" subtitle="Identity and contact details" icon="person-outline" />
@@ -1251,6 +1369,26 @@ export default function ViolationsScreen() {
                 <View key={item.violation_type} style={styles.analysisCard}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.analysisTitle}>{item.violation_type}</Text>
+                    {item.violation_type === 'Other Traffic Violation' && <>
+                      <TextInput
+                        style={[styles.modalInput, { marginTop: 8, marginBottom: 0 }]}
+                        placeholder="Specify the other traffic violation"
+                        placeholderTextColor={COLORS.textTertiary}
+                        value={item.other_violation_specification || ''}
+                        onChangeText={value => updateOtherViolation(value, false)}
+                        editable={!item.other_violation_not_specified}
+                        maxLength={80}
+                      />
+                      <TouchableOpacity
+                        style={[styles.checkRow, { marginTop: 8, marginBottom: 0 }]}
+                        onPress={() => updateOtherViolation('', !item.other_violation_not_specified)}
+                        accessibilityRole="checkbox"
+                        accessibilityState={{ checked: Boolean(item.other_violation_not_specified) }}
+                      >
+                        <Ionicons name={item.other_violation_not_specified ? 'checkbox' : 'square-outline'} size={22} color={COLORS.primary} />
+                        <Text style={styles.checkRowText}>Not specified</Text>
+                      </TouchableOpacity>
+                    </>}
                     {!!offenseAnalyses[item.violation_type] && <Text style={styles.analysisText}>
                       Offense #{offenseAnalyses[item.violation_type].suggested_offense} by {offenseAnalyses[item.violation_type].matched_by || 'new record'} · suggested {formatCurrency(offenseAnalyses[item.violation_type].suggested_penalty)}
                     </Text>}
@@ -1522,14 +1660,14 @@ const styles = StyleSheet.create({
 
   cameraScreen: { flex: 1, backgroundColor: '#000' },
   cameraSafeArea: { flex: 1, backgroundColor: 'rgba(0,0,0,0.18)' },
-  cameraHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 8 },
+  cameraHeader: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 3, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 8 },
   cameraCloseButton: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.58)' },
   cameraInstruction: { flex: 1, alignItems: 'center', paddingHorizontal: 8 },
   cameraInstructionTitle: { color: '#FFF', fontSize: 16, fontWeight: '900', textAlign: 'center' },
   cameraInstructionText: { color: 'rgba(255,255,255,0.86)', fontSize: 11, lineHeight: 15, textAlign: 'center', marginTop: 2 },
   cameraHeaderSpacer: { width: 44 },
-  cameraGuideArea: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 12 },
-  ticketGuide: { width: '82%', maxWidth: 390, aspectRatio: 0.62, maxHeight: '96%', borderWidth: 1, borderStyle: 'dashed', borderColor: 'rgba(255,255,255,0.72)', backgroundColor: 'rgba(0,0,0,0.05)', alignItems: 'center', justifyContent: 'center' },
+  cameraGuideArea: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, alignItems: 'center', justifyContent: 'center' },
+  licenseGuide: { maxWidth: 760, borderWidth: 1, borderStyle: 'dashed', borderColor: 'rgba(255,255,255,0.72)', backgroundColor: 'rgba(0,0,0,0.05)', alignItems: 'center', justifyContent: 'center' },
   guideCorner: { position: 'absolute', width: 34, height: 34, borderColor: '#55E8C7' },
   guideTopLeft: { top: -2, left: -2, borderTopWidth: 4, borderLeftWidth: 4, borderTopLeftRadius: 8 },
   guideTopRight: { top: -2, right: -2, borderTopWidth: 4, borderRightWidth: 4, borderTopRightRadius: 8 },
@@ -1537,10 +1675,10 @@ const styles = StyleSheet.create({
   guideBottomRight: { bottom: -2, right: -2, borderBottomWidth: 4, borderRightWidth: 4, borderBottomRightRadius: 8 },
   guideCenterBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 11, paddingVertical: 7, borderRadius: 18, backgroundColor: 'rgba(0,0,0,0.52)' },
   guideCenterText: { color: '#FFF', fontSize: 10, fontWeight: '900', letterSpacing: 1 },
-  cameraControls: { minHeight: 126, alignItems: 'center', justifyContent: 'center', paddingBottom: 12 },
-  cameraTip: { color: '#FFF', fontSize: 11, fontWeight: '700', textAlign: 'center', marginBottom: 12, textShadowColor: '#000', textShadowRadius: 4 },
-  shutterOuter: { width: 76, height: 76, borderRadius: 38, borderWidth: 5, borderColor: '#FFF', backgroundColor: 'rgba(255,255,255,0.22)', alignItems: 'center', justifyContent: 'center' },
-  shutterInner: { width: 58, height: 58, borderRadius: 29, backgroundColor: '#FFF', borderWidth: 2, borderColor: 'rgba(0,0,0,0.15)' },
+  cameraControls: { position: 'absolute', left: 0, right: 0, bottom: 6, zIndex: 3, minHeight: 76, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 18, paddingHorizontal: 18 },
+  cameraTip: { maxWidth: 430, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 8, backgroundColor: 'rgba(0,0,0,0.46)', color: '#FFF', fontSize: 11, fontWeight: '700', textAlign: 'center', textShadowColor: '#000', textShadowRadius: 4 },
+  shutterOuter: { width: 68, height: 68, borderRadius: 34, borderWidth: 5, borderColor: '#FFF', backgroundColor: 'rgba(255,255,255,0.22)', alignItems: 'center', justifyContent: 'center' },
+  shutterInner: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#FFF', borderWidth: 2, borderColor: 'rgba(0,0,0,0.15)' },
   shutterDisabled: { opacity: 0.48 },
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(15,23,42,0.66)', justifyContent: 'flex-end', alignItems: 'center' },
@@ -1556,6 +1694,8 @@ const styles = StyleSheet.create({
   historyAddButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, marginTop: 10, paddingVertical: 12, borderRadius: 11, backgroundColor: COLORS.primary },
   historyAddButtonText: { color: '#FFF', fontSize: 12, fontWeight: '800' },
   modalHeaderRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 16 },
+  clearFormButton: { flexDirection: 'row', alignItems: 'center', gap: 4, marginRight: 12, paddingHorizontal: 9, paddingVertical: 7, borderRadius: 8, backgroundColor: COLORS.danger + '10', borderWidth: 1, borderColor: COLORS.danger + '35' },
+  clearFormButtonText: { color: COLORS.danger, fontSize: 10, fontWeight: '800' },
   modalTitle: { fontSize: 18, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 2 },
   modalSub: { fontSize: 12, color: COLORS.textSecondary },
   formScrollContent: { paddingBottom: 18 },
@@ -1571,8 +1711,6 @@ const styles = StyleSheet.create({
   scanActions: { flexDirection: 'row', gap: 9, marginBottom: 4 },
   scanPrimary: { flex: 1, flexDirection: 'row', gap: 6, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.primary, borderRadius: 10, paddingVertical: 11 },
   scanPrimaryText: { color: '#FFF', fontSize: 12, fontWeight: '800' },
-  scanSecondary: { flex: 1, flexDirection: 'row', gap: 6, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FFF', borderRadius: 10, paddingVertical: 11, borderWidth: 1, borderColor: COLORS.primary },
-  scanSecondaryText: { color: COLORS.primary, fontSize: 12, fontWeight: '800' },
   ocrNotice: { flexDirection: 'row', gap: 7, alignItems: 'flex-start', backgroundColor: '#FFF7E8', padding: 10, borderRadius: 10, marginTop: 8 },
   ocrNoticeText: { flex: 1, color: '#7C5310', fontSize: 10, lineHeight: 15 },
   modalLabel: { fontSize: 13, fontWeight: '600', color: COLORS.textPrimary, marginTop: 12, marginBottom: 6 },

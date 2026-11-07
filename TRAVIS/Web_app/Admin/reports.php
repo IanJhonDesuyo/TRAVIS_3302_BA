@@ -15,7 +15,7 @@ $statusFilter = trim((string)($_GET['status'] ?? ''));
 $locationFilter = trim((string)($_GET['location'] ?? ''));
 $action = trim((string)($_GET['action'] ?? ''));
 
-$allowedReportTypes = ['violations', 'payments', 'monitoring'];
+$allowedReportTypes = ['violations', 'payments'];
 if (!in_array($reportType, $allowedReportTypes, true)) {
     $reportType = 'violations';
 }
@@ -28,13 +28,6 @@ $locationOptions = [
         ORDER BY location ASC
     "), 'location'),
     'payments' => [],
-    'monitoring' => array_column(fetch_all("
-        SELECT DISTINCT TRIM(c.location) AS location
-        FROM camera_monitoring_logs l
-        INNER JOIN cameras c ON c.camera_id = l.camera_id
-        WHERE c.location IS NOT NULL AND TRIM(c.location) <> ''
-        ORDER BY location ASC
-    "), 'location'),
 ];
 
 if ($reportType === 'payments') {
@@ -48,7 +41,6 @@ if ($reportType === 'payments') {
 $reportDateSources = [
     'violations' => ['table' => 'violations', 'column' => 'violation_date'],
     'payments' => ['table' => 'payments', 'column' => 'payment_date'],
-    'monitoring' => ['table' => 'camera_monitoring_logs', 'column' => 'recorded_at'],
 ];
 $dateSource = $reportDateSources[$reportType];
 $availableRange = fetch_one(
@@ -429,75 +421,6 @@ function build_report(
         ];
     }
 
-    if ($reportType === 'monitoring') {
-        $title = 'Traffic Monitoring Report';
-        $columns = [
-            'camera_name' => 'Camera',
-            'location' => 'Location',
-            'vehicle_count' => 'Vehicle Count',
-            'inbound_count' => 'Inbound',
-            'outbound_count' => 'Outbound',
-            'congestion_level' => 'Congestion',
-            'officer_presence' => 'Officer Presence',
-            'potential_collision' => 'Potential Collision',
-            'recorded_at' => 'Recorded At',
-        ];
-
-        $where = ['DATE(l.recorded_at) BETWEEN ? AND ?'];
-        $params = [$dateFrom, $dateTo];
-        $types = 'ss';
-
-        if ($statusFilter !== '') {
-            $where[] = 'l.congestion_level = ?';
-            $params[] = $statusFilter;
-            $types .= 's';
-        }
-
-        if ($locationFilter !== '') {
-            $where[] = 'TRIM(c.location) = ?';
-            $params[] = $locationFilter;
-            $types .= 's';
-        }
-
-        $sql = "
-            SELECT COALESCE(c.camera_name, 'Unnamed Camera') AS camera_name,
-                   COALESCE(c.location, 'Unknown Location') AS location,
-                   l.vehicle_count, l.inbound_count, l.outbound_count,
-                   l.congestion_level, l.officer_presence,
-                   l.potential_collision, l.recorded_at
-            FROM camera_monitoring_logs l
-            LEFT JOIN cameras c ON c.camera_id = l.camera_id
-            WHERE " . implode(' AND ', $where) . "
-            ORDER BY l.recorded_at DESC
-            LIMIT 1000
-        ";
-
-        $stmt = $conn->prepare($sql);
-        $stmt->bind_param($types, ...$params);
-        $stmt->execute();
-        $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-
-        $vehicleObservations = 0;
-        $highCongestion = 0;
-        $collisionFlags = 0;
-        foreach ($rows as $row) {
-            $vehicleObservations += (int)$row['vehicle_count'];
-            if (in_array(strtolower((string)$row['congestion_level']), ['high', 'heavy', 'critical', 'severe'], true)) {
-                $highCongestion++;
-            }
-            if (!in_array(strtolower((string)$row['potential_collision']), ['none', 'no', 'false', '0', ''], true)) {
-                $collisionFlags++;
-            }
-        }
-
-        $summary = [
-            'Monitoring Records' => count($rows),
-            'Vehicle Observations' => $vehicleObservations,
-            'High Congestion Records' => $highCongestion,
-            'Potential Collision Flags' => $collisionFlags,
-        ];
-    }
-
     return [$rows, $columns, $summary, $title];
 }
 
@@ -595,15 +518,6 @@ $statusOptions = [
         'completed' => 'Completed',
         'pending' => 'Pending',
         'failed' => 'Failed',
-    ],
-    'monitoring' => [
-        '' => 'All Congestion Levels',
-        'none' => 'None',
-        'low' => 'Low',
-        'moderate' => 'Moderate',
-        'high' => 'High',
-        'heavy' => 'Heavy',
-        'critical' => 'Critical',
     ],
 ];
 
@@ -1107,7 +1021,6 @@ div[style*="border-radius: 999px"]:not(.tag){
       <select class="form-select" name="report_type" id="reportType" required>
         <option value="violations" <?= $reportType === 'violations' ? 'selected' : '' ?>>Violation Report</option>
         <option value="payments" <?= $reportType === 'payments' ? 'selected' : '' ?>>Payment Collection Report</option>
-        <option value="monitoring" <?= $reportType === 'monitoring' ? 'selected' : '' ?>>Traffic Monitoring Report</option>
       </select>
     </div>
 
@@ -1115,7 +1028,7 @@ div[style*="border-radius: 999px"]:not(.tag){
     <div class="col-md-6 col-xl-2"><label class="form-label">End Date</label><input type="date" class="form-control" name="date_to" value="<?= esc($dateTo) ?>" required></div>
 
     <div class="col-md-6 col-xl-2">
-      <label class="form-label" id="statusLabel"><?= $reportType === 'monitoring' ? 'Congestion Level' : 'Status' ?></label>
+      <label class="form-label" id="statusLabel">Status</label>
       <select class="form-select" name="status" id="statusFilter">
         <?php foreach ($statusOptions[$reportType] as $value => $label): ?>
           <option value="<?= esc($value) ?>" <?= $statusFilter === $value ? 'selected' : '' ?>><?= esc($label) ?></option>
@@ -1341,7 +1254,7 @@ function rebuildStatusOptions() {
     statusSelect.appendChild(option);
   });
 
-  statusLabel.textContent = reportType === 'monitoring' ? 'Congestion Level' : 'Status';
+  statusLabel.textContent = 'Status';
 
   if (locationSelect) {
     locationSelect.innerHTML = '';

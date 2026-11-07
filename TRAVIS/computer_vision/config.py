@@ -90,9 +90,13 @@ PHONE_STREAM_URL = str(_phone_camera_config.get("stream_url", "")).strip()
 
 # Live-camera latency control. Tapo capture drops buffered frames between
 # inference passes, while HTTP/MJPEG phone sources expose their newest frame.
-# 416 materially improves early recognition of motorcycles/tricycles in the
-# distance while remaining within real-time speed on the gate laptop.
-LIVE_INFERENCE_SIZE = 416
+# Small motorcycles occupy very few pixels in the gate-camera view. Running
+# the live detector at 640 preserves enough wheel/body detail for YOLO to
+# distinguish the vehicle from its rider before it reaches a counting line.
+# Keep the nano model for now so this resolution increase remains practical on
+# the CPU-only edge laptop; processing FPS is exposed in the monitoring status
+# so the preset can be reviewed with real footage.
+LIVE_INFERENCE_SIZE = 640
 # 640 keeps CPU-only processing close to real time while retaining materially
 # more detail than the live-camera preset. At 960, the reference workstation
 # processes only about half of a 30 FPS video's frames per second.
@@ -128,7 +132,7 @@ MOTORCYCLE_CLASS = 3
 # Small motorcycles often score lower than their rider/person box. Keep the
 # final motorcycle threshold below the general object threshold, then rely on
 # stable ByteTrack IDs and the conservative collision confirmation rules.
-MOTORCYCLE_CONFIDENCE_THRESHOLD = 0.25
+MOTORCYCLE_CONFIDENCE_THRESHOLD = 0.20
 
 # Project-owned tracker settings tuned for traffic footage. Keeping this file
 # outside site-packages makes deployments reproducible after package updates.

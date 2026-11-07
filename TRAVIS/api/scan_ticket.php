@@ -24,6 +24,30 @@ $projectRoot = dirname(__DIR__);
 $hostedMode = getenv('TRAVIS_HOSTED_MODE') === '1';
 $mlApiUrl = rtrim((string)(getenv('TRAVIS_ML_API_URL') ?: ''), '/');
 
+/** Keep the public OCR contract limited to non-enforcement ticket details. */
+function sanitizeTicketOcrResult(array $result): array
+{
+    $allowedFields = array_fill_keys([
+        'driver_name', 'driver_first_name', 'driver_middle_name', 'driver_last_name', 'driver_suffix',
+        'driver_address', 'date_of_birth', 'license_number', 'license_expiry_date',
+        'plate_number', 'vehicle_owner', 'vehicle_registration_number', 'vehicle_color',
+        'insurance_policy_number', 'coding_sticker_number', 'vehicle_toda', 'vehicle_type',
+        'location', 'violation_date', 'violation_time',
+    ], true);
+    $fields = isset($result['fields']) && is_array($result['fields']) ? $result['fields'] : [];
+    $confidences = isset($result['field_confidences']) && is_array($result['field_confidences'])
+        ? $result['field_confidences']
+        : [];
+    $result['fields'] = array_intersect_key($fields, $allowedFields);
+    $result['field_confidences'] = array_intersect_key($confidences, $allowedFields);
+    $result['recognized_fields'] = count(array_filter(
+        $result['fields'],
+        static fn($value): bool => trim((string)$value) !== ''
+    ));
+    unset($result['checked_violations'], $result['raw_text']);
+    return $result;
+}
+
 if ($hostedMode) {
     if ($mlApiUrl === '' || !function_exists('curl_init')) {
         http_response_code(503);
@@ -70,7 +94,7 @@ if ($hostedMode) {
         exit;
     }
 
-    echo json_encode($result);
+    echo json_encode(sanitizeTicketOcrResult($result));
     exit;
 }
 
@@ -110,4 +134,4 @@ if ($exitCode !== 0 || empty($result['success'])) {
     echo json_encode(['error' => $result['error'] ?? 'Ticket could not be read.']);
     exit;
 }
-echo json_encode($result);
+echo json_encode(sanitizeTicketOcrResult($result));

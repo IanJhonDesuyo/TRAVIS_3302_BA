@@ -14,6 +14,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY Machine_Learning/api.py ./api.py
 COPY computer_vision/ticket_ocr.py ./ticket_ocr.py
+COPY computer_vision/license_ocr.py ./license_ocr.py
 COPY Machine_Learning/models ./models
 COPY Machine_Learning/results ./results
 

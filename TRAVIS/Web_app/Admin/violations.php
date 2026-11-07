@@ -89,6 +89,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $vehicleToda = $isPampasadaTricycle ? violation_post('vehicle_toda') : '';
         $submittedTypes = is_array($_POST['violation_type'] ?? null) ? $_POST['violation_type'] : [violation_post('violation_type')];
         $submittedAmounts = is_array($_POST['penalty_amount'] ?? null) ? $_POST['penalty_amount'] : [violation_post('penalty_amount', '0')];
+        $submittedOtherSpecifications = is_array($_POST['other_violation_specification'] ?? null) ? $_POST['other_violation_specification'] : [];
+        $submittedOtherNotSpecified = is_array($_POST['other_violation_not_specified'] ?? null) ? $_POST['other_violation_not_specified'] : [];
         $location = violation_post('violation_location');
         $date = violation_post('violation_date');
         $time = violation_post('violation_time');
@@ -113,13 +115,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $apprehensionTime = violation_post('apprehension_time', $time);
         $apprehensionDatetime = $apprehensionDate !== '' && $apprehensionTime !== '' ? $apprehensionDate . ' ' . $apprehensionTime . ':00' : null;
 
-        $allowedViolations = traffic_violation_types();
         $allowedVehicles = travis_vehicle_types();
         $items = [];
+        $otherViolationError = '';
         foreach ($submittedTypes as $index => $submittedType) {
             $itemType = trim((string)$submittedType);
             $itemAmount = (float)($submittedAmounts[$index] ?? 0);
-            if ($itemType !== '') $items[$itemType] = $itemAmount;
+            if ($itemType === '') continue;
+            if (!travis_is_allowed_violation_type($itemType)) {
+                $otherViolationError = 'Please select one or more valid violations from the traffic ticket list.';
+                continue;
+            }
+            if (travis_base_violation_type($itemType) === 'Other Traffic Violation') {
+                $otherNotSpecified = (string)($submittedOtherNotSpecified[$index] ?? '0') === '1';
+                $otherSpecification = trim((string)($submittedOtherSpecifications[$index] ?? ''));
+                if (!$otherNotSpecified && $otherSpecification === '') {
+                    $otherViolationError = 'Specify the other traffic violation or select Not specified.';
+                    continue;
+                }
+                if (mb_strlen($otherSpecification) > 80) {
+                    $otherViolationError = 'Other traffic violation details must not exceed 80 characters.';
+                    continue;
+                }
+                $itemType = 'Other Traffic Violation: ' . ($otherNotSpecified ? 'Not specified' : $otherSpecification);
+            }
+            $items[$itemType] = $itemAmount;
         }
         if ($hasNoLicense && !array_key_exists("No Driver's License", $items)) {
             $analysis = traffic_offense_analysis($conn, $driver, "No Driver's License", $license, $dateOfBirth);
@@ -138,8 +158,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ) {
             $message = 'Please complete all required fields and enter a valid penalty amount.';
             $messageType = 'danger';
-        } elseif (!$items || array_diff(array_keys($items), $allowedViolations)) {
-            $message = 'Please select one or more valid violations from the traffic ticket list.';
+        } elseif ($otherViolationError !== '' || !$items || array_filter(array_keys($items), static fn(string $itemType): bool => !travis_is_allowed_violation_type($itemType))) {
+            $message = $otherViolationError !== '' ? $otherViolationError : 'Please select one or more valid violations from the traffic ticket list.';
             $messageType = 'danger';
         } elseif (!in_array($vehicle, $allowedVehicles, true)) {
             $message = 'Please select a valid vehicle type.';
@@ -1204,7 +1224,17 @@ body.municipal-portal .content .violations-top-metric strong{color:#102f49!impor
               </div>
               <div id="violationItems">
                 <div class="row g-2 mb-2 violation-item-row">
-                  <div class="col-md-8"><select name="violation_type[]" class="form-select" required><option value="">Select violation</option><?php foreach (traffic_violation_types() as $violationType): ?><option value="<?= esc($violationType) ?>"><?= esc($violationType) ?></option><?php endforeach; ?></select></div>
+                  <div class="col-md-8">
+                    <select name="violation_type[]" class="form-select" required><option value="">Select violation</option><?php foreach (traffic_violation_types() as $violationType): ?><option value="<?= esc($violationType) ?>"><?= esc($violationType) ?></option><?php endforeach; ?></select>
+                    <div class="other-violation-fields d-none mt-2">
+                      <input type="text" name="other_violation_specification[]" class="form-control other-violation-specification" maxlength="80" placeholder="Specify the other traffic violation">
+                      <input type="hidden" name="other_violation_not_specified[]" class="other-violation-not-specified-value" value="0">
+                      <div class="form-check mt-2">
+                        <input class="form-check-input other-violation-not-specified" type="checkbox">
+                        <label class="form-check-label">Not specified</label>
+                      </div>
+                    </div>
+                  </div>
                   <div class="col-md-3"><input type="number" name="penalty_amount[]" class="form-control penalty-amount" min="0.01" max="99999999.99" step="0.01" placeholder="Auto price" inputmode="decimal" required><small class="text-muted offense-hint">Choose a violation to calculate its price.</small></div>
                   <div class="col-md-1"><button type="button" class="btn btn-outline-danger w-100 remove-violation-item" aria-label="Remove violation" disabled><i class="bi bi-x-lg"></i></button></div>
                 </div>
@@ -1473,6 +1503,7 @@ document.querySelectorAll('.add-existing-violator').forEach(function (button) {
     firstRow.querySelector('input[name="penalty_amount[]"]').value = '';
     firstRow.querySelector('input[name="penalty_amount[]"]').dataset.overridden = '0';
     firstRow.querySelector('.offense-hint').textContent = 'Choose a violation to calculate its price.';
+    syncOtherViolationFields(firstRow);
     refreshViolationItemButtons();
     updateAutomaticOffenseNumber();
 
@@ -1490,6 +1521,29 @@ function refreshViolationItemButtons() {
   rows.forEach(function (row) { row.querySelector('.remove-violation-item').disabled = rows.length === 1; });
 }
 
+function syncOtherViolationFields(row) {
+  if (!row) return;
+  const isOther = row.querySelector('select[name="violation_type[]"]')?.value === 'Other Traffic Violation';
+  const fields = row.querySelector('.other-violation-fields');
+  const specification = row.querySelector('.other-violation-specification');
+  const checkbox = row.querySelector('.other-violation-not-specified');
+  const hiddenValue = row.querySelector('.other-violation-not-specified-value');
+  fields?.classList.toggle('d-none', !isOther);
+  if (!isOther) {
+    if (specification) { specification.value = ''; specification.disabled = false; specification.required = false; }
+    if (checkbox) checkbox.checked = false;
+    if (hiddenValue) hiddenValue.value = '0';
+    return;
+  }
+  const notSpecified = Boolean(checkbox?.checked);
+  if (hiddenValue) hiddenValue.value = notSpecified ? '1' : '0';
+  if (specification) {
+    specification.disabled = notSpecified;
+    specification.required = !notSpecified;
+    if (notSpecified) specification.value = '';
+  }
+}
+
 function addViolationRow(type = '') {
   const source = violationItems?.querySelector('.violation-item-row');
   if (!source || !violationItems) return null;
@@ -1500,10 +1554,14 @@ function addViolationRow(type = '') {
   const penaltyInput = clone.querySelector('input[name="penalty_amount[]"]');
   const hint = clone.querySelector('.offense-hint');
   typeSelect.value = type;
+  clone.querySelector('.other-violation-specification').value = '';
+  clone.querySelector('.other-violation-not-specified').checked = false;
+  clone.querySelector('.other-violation-not-specified-value').value = '0';
   penaltyInput.value = '';
   penaltyInput.dataset.overridden = '0';
   hint.textContent = 'Choose a violation to calculate its price.';
   violationItems.appendChild(clone);
+  syncOtherViolationFields(clone);
   refreshViolationItemButtons();
   return clone;
 }
@@ -1642,9 +1700,15 @@ document.getElementById('addViolationItem')?.addEventListener('click', function 
   addViolationRow();
 });
 violationItems?.addEventListener('change', function (event) {
+  const otherCheckbox = event.target.closest('.other-violation-not-specified');
+  if (otherCheckbox) {
+    syncOtherViolationFields(otherCheckbox.closest('.violation-item-row'));
+    return;
+  }
   const select = event.target.closest('select[name="violation_type[]"]');
   if (!select) return;
   const row = select.closest('.violation-item-row');
+  syncOtherViolationFields(row);
   row.removeAttribute('data-suggested-offense');
   updateAutomaticOffenseNumber();
   const penaltyInput = row.querySelector('input[name="penalty_amount[]"]');
@@ -1696,6 +1760,7 @@ licenseNumberInput?.addEventListener('input', scheduleOffenseAnalysis);
 ticketForm?.elements.date_of_birth?.addEventListener('change', scheduleOffenseAnalysis);
 noLicenseCheck?.addEventListener('change', scheduleOffenseAnalysis);
 refreshViolationItemButtons();
+violationItems?.querySelectorAll('.violation-item-row').forEach(syncOtherViolationFields);
 updateAutomaticOffenseNumber();
 syncDriverName();
 syncLicenseFields();

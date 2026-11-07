@@ -31,8 +31,23 @@ function travis_vehicle_types(): array
     return ['Motorcycle', 'Tricycle', 'Car', 'SUV', 'Truck', 'Bus', 'Other'];
 }
 
+function travis_base_violation_type(string $type): string
+{
+    $type = trim($type);
+    if ($type === 'Other Traffic Violation' || str_starts_with($type, 'Other Traffic Violation:')) {
+        return 'Other Traffic Violation';
+    }
+    return $type;
+}
+
+function travis_is_allowed_violation_type(string $type): bool
+{
+    return in_array(travis_base_violation_type($type), travis_violation_types(), true);
+}
+
 function travis_violation_category(string $type): string
 {
+    $type = travis_base_violation_type($type);
     if (in_array($type, ["No Driver's License", "Failure to Carry Driver's License", "Invalid / Delinquent Driver's License"], true)) {
         return 'driver-license';
     }

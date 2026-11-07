@@ -15,13 +15,11 @@ from rapidocr_onnxruntime import RapidOCR
 
 
 LABELS = {
-    "ticket_number": ["ticket no", "ticket number", "citation no", "citation number"],
     "driver_name": ["driver name", "driver's name", "drivers name", "name of driver"],
     "driver_address": ["address", "driver address"],
     "date_of_birth": ["date of birth", "birth date", "dob"],
     "license_number": ["license number", "driver license number", "driver's license number", "license no", "dl no"],
     "license_expiry_date": ["license expiry date", "expiry date", "expiration date"],
-    "license_remarks": ["license remarks", "confiscated remarks"],
     "plate_number": ["plate number", "plate no"],
     "vehicle_owner": ["owner of vehicle", "vehicle owner"],
     "vehicle_registration_number": ["vehicle registration number", "registration number", "or cr number"],
@@ -30,18 +28,16 @@ LABELS = {
     "coding_sticker_number": ["coding sticker number", "coding sticker no"],
     "vehicle_toda": ["toda"],
     "vehicle_type": ["vehicle type", "type of vehicle"],
-    "violation_type": ["violation type", "nature of violation", "offense"],
     "location": ["violation location", "place of violation", "place of violation", "location"],
     "violation_date": ["date and time of violation", "date of violation", "violation date"],
     "violation_time": ["time of violation", "violation time"],
-    "penalty_amount": ["penalty amount", "amount due", "penalty fee", "fine"],
-    "ticket_remarks": ["remarks"],
-    # The official form prints a section heading followed by generic "Name"
-    # and "Position" labels. Those are extracted within that section only so
-    # they cannot be confused with the driver's name near the top of the form.
-    "apprehending_officer_name": ["officer name"],
-    "apprehending_officer_position": ["officer position"],
 }
+
+# OCR is deliberately limited to identity, vehicle, and incident information.
+# Violations, remarks, penalties, offense levels, and apprehending officers are
+# selected or calculated in the application and must never be populated from a
+# noisy ticket scan.
+STRUCTURED_NAME_FIELDS = ("driver_first_name", "driver_middle_name", "driver_last_name", "driver_suffix")
 
 VEHICLE_TYPES = ["Motorcycle", "Car", "SUV", "Jeepney", "Tricycle", "Van", "Truck", "Bus", "Other"]
 VEHICLE_TYPE_ALIASES = {
@@ -80,6 +76,51 @@ def clean(value: str) -> str:
 def normalized(value: str) -> str:
     value = value.lower().replace("’", "'")
     return re.sub(r"[^a-z0-9]+", " ", value).strip()
+
+
+def parse_person_name(value: str) -> dict[str, str]:
+    """Conservatively split a printed full name while preserving its raw value."""
+
+    raw_name = re.sub(r"\s+", " ", str(value or "")).strip(" ,")
+    result = {
+        "driver_name": raw_name,
+        "driver_first_name": "",
+        "driver_middle_name": "",
+        "driver_last_name": "",
+        "driver_suffix": "",
+    }
+    if not raw_name:
+        return result
+
+    suffix_pattern = re.compile(r"(?:,?\s+)(Jr\.?|Sr\.?|II|III|IV|V)$", re.I)
+    suffix_match = suffix_pattern.search(raw_name)
+    name_without_suffix = raw_name
+    if suffix_match:
+        result["driver_suffix"] = suffix_match.group(1).rstrip(".")
+        name_without_suffix = raw_name[:suffix_match.start()].strip(" ,")
+
+    if "," in name_without_suffix:
+        surname, given_names = (part.strip() for part in name_without_suffix.split(",", 1))
+        given_parts = given_names.split()
+        result["driver_last_name"] = surname
+        if given_parts:
+            result["driver_first_name"] = given_parts[0]
+            result["driver_middle_name"] = " ".join(given_parts[1:])
+        return result
+
+    parts = name_without_suffix.split()
+    if len(parts) == 1:
+        result["driver_first_name"] = parts[0]
+        return result
+    result["driver_first_name"] = parts[0]
+    surname_start = len(parts) - 1
+    if len(parts) >= 4 and " ".join(parts[-3:-1]).lower() == "de la":
+        surname_start = len(parts) - 3
+    elif len(parts) >= 3 and parts[-2].lower() in {"de", "del", "dela", "san", "santa", "van", "von"}:
+        surname_start = len(parts) - 2
+    result["driver_last_name"] = " ".join(parts[surname_start:])
+    result["driver_middle_name"] = " ".join(parts[1:surname_start])
+    return result
 
 
 @dataclass(frozen=True)
@@ -267,9 +308,10 @@ def recognize_ticket_regions(image, engine) -> list[OCRItem]:
     """Re-read dense official-form sections at higher effective resolution.
 
     Full-page OCR is good at headings but often loses small handwriting after
-    the tall ticket is resized. These overlapping crops preserve the original
-    coordinate system while giving personal, violation, vehicle, and officer
-    rows a second, enlarged reading pass.
+    the tall ticket is resized. These focused crops preserve the original
+    coordinate system while re-reading only personal, vehicle, and incident
+    rows. The violation checklist, narrative remarks, and officer section are
+    intentionally excluded from the enhanced OCR pass.
     """
 
     height, width = image.shape[:2]
@@ -282,9 +324,7 @@ def recognize_ticket_regions(image, engine) -> list[OCRItem]:
     normalized_page = cv2.createCLAHE(2.3, (8, 8)).apply(normalized_page)
     regions = (
         (0.07, 0.29),  # driver and licence details
-        (0.24, 0.61),  # two-column traffic-violation checklist
         (0.56, 0.75),  # vehicle, place, date, and offence rows
-        (0.73, 0.97),  # narrative and apprehending-officer section
     )
     scale = 1.55
     detected: list[OCRItem] = []
@@ -375,6 +415,12 @@ def label_match(text: str) -> tuple[str, str] | None:
 
 
 def spatial_value(label: OCRItem, items: list[OCRItem], label_indexes: set[int]) -> str:
+    """Return only a value that occupies the same printed ticket row.
+
+    The official citation ticket uses ruled rows. Falling back to text above
+    or below a label is unsafe: a missed handwritten name previously caused
+    the ticket date or address from an adjacent row to be used as the name.
+    """
     choices: list[tuple[float, OCRItem]] = []
     next_labels = [
         candidate for index, candidate in enumerate(items)
@@ -383,27 +429,16 @@ def spatial_value(label: OCRItem, items: list[OCRItem], label_indexes: set[int])
         and abs(candidate.center_y - label.center_y) <= max(label.height, candidate.height) * 0.9
     ]
     row_boundary = min((candidate.left for candidate in next_labels), default=float("inf"))
-    lower_labels = [
-        candidate for index, candidate in enumerate(items)
-        if index in label_indexes and candidate is not label
-        and candidate.top > label.bottom
-    ]
-    next_row_boundary = min((candidate.top for candidate in lower_labels), default=float("inf"))
-    max_vertical_gap = max(80.0, label.height * 4.0)
     for index, candidate in enumerate(items):
         if index in label_indexes or candidate is label or not candidate.text:
             continue
-        row_tolerance = max(label.height, candidate.height) * 0.85
+        row_tolerance = max(label.height, candidate.height) * 0.62
+        vertical_overlap = max(0.0, min(label.bottom, candidate.bottom) - max(label.top, candidate.top))
+        overlap_ratio = vertical_overlap / max(1.0, min(label.height, candidate.height))
         if (candidate.left >= label.right - 8 and candidate.left < row_boundary
-                and abs(candidate.center_y - label.center_y) <= row_tolerance):
+                and abs(candidate.center_y - label.center_y) <= row_tolerance
+                and overlap_ratio >= 0.18):
             choices.append(((candidate.left - label.right) + abs(candidate.center_y - label.center_y) * 2, candidate))
-            continue
-        horizontal_alignment = abs(candidate.center_x - label.center_x)
-        if (candidate.top >= label.bottom - 4
-                and candidate.top < next_row_boundary
-                and candidate.top - label.bottom <= max_vertical_gap
-                and horizontal_alignment <= max(90, (label.right - label.left) * 0.8)):
-            choices.append(((candidate.top - label.bottom) * 2 + horizontal_alignment, candidate))
     return min(choices, key=lambda choice: choice[0])[1].text if choices else ""
 
 
@@ -437,6 +472,50 @@ MONTHS = {
     "july": 7, "aug": 8, "august": 8, "sep": 9, "sept": 9, "september": 9,
     "oct": 10, "october": 10, "nov": 11, "november": 11, "dec": 12, "december": 12,
 }
+
+ADDRESS_WORDS = {
+    "nasugbu", "batangas", "bucana", "barangay", "brgy", "street", "st",
+    "road", "rd", "avenue", "ave", "purok", "sitio", "municipality", "city",
+}
+COMMON_VEHICLE_COLORS = {
+    "black", "white", "gray", "grey", "silver", "red", "blue", "green",
+    "yellow", "orange", "brown", "beige", "gold", "maroon", "violet", "purple",
+}
+
+
+def looks_like_person_name(value: str) -> bool:
+    """Conservatively accept names and reject values copied from nearby rows."""
+    raw = clean(value)
+    tokens = normalized(raw).split()
+    if not (2 <= len(tokens) <= 7) or re.search(r"\d", raw):
+        return False
+    if any(token in MONTHS or token in ADDRESS_WORDS for token in tokens):
+        return False
+    if label_match(raw) or is_instruction_text(raw):
+        return False
+    return all(re.search(r"[a-z]", token) for token in tokens)
+
+
+def looks_like_address(value: str) -> bool:
+    raw = clean(value)
+    tokens = normalized(raw).split()
+    if not raw or looks_like_date_or_time(raw) or label_match(raw) or is_instruction_text(raw):
+        return False
+    # A one-word barangay can be valid, but a multi-word value with no address
+    # signal is much more likely to be a person's name from an adjacent row.
+    return bool("," in raw or re.search(r"\d", raw) or any(token in ADDRESS_WORDS for token in tokens))
+
+
+def looks_like_location(value: str) -> bool:
+    raw = clean(value)
+    value_normalized = normalized(raw)
+    if not raw or looks_like_date_or_time(raw) or label_match(raw) or is_instruction_text(raw):
+        return False
+    if value_normalized.startswith(("others", "other specify")):
+        return False
+    if closest_violation(raw, 0.82):
+        return False
+    return bool(re.search(r"[A-Za-z]", raw))
 
 
 def normalize_date(value: str) -> str:
@@ -667,6 +746,14 @@ def field_confidences(fields: dict[str, str], items: list[OCRItem]) -> dict[str,
         if not target:
             result[field] = 0.0
             continue
+        if target in {"no license", "no plate"}:
+            explicit_missing = [
+                item.confidence for item in items
+                if normalized(item.text) in {"n a", "na", "none", target, target.replace(" ", "")}
+            ]
+            if explicit_missing:
+                result[field] = round(max(explicit_missing), 3)
+                continue
         candidates: list[tuple[float, float]] = []
         for item in items:
             source = normalized(item.text)
@@ -686,59 +773,12 @@ def extract(items: list[OCRItem]) -> dict[str, str]:
     matches = {index: label_match(item.text) for index, item in enumerate(items)}
     label_indexes = {index for index, match in matches.items() if match is not None}
 
-    violation_headings = [
-        item for item in items
-        if normalized(item.text) in {"traffic violation", "traffic violations"}
-    ]
-    violation_heading_y = max((item.center_y for item in violation_headings), default=float("inf"))
-
     for index, match in matches.items():
         if match is None:
             continue
         field, inline_value = match
-        # The form contains two generic Remarks labels. The one above the
-        # violation checklist belongs to the confiscated-license row.
-        if field == "ticket_remarks" and normalized(items[index].text) == "remarks":
-            field = "license_remarks" if items[index].center_y < violation_heading_y else "ticket_remarks"
         if not fields[field]:
-            if field == "ticket_remarks":
-                fields[field] = ticket_remarks_value(items[index], items, label_indexes)
-            else:
-                fields[field] = inline_value or spatial_value(items[index], items, label_indexes)
-
-    # Read the generic Name and Position rows only after the printed officer
-    # section heading. This prevents the driver's name from being reused as
-    # the apprehending officer.
-    officer_headings = [
-        item for item in items
-        if "apprehending" in normalized(item.text)
-        and ("officer" in normalized(item.text) or "arresting" in normalized(item.text))
-    ]
-    if officer_headings:
-        officer_heading = max(officer_headings, key=lambda item: item.center_y)
-        officer_labels = [
-            (index, item) for index, item in enumerate(items)
-            if item.top > officer_heading.bottom
-            and item.top - officer_heading.bottom <= max(500, officer_heading.height * 25)
-            and (normalized(item.text) in {"name", "position"}
-                 or normalized(item.text).startswith("name ")
-                 or normalized(item.text).startswith("position "))
-        ]
-        officer_label_indexes = label_indexes | {index for index, _ in officer_labels}
-        date_time_labels = [
-            item for item in items
-            if item.top > officer_heading.bottom
-            and normalized(item.text).startswith("date and time")
-        ]
-        for _, label in officer_labels:
-            label_text = normalized(label.text)
-            target = "apprehending_officer_name" if label_text == "name" or label_text.startswith("name ") else "apprehending_officer_position"
-            if not fields[target]:
-                following = [other.top for _, other in officer_labels
-                             if other.top > label.top + max(2.0, label.height * 0.25)]
-                following += [other.top for other in date_time_labels if other.top > label.top]
-                next_top = min(following, default=label.bottom + max(55.0, label.height * 2.5))
-                fields[target] = officer_row_value(label, next_top, items, officer_label_indexes)
+            fields[field] = inline_value or spatial_value(items[index], items, label_indexes)
 
     joined = "\n".join(item.text for item in items)
     if not fields["license_number"]:
@@ -749,16 +789,6 @@ def extract(items: list[OCRItem]) -> dict[str, str]:
         candidates = re.findall(r"\b[A-Z]{2,4}[- ]?\d{3,4}\b", joined, re.I)
         if candidates:
             fields["plate_number"] = candidates[0]
-    if not fields["ticket_number"]:
-        # The official form prints a large serial beside "No." at the foot.
-        number_labels = [item for item in items if normalized(item.text) in {"no", "no ticket"}]
-        for label in number_labels:
-            candidates = [item for item in items if item is not label and re.fullmatch(r"\d{4,8}", clean(item.text))
-                          and abs(item.center_y - label.center_y) <= max(label.height, item.height) * 2.5]
-            if candidates:
-                fields["ticket_number"] = min(candidates, key=lambda item: abs(item.center_x - label.center_x)).text
-                break
-
     license_text = normalized(fields["license_number"])
     if license_text in {"no license", "none", "n a", "na"}:
         fields["license_number"] = "NO LICENSE"
@@ -787,8 +817,6 @@ def extract(items: list[OCRItem]) -> dict[str, str]:
         vehicle_type,
         closest_allowed(fields["vehicle_type"], VEHICLE_TYPES, 0.62),
     )
-    fields["violation_type"] = closest_violation(fields["violation_type"], 0.70)
-
     raw_violation_datetime = fields["violation_date"]
     if not fields["violation_time"] and raw_violation_datetime:
         fields["violation_time"] = normalize_time(raw_violation_datetime)
@@ -799,17 +827,18 @@ def extract(items: list[OCRItem]) -> dict[str, str]:
         if fields[date_field]:
             fields[date_field] = normalize_date(fields[date_field])
 
-    amount_match = re.search(r"(?:PHP|P|₱)?\s*([0-9]{2,6}(?:[,.][0-9]{2})?)", fields["penalty_amount"], re.I)
-    amount = float(amount_match.group(1).replace(",", "")) if amount_match else 0
-    fields["penalty_amount"] = str(int(amount)) if amount in PENALTY_FEES else ""
-
-    if label_match(fields["driver_name"]) or normalized(fields["driver_name"]) in {normalized(v) for v in VEHICLE_TYPES}:
+    if not looks_like_person_name(fields["driver_name"]):
         fields["driver_name"] = ""
-    for officer_field in ("apprehending_officer_name", "apprehending_officer_position"):
-        if looks_like_date_or_time(fields[officer_field]) or is_instruction_text(fields[officer_field]):
-            fields[officer_field] = ""
-    if is_instruction_text(fields["ticket_remarks"]):
-        fields["ticket_remarks"] = ""
+    if not looks_like_address(fields["driver_address"]):
+        fields["driver_address"] = ""
+    if not looks_like_person_name(fields["vehicle_owner"]):
+        fields["vehicle_owner"] = ""
+    if fields["location"] and not looks_like_location(fields["location"]):
+        fields["location"] = ""
+    color_normalized = normalized(fields["vehicle_color"])
+    if color_normalized and color_normalized not in COMMON_VEHICLE_COLORS:
+        fields["vehicle_color"] = ""
+    fields.update(parse_person_name(fields["driver_name"]))
     return fields
 
 
@@ -858,10 +887,9 @@ def analyze_ticket_image(image_path: str | Path, engine=None) -> dict:
     items = merge_items(detection_groups)
     fields = extract(items)
     per_field_confidence = field_confidences(fields, items)
-    checked_violations = detect_checked_violations(image, items)
-    if checked_violations:
-        fields["violation_type"] = checked_violations[0]["violation_type"]
-        per_field_confidence["violation_type"] = checked_violations[0]["confidence"]
+    name_confidence = per_field_confidence.get("driver_name", 0.0)
+    for name_field in STRUCTURED_NAME_FIELDS:
+        per_field_confidence[name_field] = name_confidence if fields.get(name_field) else 0.0
     critical_fields = ["driver_name", "license_number", "plate_number"]
     missing_fields = [field for field in critical_fields if not fields[field]]
     confidences = [item.confidence for item in items]
@@ -875,13 +903,11 @@ def analyze_ticket_image(image_path: str | Path, engine=None) -> dict:
         "success": True,
         "fields": fields,
         "field_confidences": per_field_confidence,
-        "checked_violations": checked_violations,
         "confidence": round(sum(confidences) / len(confidences), 3) if confidences else 0,
         "recognized_fields": found,
         "document_detected": document_detected,
         "deskew_angle": deskew_angle,
         "missing_fields": missing_fields,
-        "raw_text": "\n".join(item.text for item in items),
         "warning": warning,
     }
 

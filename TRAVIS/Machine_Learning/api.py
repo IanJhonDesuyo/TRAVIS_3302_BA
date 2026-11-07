@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 import calendar
+import json
 import logging
 import sys
 import tempfile
@@ -18,6 +19,7 @@ LOCAL_CV_DIR = Path(__file__).resolve().parent.parent / "computer_vision"
 if LOCAL_CV_DIR.is_dir() and str(LOCAL_CV_DIR) not in sys.path:
     sys.path.insert(0, str(LOCAL_CV_DIR))
 from ticket_ocr import analyze_ticket_image
+from license_ocr import LICENSE_OCR_VERSION, analyze_license_image
 
 
 # ============================================================
@@ -526,13 +528,15 @@ def home():
         data={
             "service": "TRAVIS Machine Learning API",
             "version": "1.0",
+            "license_ocr_version": LICENSE_OCR_VERSION,
             "available_endpoints": [
                 "GET /health",
                 "GET /model-info",
                 "POST /predict/monthly",
                 "GET /hotspots",
                 "GET /hotspots/<risk_level>",
-                "POST /ocr/ticket",
+                "POST /ocr/license",
+                "POST /ocr/ticket (legacy compatibility)",
                 "POST /reload-models",
             ],
         },
@@ -559,6 +563,7 @@ def health():
             {
                 "success": overall_ready,
                 "service": "TRAVIS Machine Learning API",
+                "license_ocr_version": LICENSE_OCR_VERSION,
                 "status": (
                     "healthy"
                     if overall_ready
@@ -623,6 +628,53 @@ def scan_traffic_ticket():
     except Exception as error:
         logger.exception("Ticket OCR failed.")
         return error_response("Ticket OCR processing failed.", 500, str(error))
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+
+
+@app.post("/ocr/license")
+def scan_driver_license():
+    """Extract identity fields from a Philippine LTO driver's license."""
+
+    license_image = request.files.get("license")
+    if license_image is None or not license_image.filename:
+        return error_response("A driver's license image is required.", 400)
+
+    allowed_types = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
+    suffix = allowed_types.get(str(license_image.mimetype).lower())
+    if suffix is None:
+        return error_response("Use a JPEG, PNG, or WebP driver's license image.", 415)
+
+    image_bytes = license_image.read(10 * 1024 * 1024 + 1)
+    if not image_bytes:
+        return error_response("The uploaded driver's license image is empty.", 400)
+    if len(image_bytes) > 10 * 1024 * 1024:
+        return error_response("Driver's license image must be 10 MB or smaller.", 413)
+
+    crop_frame = None
+    raw_crop_frame = request.form.get("crop_frame", "").strip()
+    if raw_crop_frame:
+        try:
+            parsed_crop_frame = json.loads(raw_crop_frame)
+            if isinstance(parsed_crop_frame, dict):
+                crop_frame = parsed_crop_frame
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return error_response("The license crop-frame metadata is invalid.", 400)
+
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as temporary:
+            temporary.write(image_bytes)
+            temporary_path = Path(temporary.name)
+        with ticket_ocr_lock:
+            result = analyze_license_image(temporary_path, get_ticket_ocr_engine(), crop_frame=crop_frame)
+        return jsonify(result), 200
+    except ValueError as error:
+        return error_response(str(error), 422)
+    except Exception as error:
+        logger.exception("License OCR failed.")
+        return error_response("License OCR processing failed.", 500, str(error))
     finally:
         if temporary_path is not None:
             temporary_path.unlink(missing_ok=True)

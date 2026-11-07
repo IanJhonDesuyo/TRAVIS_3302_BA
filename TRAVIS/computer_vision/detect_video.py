@@ -534,7 +534,13 @@ while True:
 
             else:
                 visible_vehicle_count += 1
-                label = f"Vehicle #{track_id}"
+                class_names = getattr(result, "names", {}) or {}
+                class_name = str(class_names.get(cls, f"class {cls}"))
+                track_label = f"#{track_id}" if track_id >= 0 else "detecting"
+                # Keep class, confidence, and tracker state visible in the
+                # processed feed. This makes it immediately clear whether a
+                # missed count came from detection, tracking, or line geometry.
+                label = f"{class_name.title()} {track_label} {conf:.0%}"
                 box_color = (0, 255, 0)
                 # An unconfirmed detection has no stable identity yet. Show
                 # it immediately, but do not merge multiple anonymous objects

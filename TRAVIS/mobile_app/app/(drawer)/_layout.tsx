@@ -49,9 +49,9 @@ function MajorFunctionBar() {
 
   return (
     <View style={styles.majorFunctionBar}>
-      <TouchableOpacity style={styles.majorFunctionItem} onPress={() => router.push({ pathname: '/(drawer)/violations', params: { open: 'ocr' } })} activeOpacity={0.7} accessibilityLabel="Open OCR ticket scanner">
+      <TouchableOpacity style={styles.majorFunctionItem} onPress={() => router.push({ pathname: '/(drawer)/violations', params: { open: 'ocr' } })} activeOpacity={0.7} accessibilityLabel="Open driver's license scanner">
         <Ionicons name="scan-outline" size={20} color={COLORS.primary} />
-        <Text style={styles.majorFunctionLabel}>OCR Scan</Text>
+        <Text style={styles.majorFunctionLabel}>License Scan</Text>
       </TouchableOpacity>
       <TouchableOpacity style={styles.majorFunctionItem} onPress={() => router.push('/(drawer)/alerts')} activeOpacity={0.7} accessibilityLabel="Open operational alerts">
         <Ionicons name="notifications-outline" size={20} color={itemColor('/alerts')} />
@@ -272,10 +272,22 @@ export default function DrawerLayout() {
           setDrawerOpen(drawerEntry?.status === 'open');
         },
       }}
-      screenOptions={{
+      screenOptions={({ navigation }) => ({
         headerShown: true,
         headerStyle: { backgroundColor: '#F3F1EA' },
         headerTintColor: '#102F49',
+        headerLeft: () => (
+          <TouchableOpacity
+            style={styles.headerMenuButton}
+            onPress={() => navigation.toggleDrawer()}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Open navigation menu"
+            hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+          >
+            <Ionicons name="menu" size={25} color="#102F49" />
+          </TouchableOpacity>
+        ),
         headerTitle: () => <MunicipalHeaderTitle portal="Command Center" />,
         headerRight: () => <MunicipalHeaderActions notificationRoute={'/(drawer)/alerts' as Href} userName={user.full_name} />,
         drawerActiveBackgroundColor: COLORS.warning,
@@ -290,7 +302,7 @@ export default function DrawerLayout() {
         sceneStyle: { backgroundColor: 'transparent', paddingBottom: 82 },
         overlayColor: 'rgba(15, 23, 42, 0.5)',
         headerShadowVisible: false,
-      }}
+      })}
     >
       {/* OVERVIEW */}
       <Drawer.Screen
@@ -350,6 +362,17 @@ export default function DrawerLayout() {
 // ========== STYLES ==========
 const styles = StyleSheet.create({
   appBackground: { flex: 1, backgroundColor: '#E9E8E1' },
+  headerMenuButton: {
+    width: 40,
+    height: 40,
+    marginLeft: 10,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,.94)',
+    borderWidth: 1,
+    borderColor: 'rgba(16,47,73,.16)',
+  },
   appOverlay: {
     position: 'absolute',
     inset: 0,

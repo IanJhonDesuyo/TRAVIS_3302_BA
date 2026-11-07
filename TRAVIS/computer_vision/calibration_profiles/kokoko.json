@@ -1,0 +1,63 @@
+{
+    "profile_name": "kokoko",
+    "road_roi": [
+        [
+            0,
+            0
+        ],
+        [
+            1,
+            0
+        ],
+        [
+            1,
+            1
+        ],
+        [
+            0,
+            1
+        ]
+    ],
+    "inbound_line": [
+        [
+            0.6826893706704266,
+            0.46043226891973166
+        ],
+        [
+            0.27764077064141157,
+            0.7848962317200416
+        ]
+    ],
+    "outbound_line": [
+        [
+            0.8358882681026041,
+            0.5244984017019585
+        ],
+        [
+            0.38209456434516903,
+            0.9047618995061434
+        ]
+    ],
+    "officer_zone": [],
+    "officer": {
+        "enabled": false,
+        "presence_frames": 3,
+        "absence_frames": 15
+    },
+    "collision": {
+        "enabled": true,
+        "ttc_warning_seconds": 2.5,
+        "maximum_pair_distance": 2.6,
+        "contact_iou": 0.08,
+        "confirmation_iou": 0.04,
+        "possible_frames": 3,
+        "confirmed_frames": 4,
+        "risk_memory_seconds": 4,
+        "minimum_track_confidence": 0.45,
+        "minimum_motorcycle_confidence": 0.25,
+        "occlusion_confirmation_frames": 3,
+        "occlusion_window_seconds": 2,
+        "occlusion_max_distance": 1.5,
+        "cooldown_seconds": 30
+    }
+}

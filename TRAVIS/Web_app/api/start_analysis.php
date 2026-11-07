@@ -18,6 +18,7 @@ $phoneCameraConfigPath = $cvDir . "\\phone_camera_config.json";
 $calibrationDir = $cvDir . "\\calibration_profiles";
 
 $statusFile = __DIR__ . DIRECTORY_SEPARATOR . "analysis_status.json";
+$latestStatusFile = __DIR__ . DIRECTORY_SEPARATOR . "latest_status.json";
 $logDir = $projectRoot . "\\Web_app\\uploads\\logs";
 $logFile = $logDir . "\\analysis_latest.log";
 
@@ -68,6 +69,20 @@ if ($_SERVER["REQUEST_METHOD"] !== "POST") {
 
 $payload = json_decode(file_get_contents("php://input"), true);
 $payload = is_array($payload) ? $payload : [];
+$forceRestart = filter_var($payload['force_restart'] ?? false, FILTER_VALIDATE_BOOLEAN);
+
+// A controlled configuration restart must not reuse the final heartbeat from
+// the process that was just stopped. Mark that frame stale on both the hosted
+// server and edge laptop; the next detector heartbeat will make it live again.
+if ($forceRestart && is_file($latestStatusFile)) {
+    $staleStatus = json_decode((string)file_get_contents($latestStatusFile), true);
+    $staleStatus = is_array($staleStatus) ? $staleStatus : [];
+    $staleStatus['updated_at_epoch'] = 0;
+    $staleStatus['analysis_status'] = 'Starting';
+    $staleStatus['ai_status'] = 'Starting';
+    $staleStatus['message'] = 'Applying the updated line configuration...';
+    file_put_contents($latestStatusFile, json_encode($staleStatus, JSON_PRETTY_PRINT), LOCK_EX);
+}
 
 if (!travis_is_edge_host()) {
     $hostedSourceType = (string)($payload['source_type'] ?? 'uploaded_video');
@@ -129,6 +144,7 @@ if (!travis_is_edge_host()) {
             : 'Starting Computer Vision on the monitoring laptop...',
         'source_type' => $hostedSourceType,
         'camera_id' => $hostedCameraId,
+        'calibration_profile' => $hostedCalibrationFile,
         'stream_owner' => 'shared',
         'started_by' => strtolower((string)($payload['client'] ?? 'web')),
         'updated_at' => date('Y-m-d H:i:s'),
@@ -190,11 +206,10 @@ if (!in_array($streamOwner, ["web", "mobile"], true)) {
     exit;
 }
 
-if (is_file($statusFile)) {
+if (!$forceRestart && is_file($statusFile)) {
     $existingStatus = json_decode((string)file_get_contents($statusFile), true);
     $existingState = strtolower((string)($existingStatus["analysis_status"] ?? ""));
     $existingUpdated = (int)($existingStatus["updated_at_epoch"] ?? 0);
-    $latestStatusFile = __DIR__ . "/latest_status.json";
     $latestStatus = is_file($latestStatusFile) ? json_decode((string)file_get_contents($latestStatusFile), true) : [];
     $hasLiveFrames = !empty($latestStatus["updated_at_epoch"]) && time() - (int)$latestStatus["updated_at_epoch"] <= 6;
     // CPU model warm-up can take well over 30 seconds. Keep joining the same
@@ -430,6 +445,7 @@ file_put_contents($statusFile, json_encode([
     "message" => "Starting AI analysis...",
     "source_type" => $sourceType,
     "camera_id" => $cameraId,
+    "calibration_profile" => $calibrationFile,
     "stream_owner" => "shared",
     "started_by" => $streamOwner,
     "updated_at" => date("Y-m-d H:i:s"),

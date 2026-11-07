@@ -488,18 +488,44 @@
       const actionsBusy = deletingCalibration || loadingCalibration || savingCalibration || switchingCalibration;
       if (newCalibrationBtn) newCalibrationBtn.disabled = actionsBusy || editorOpen;
       if (deleteCalibrationBtn) {
-        deleteCalibrationBtn.disabled = actionsBusy || editorOpen || analysisIsActive || !selectedFile || isDefault;
+        deleteCalibrationBtn.disabled = actionsBusy || editorOpen || !selectedFile || isDefault;
         deleteCalibrationBtn.title = isDefault
           ? 'The default configuration cannot be deleted'
           : analysisIsActive
-            ? 'Stop the active analysis before deleting a configuration'
+            ? 'Delete this configuration after safely stopping the active analysis'
             : 'Delete selected configuration';
       }
       if (editCalibrationBtn) {
-        editCalibrationBtn.disabled = actionsBusy || editorOpen || analysisIsActive || !selectedFile;
+        editCalibrationBtn.disabled = actionsBusy || editorOpen || !selectedFile;
         editCalibrationBtn.title = analysisIsActive
-          ? 'Stop the active analysis before editing a configuration'
+          ? 'Edit this configuration over the active live feed'
           : 'Edit selected configuration';
+      }
+    }
+
+    async function stopAnalysisForCalibration(action) {
+      if (!['running', 'starting'].includes(currentAnalysisStatus)) return true;
+      const confirmed = window.confirm(`The active analysis must stop before ${action}. Continue?`);
+      if (!confirmed) return false;
+      if (analysisMessage) {
+        analysisMessage.textContent = `Stopping the active analysis before ${action}...`;
+        analysisMessage.className = 'small mt-2 text-info';
+      }
+      const stopped = await stopSharedAnalysis();
+      if (!stopped && ['running', 'starting'].includes(currentAnalysisStatus)) return false;
+      updateDeleteCalibrationButton();
+      return true;
+    }
+
+    function syncRegistryCalibrationOption(file, name) {
+      const registrySelect = document.getElementById('registryCameraCalibration');
+      if (!registrySelect || !file) return;
+      let option = Array.from(registrySelect.options).find(item => item.value === file);
+      if (!option) {
+        option = new Option(name, file);
+        registrySelect.add(option);
+      } else {
+        option.text = name;
       }
     }
 
@@ -523,14 +549,15 @@
       updateDeleteCalibrationButton();
     });
 
-    editCalibrationBtn?.addEventListener('click', async () => {
+    editCalibrationBtn?.addEventListener('click', async event => {
+      event.preventDefault();
       const file = calibrationProfile?.value ?? '';
-      if (!file || ['running', 'starting'].includes(currentAnalysisStatus)) return;
+      if (!file) return;
 
       loadingCalibration = true;
-      if (calibrationProfile) calibrationProfile.disabled = true;
       updateDeleteCalibrationButton();
       try {
+        if (calibrationProfile) calibrationProfile.disabled = true;
         const response = await fetchJson(`${apiUrl('calibration_profiles.php')}?file=${encodeURIComponent(file)}`);
         const profile = response.profile ?? {};
         const validPointSet = (points, expected) => Array.isArray(points)
@@ -563,9 +590,12 @@
         }
         clearOfficerZoneBtn?.classList.toggle('d-none', officerZonePoints.length === 0);
         if (calibrationInstruction) {
-          calibrationInstruction.textContent = 'Existing lines are loaded. Choose a tool to redraw an item, rename it, or save the current values.';
+          calibrationInstruction.textContent = ['running', 'starting'].includes(currentAnalysisStatus)
+            ? 'The live feed will stay visible while you position the lines. Saving updates this profile only; assign it from Camera Settings when you are ready to apply it.'
+            : 'Existing lines are loaded. Choose a tool to redraw an item, rename it, or save the current values.';
         }
         sizeCalibrationCanvas();
+        document.dispatchEvent(new CustomEvent('travis:calibration-editor-opened'));
       } catch (error) {
         if (analysisMessage) {
           analysisMessage.textContent = error.message;
@@ -686,9 +716,11 @@
             option.text = response.profile.name;
             option.selected = true;
           }
+          syncRegistryCalibrationOption(fileBeingEdited, response.profile.name);
         } else {
           const option = new Option(response.profile.name, response.profile.file, true, true);
           calibrationProfile?.add(option);
+          syncRegistryCalibrationOption(response.profile.file, response.profile.name);
         }
         updateDeleteCalibrationButton();
         closeCalibrationEditor();
@@ -697,10 +729,6 @@
           analysisMessage.textContent = response.message;
           analysisMessage.className = 'small mt-2 text-success';
         }
-        // A newly saved profile becomes the selected profile. Trigger the
-        // normal assignment/restart flow instead of leaving the active worker
-        // on the previous configuration.
-        calibrationProfile?.dispatchEvent(new Event('change', { bubbles: true }));
       } catch (error) {
         saveCalibrationBtn.disabled = false;
         if (calibrationInstruction) calibrationInstruction.textContent = error.message;
@@ -1140,7 +1168,7 @@
         // Page navigation destroys only the browser player. The edge worker and
         // shared AI session continue running, so restore this tab's viewer as
         // soon as the status endpoint confirms that the session is active.
-        if (liveAnalysis
+        if (currentAnalysisStatus === 'running'
             && shouldRestoreJoinedCamera()
             && !streamConnectionRequested
             && !automaticStreamRestoreAttempted) {
@@ -1425,9 +1453,11 @@
       }
     }
 
-    async function startAnalysis() {
+    async function startAnalysis(options = {}) {
+      const forceRestart = options?.forceRestart === true;
+      const deferStreamConnection = options?.deferStreamConnection === true;
       showWaitingStreamState();
-      if (['running', 'starting'].includes(currentAnalysisStatus)) {
+      if (!forceRestart && ['running', 'starting'].includes(currentAnalysisStatus)) {
         automaticStreamRestoreAttempted = true;
         rememberJoinedCamera();
         showCvProcess({
@@ -1439,7 +1469,7 @@
         });
         connectStreamWithRetry();
         setAnalysisControls(currentAnalysisStatus, 'Joining the active shared monitoring session...');
-        return;
+        return true;
       }
       if (snapshotCanvas) snapshotCanvas.style.display = 'none';
 
@@ -1450,7 +1480,7 @@
           analysisMessage.className = 'small mt-2 text-danger';
         }
         cctvVideoInput?.focus();
-        return;
+        return false;
       }
 
       showCvProcess({
@@ -1473,9 +1503,14 @@
         const requestBody = {
           source_type: sourceType,
           client: 'web',
-          camera_id: Number(cameraStage?.dataset.cameraId || 0)
+          camera_id: Number(cameraStage?.dataset.cameraId || 0),
+          force_restart: forceRestart
         };
-        requestBody.calibration_profile = calibrationProfile?.value ?? '';
+        // The active profile belongs to the camera assignment. The profile
+        // management dropdown must not silently change the running feed.
+        requestBody.calibration_profile = cameraStage?.dataset.calibrationProfile
+          ?? calibrationProfile?.value
+          ?? '';
 
         if (sourceType === 'tapo_camera') {
           requestBody.tapo_host = document.getElementById('tapoHost')?.value.trim() ?? '';
@@ -1497,10 +1532,6 @@
         // A hosted Tapo request can only run after the gate laptop claims the
         // queued job. Stop the blocking progress modal promptly when that
         // worker is offline instead of appearing to connect indefinitely.
-        if (response.pending === true && monitoringSource?.value === 'tapo_camera') {
-          throw new Error(response.message ?? 'The gate laptop worker is offline. Start it, then press Join Feed again.');
-        }
-
         automaticStreamRestoreAttempted = true;
         rememberJoinedCamera();
 
@@ -1509,8 +1540,19 @@
           response.message ?? 'Starting AI analysis...'
         );
 
-        connectStreamWithRetry();
+        if (deferStreamConnection) {
+          // The previous MediaMTX publisher has just been stopped. Wait until
+          // get_status.php confirms a fresh Running frame before opening the
+          // WebRTC player, otherwise its error page can be mistaken for a
+          // successfully loaded stream.
+          streamConnectionRequested = false;
+          streamHasFrame = false;
+          automaticStreamRestoreAttempted = false;
+        } else {
+          connectStreamWithRetry();
+        }
         refreshDashboard();
+        return true;
 
       } catch (error) {
         const message =
@@ -1521,6 +1563,7 @@
         setAnalysisControls('Error', message);
         failCvProcess(message);
         forgetJoinedCamera();
+        return false;
 
       } finally {
         startAnalysisRequestPending = false;
@@ -1584,7 +1627,9 @@
       }
     }
 
-    async function stopSharedAnalysis() {
+    async function stopSharedAnalysis(options = {}) {
+
+      const preserveViewer = options?.preserveViewer === true;
 
       if (!STOP_ANALYSIS_ENABLED) {
         if (analysisMessage) {
@@ -1616,6 +1661,8 @@
         // STOP THE VIDEO STREAM
         // ==========================
 
+        closeWebrtcStream();
+
         if (aiLiveStream) {
 
           if (streamRetryTimer) window.clearTimeout(streamRetryTimer);
@@ -1626,7 +1673,7 @@
           // Disconnect the Flask stream
           aiLiveStream.src = "";
           streamConnectionRequested = false;
-          forgetJoinedCamera();
+          if (!preserveViewer) forgetJoinedCamera();
           updateCameraJoinButtons();
           snapshotStreamGeneration += 1;
           if (snapshotCanvas) snapshotCanvas.style.display = 'none';
@@ -1682,86 +1729,82 @@
     // Camera cards must be able to join an already-running shared feed even
     // while the hidden Start button is disabled by the current session state.
     window.travisJoinMonitoringFeed = startAnalysis;
+    window.travisApplyCameraConfiguration = async ({ calibrationProfile: nextProfile, previousCalibrationProfile = '' } = {}) => {
+      const next = String(nextProfile || '');
+      const previous = String(previousCalibrationProfile || '');
+      if (cameraStage) cameraStage.dataset.calibrationProfile = next;
+
+      if (!['running', 'starting', 'reconnecting'].includes(currentAnalysisStatus)) {
+        return { success: true, restarted: false, restored: false };
+      }
+
+      switchingCalibration = true;
+      showCvProcess({
+        mode: 'start',
+        title: 'Applying Camera Settings',
+        detail: 'The saved camera connection and line assignment will be loaded by Computer Vision.',
+        stage: 'Restarting the analysis worker safely...',
+        icon: 'bi-sliders'
+      });
+
+      try {
+        hideStream({ forgetViewer: false });
+        const stopped = await stopSharedAnalysis({ preserveViewer: true });
+        if (!stopped) throw new Error('The current analysis could not be stopped safely.');
+
+        const started = await startAnalysis({ deferStreamConnection: true });
+        if (!started) throw new Error('The updated analysis could not be started.');
+        return { success: true, restarted: true, restored: false };
+      } catch (error) {
+        // Return to the previous profile and make one best-effort attempt to
+        // restore the old feed. The Camera Settings handler restores the
+        // database assignment when this result reports a failure.
+        if (cameraStage) cameraStage.dataset.calibrationProfile = previous;
+        const restored = await startAnalysis({ deferStreamConnection: true });
+        return {
+          success: false,
+          restarted: true,
+          restored: restored === true,
+          message: error.message || 'Unable to apply the selected line configuration.'
+        };
+      } finally {
+        switchingCalibration = false;
+        updateDeleteCalibrationButton();
+      }
+    };
     if (startAnalysisBtn) startAnalysisBtn.addEventListener('click', startAnalysis);
     if (stopAnalysisBtn && STOP_ANALYSIS_ENABLED) {
       stopAnalysisBtn.addEventListener('click', stopSharedAnalysis);
     }
 
-    calibrationProfile?.addEventListener('change', async () => {
+    calibrationProfile?.addEventListener('change', () => {
       calibrationSelectionTouched = true;
       updateDeleteCalibrationButton();
       const selectedName = calibrationProfile.options[calibrationProfile.selectedIndex]?.text ?? 'Selected configuration';
-      const selectedCameraId = Number(cameraStage?.dataset.cameraId || 0);
-      if (selectedCameraId > 0) {
-        try {
-          await fetchJson(apiUrl('cameras.php'), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              csrf_token: calibrationCsrf?.value ?? '',
-              action: 'assign_calibration',
-              camera_id: selectedCameraId,
-              calibration_profile: calibrationProfile.value
-            })
-          });
-        } catch (error) {
-          if (analysisMessage) {
-            analysisMessage.textContent = error.message;
-            analysisMessage.className = 'small mt-2 text-danger';
-          }
-          return;
-        }
-      }
-      if (!['running', 'starting'].includes(currentAnalysisStatus)) {
-        if (analysisMessage) {
-          analysisMessage.textContent = `${selectedName} selected. It will be used when analysis starts.`;
-          analysisMessage.className = 'small mt-2 text-info';
-        }
-        return;
-      }
-
-      if (switchingCalibration) return;
-      switchingCalibration = true;
-      calibrationProfile.disabled = true;
-      showCvProcess({
-        mode: 'start',
-        title: 'Applying Intersection Configuration',
-        detail: `${selectedName} will be applied before Computer Vision restarts.`,
-        stage: 'Stopping the current worker safely…',
-        icon: 'bi-sliders'
-      });
       if (analysisMessage) {
-        analysisMessage.textContent = `Applying ${selectedName} and restarting analysis...`;
+        analysisMessage.textContent = `${selectedName} selected for profile management. Use Assigned line configuration and Save Camera to apply it to the feed.`;
         analysisMessage.className = 'small mt-2 text-info';
       }
-
-      await stopSharedAnalysis();
-      await new Promise(resolve => window.setTimeout(resolve, 700));
-      await startAnalysis();
-
-      calibrationProfile.disabled = false;
-      switchingCalibration = false;
-      updateDeleteCalibrationButton();
     });
 
     deleteCalibrationBtn?.addEventListener('click', async () => {
       const selectedOption = calibrationProfile?.options[calibrationProfile.selectedIndex];
       if (!selectedOption?.value || selectedOption.value.toLowerCase() === 'example.json') return;
 
-      if (['running', 'starting'].includes(currentAnalysisStatus)) {
-        if (analysisMessage) {
-          analysisMessage.textContent = 'Stop the active analysis before deleting a configuration.';
-          analysisMessage.className = 'small mt-2 text-danger';
-        }
-        return;
-      }
-
-      const confirmed = window.confirm(`Delete "${selectedOption.text}"? It will be removed from the list, but a recovery copy will be archived.`);
+      const analysisIsActive = ['running', 'starting'].includes(currentAnalysisStatus);
+      const confirmed = window.confirm(
+        `${analysisIsActive ? 'The active analysis will be stopped first. ' : ''}`
+        + `Delete "${selectedOption.text}"? A recovery copy will be archived, and assigned cameras will use the default configuration.`
+      );
       if (!confirmed) return;
 
       deletingCalibration = true;
       updateDeleteCalibrationButton();
       try {
+        if (analysisIsActive) {
+          const stopped = await stopSharedAnalysis();
+          if (!stopped && ['running', 'starting'].includes(currentAnalysisStatus)) return;
+        }
         const response = await fetchJson(apiUrl('calibration_profiles.php'), {
           method: 'DELETE',
           headers: { 'Content-Type': 'application/json' },
@@ -1771,7 +1814,27 @@
           })
         });
 
+        const deletedFile = selectedOption.value;
         selectedOption.remove();
+        const fallbackProfile = String(response.fallback_profile ?? 'example.json');
+        if (calibrationProfile) calibrationProfile.value = fallbackProfile;
+        const registrySelect = document.getElementById('registryCameraCalibration');
+        const registryUsedDeletedProfile = registrySelect?.value === deletedFile;
+        Array.from(registrySelect?.options ?? [])
+          .find(option => option.value === deletedFile)
+          ?.remove();
+        if (registrySelect && registryUsedDeletedProfile) registrySelect.value = fallbackProfile;
+        document.querySelectorAll('.camera-registry-card[data-camera]').forEach(card => {
+          try {
+            const camera = JSON.parse(card.dataset.camera || '{}');
+            if (camera.calibration_profile === deletedFile) {
+              camera.calibration_profile = fallbackProfile;
+              card.dataset.camera = JSON.stringify(camera);
+            }
+          } catch (_) {
+            // A malformed card is ignored; the server record is already safe.
+          }
+        });
         calibrationSelectionTouched = true;
         if (analysisMessage) {
           analysisMessage.textContent = response.message;

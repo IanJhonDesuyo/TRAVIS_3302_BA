@@ -522,7 +522,7 @@ export default function DashboardScreen() {
               {/* Quick Actions */}
               <Text style={styles.sectionLabel}>QUICK ACTIONS</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.quickActionsRow} contentContainerStyle={{ paddingRight: 20 }}>
-                {renderQuickAction(<Ionicons name="scan-outline" size={17} color={COLORS.textPrimary} />, 'OCR Scan', openOcrScanner)}
+                {renderQuickAction(<Ionicons name="scan-outline" size={17} color={COLORS.textPrimary} />, 'License Scan', openOcrScanner)}
                 {renderQuickAction(<MaterialCommunityIcons name="robot-outline" size={17} color={COLORS.textPrimary} />, 'AI', () => setActiveTab('analytics'))}
                 {renderQuickAction(<Ionicons name="cash-outline" size={17} color={COLORS.textPrimary} />, 'Payments', () => router.push('/(drawer)/payments'))}
                 {renderQuickAction(<Ionicons name="bulb-outline" size={17} color={COLORS.textPrimary} />, 'Decision', () => router.push('/(drawer)/decision-support'))}
